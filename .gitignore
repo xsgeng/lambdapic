@@ -17,4 +17,12 @@ htmlcov/
 env/
 venv/
 
-# End of custom .gitignore
+# images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# hdf5
+*.h5
