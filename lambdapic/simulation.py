@@ -15,7 +15,7 @@ from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 
 from .species import Species
-from .callback.callback import SimulationStage, Callback
+from .callback.callback import SimulationStage, callback
 
 
 class SimulationConfig(BaseModel):
@@ -258,11 +258,11 @@ class SimulationCallbacks:
         
         if callbacks:
             for cb in callbacks:
-                if isinstance(cb, Callback):
+                if hasattr(cb, 'stage'):
                     stage_callbacks[cb.stage].append(cb)
                 else:
                     # Wrap plain functions as callbacks with default stage
-                    wrapped = Callback()(cb)
+                    wrapped = callback()(cb)
                     stage_callbacks[wrapped.stage].append(wrapped)
 
         self.stage_callbacks = stage_callbacks
