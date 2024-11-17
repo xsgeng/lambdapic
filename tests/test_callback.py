@@ -130,6 +130,21 @@ class TestCallback(unittest.TestCase):
         # Test class method is still callable
         result = testclass.class_method(self.sim)
         self.assertEqual(result, "class_method_result")
+        
+
+    def test_lambda_callback(self):
+        """Test that callback can handle lambda functions."""
+        lambda_func = callback(stage="maxwell first")(lambda sim: "lambda_result")
+        
+        # Test lambda function metadata is preserved
+        self.assertEqual(lambda_func.__name__, "<lambda>")
+        
+        # Test stage is properly set
+        self.assertEqual(lambda_func.stage, "maxwell first")
+        
+        # Test lambda function is still callable
+        result = lambda_func(self.sim)
+        self.assertEqual(result, "lambda_result")
 
 if __name__ == '__main__':
     unittest.main()
