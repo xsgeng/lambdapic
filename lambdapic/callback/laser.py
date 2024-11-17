@@ -11,8 +11,6 @@ class SimpleLaser:
     from the left boundary with a Gaussian transverse profile and a smooth temporal envelope.
     
     Attributes:
-        stage (str): Defines when the callback should be executed ('start')
-        sim (Simulation): Reference to the simulation object
         a0 (float): Normalized vector potential amplitude
         l0 (float): Laser wavelength
         omega0 (float): Laser angular frequency (2πc/λ)
@@ -27,17 +25,17 @@ class SimpleLaser:
         and Gouy phase, use the GaussianLaser class instead.
     """
     stage = "start"
-    def __init__(self, sim: Simulation, a0: float, l0: float, w0: float, ctau: float, pol_angle: float = 0.0):
+    def __init__(self, a0: float, w0: float, ctau: float, pol_angle: float = 0.0, l0: float=0.8e-6):
         """
         Initialize the SimpleLaser with given parameters.
         
         Args:
             sim: Simulation object that this laser will be injected into
             a0: Normalized vector potential amplitude
-            l0: Laser wavelength
             w0: Laser waist size
             ctau: Pulse duration (c*tau)
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            l0: Laser wavelength (default: 800nm)
         
         Raises:
             ValueError: If parameters are invalid (negative or zero values)
@@ -46,7 +44,6 @@ class SimpleLaser:
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
             
-        self.sim = sim
         self.a0 = a0
         self.l0 = l0
         self.omega0 = 2 * pi * c / l0
@@ -56,7 +53,7 @@ class SimpleLaser:
         self.pol_angle = pol_angle
     
 
-    def __call__(self):
+    def __call__(self, sim: Simulation):
         """
         Inject the laser pulse into the simulation.
         This method is called at each timestep and updates the electromagnetic fields
@@ -71,7 +68,7 @@ class SimpleLaser:
         The sin² envelope ensures smooth turn-on and turn-off of the pulse,
         reducing numerical artifacts compared to a sharp cutoff.
         """
-        time = self.sim.itime * self.sim.dt
+        time = sim.itime * sim.dt
         # Stop injecting after twice the pulse duration for smooth falloff
         if c*time >= 2*self.ctau:
             return
@@ -80,13 +77,13 @@ class SimpleLaser:
         tprof = np.sin(c*time/(2*self.ctau)*pi)**2 * (c*time < 2*self.ctau)
         
         # Inject the laser from the left boundary
-        for p in self.sim.patches:
+        for p in sim.patches:
             # Only inject from the leftmost patch
             if p.ipatch_x > 0:
                 continue
             f = p.fields
             # Calculate radial distance from the center of the simulation box
-            r = p.yaxis - self.sim.dy/2 - self.sim.Ly/2
+            r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
             
             # Calculate base field amplitude with:
             # - Gaussian transverse profile: exp(-r²/w0²)
@@ -95,8 +92,8 @@ class SimpleLaser:
             field = self.E0 / c * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
             
             # Update By and Bz fields at the left boundary (CPML layer) based on polarization angle
-            f.by[self.sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
-            f.bz[self.sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
+            f.by[sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
+            f.bz[sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
 
 
 class GaussianLaser:

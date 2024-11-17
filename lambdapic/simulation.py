@@ -87,6 +87,8 @@ class Simulation:
         self.species = []
         
         self.maxwell = MaxwellSolver2d(self.patches)
+        self.interpolator = FieldInterpolation2D(self.patches)
+        self.current_depositor = CurrentDeposition2D(self.patches)
         
         self.itime = 0
         
@@ -166,8 +168,9 @@ class Simulation:
         self.patches.fill_particles()
         self.patches.update_lists()
 
-        self.interpolator = FieldInterpolation2D(self.patches)
-        self.current_depositor = CurrentDeposition2D(self.patches)
+        self.interpolator.generate_particle_lists()
+        self.current_depositor.generate_particle_lists()
+
 
     def maxwell_stage(self):
         self.maxwell.update_efield(0.5*self.dt)
@@ -178,7 +181,7 @@ class Simulation:
     def run(self, nsteps: int, callbacks: Sequence[Callable] = None):
         stage_callbacks = SimulationCallbacks(callbacks, self)
 
-        for it in trange(nsteps):
+        for self.istep in trange(nsteps):
             
             # start of simulation stages
             stage_callbacks.run('start')
@@ -221,6 +224,9 @@ class Simulation:
                     self.patches.sync_currents()
                     
                 stage_callbacks.run('current deposition')
+
+            # set ispec to None out of species loop
+            self.ispec = None
             
             with Timer("sync_particles"):
                 self.patches.sync_particles()
@@ -275,4 +281,4 @@ class SimulationCallbacks:
             stage: The simulation stage to run callbacks for
         """
         for cb in self.stage_callbacks[stage]:
-            cb.execute(self.simulation)
+            cb(self.simulation)

@@ -69,7 +69,9 @@ class ExtractSpeciesDensity:
             patch.ipatch_y*self.ny_per_patch:(patch.ipatch_y+1)*self.ny_per_patch
         ]
 
-    def __call__(self, it, ispec):
+    def __call__(self, sim: Simulation):
+        it = sim.itime
+        ispec = sim.ispec
         if it % self.every == 0:
             if self.ispec_target == 0:
                 if ispec == 0:
