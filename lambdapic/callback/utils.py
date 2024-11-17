@@ -2,6 +2,8 @@ from ..simulation import Simulation
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 import numpy as np
 
+from typing import Callable, Union
+
 from libpic.species import Species
 
 from pathlib import Path
@@ -51,7 +53,7 @@ def save_fields_to_hdf5(sim: Simulation, fields: list, every: int, prefix: [Path
 
 class ExtractSpeciesDensity:
     stage = "current deposition"
-    def __init__(self, sim: Simulation, species: Species, every: int):
+    def __init__(self, sim: Simulation, species: Species, every: Union[int, Callable]):
         self.sim = sim
         self.species = species
         self.every = every
@@ -70,26 +72,30 @@ class ExtractSpeciesDensity:
         ]
 
     def __call__(self, sim: Simulation):
-        it = sim.itime
+        if callable(self.every):
+            if not self.every(sim):
+                return
+        elif sim.itime % self.every != 0:
+            return
+
         ispec = sim.ispec
-        if it % self.every == 0:
-            if self.ispec_target == 0:
-                if ispec == 0:
-                    for p in self.patches:
-                        s = self._get_patch_slice(p)
-                        self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard] / self.sim.species[ispec].q
-            else:
-                if ispec == self.ispec_target - 1:
-                    for p in self.patches:
-                        s = self._get_patch_slice(p)
-                        # store previous rho
-                        self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard]
-                if ispec == self.ispec_target:
-                    for p in self.patches:
-                        s = self._get_patch_slice(p)
-                        # subtract previous rho
-                        self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard] - self.density[s]
-                        self.density[s] /= self.sim.species[ispec].q
+        if self.ispec_target == 0:
+            if ispec == 0:
+                for p in self.patches:
+                    s = self._get_patch_slice(p)
+                    self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard] / self.sim.species[ispec].q
+        else:
+            if ispec == self.ispec_target - 1:
+                for p in self.patches:
+                    s = self._get_patch_slice(p)
+                    # store previous rho
+                    self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard]
+            if ispec == self.ispec_target:
+                for p in self.patches:
+                    s = self._get_patch_slice(p)
+                    # subtract previous rho
+                    self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard] - self.density[s]
+                    self.density[s] /= self.sim.species[ispec].q
 
 
 def species_transfer(s1, s2):

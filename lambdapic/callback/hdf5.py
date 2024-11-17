@@ -2,10 +2,9 @@ import os
 import h5py
 import numpy as np
 from typing import List, Optional, Set, Union, Callable
-from .callback import Callback
 from .utils import get_fields
 
-class SaveFieldsToHDF5(Callback):
+class SaveFieldsToHDF5:
     """
     Callback to save field data to HDF5 files.
     
@@ -27,11 +26,11 @@ class SaveFieldsToHDF5(Callback):
                    Available: ['ex','ey','ez','bx','by','bz','jx','jy','jz','rho']
                    If None, saves all components
     """
+    stage="maxwell second"
     def __init__(self, 
                  prefix: str, 
                  interval: Union[int, Callable] = 100,
                  components: Optional[List[str]] = None) -> None:
-        super().__init__(stage="maxwell second")  # Save after field update
         self.prefix = prefix
         self.interval = interval
         
@@ -78,7 +77,7 @@ class SaveFieldsToHDF5(Callback):
             f.attrs['itime'] = sim.itime
 
 
-class SaveParticlesToHDF5(Callback):
+class SaveParticlesToHDF5:
     """
     Callback to save particle data to HDF5 files.
     
@@ -103,11 +102,11 @@ class SaveParticlesToHDF5(Callback):
         attrs: List of particle attributes to save.
                If None, saves all attributes
     """
+    stage="maxwell second"
     def __init__(self,
                  prefix: str,
                  interval: Union[int, Callable] = 100,
                  attrs: Optional[List[str]] = None) -> None:
-        super().__init__(stage="maxwell second")  # Save after field update
         self.prefix = prefix
         self.interval = interval
         self.attrs = attrs
