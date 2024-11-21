@@ -1,22 +1,25 @@
-# λPIC
+# Introduction
+<div style="text-align:center;">
 
 ![λPIC](lambdaPIC.svg)
-
+</div>
 λPIC is a callback-centric Particle-In-Cell framework.
-
-A Particle-In-Cell (PIC) simulation framework, allowing dynamic behavior modification through callbacks at various simulation stages. It leverages the `libpic` backend, a Python-based PIC simulation framework available at [libpic](https://github.com/xsgeng/libpic).
-
-## Features
-
-- **Flexible Simulation Behavior**: Modify simulation behavior through callbacks without changing core code
-- **Multiple Stages**: Well-defined simulation stages for callback injection
-- **Flexible Particle Support**: Support various particle types and pushers
-- **Extensible**: Easy to add custom behaviors through the callback system
+It enables the customization of simulation behavior through callbacks at various stages, even when the modifications are unphysical.
+The flexibility of λPIC makes it easy to implement plugins, allowing developers to extend functionality seamlessly without modifying the core simulation logic.
+It leverages the `libpic` backend, a Python-based PIC simulation framework available at [libpic](https://github.com/xsgeng/libpic).
 
 ## Installation
 
+via pip
 ```bash
 pip install lambdapic
+```
+
+via github
+```bash
+git clone https://github.com/xsgeng/lambdapic.git
+cd lambdapic
+pip install .
 ```
 
 ## Callback System
@@ -44,7 +47,7 @@ laser = SimpleLaser(
 
 # Custom callbacks
 @callback()
-def energy_diagnostic(sim):
+def energy_sum(sim):
     if sim.itime % 100 != 0:
         return
 
@@ -69,7 +72,7 @@ sim.run(
     nsteps=1000, 
     callbacks=[
         laser,
-        energy_diagnostic,
+        energy_sum,
         mod_ex, 
         callback(stage="start")(lambda sim: print(f"timestep @ {sim.itime} starts")),
         lambda sim: print(f"timestep @ {sim.itime} ends")
@@ -85,3 +88,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 ## Development Status
 
 λPIC is currently in active development. The API may change without notice.
+
+## Acknowledgments
+
+This work was supported by the National Natural Science Foundation of China (NSFC) under Grant No. 12304384.
