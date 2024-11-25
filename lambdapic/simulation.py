@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 
-from .species import Species
+from libpic.species import Species
 from .callback.callback import SimulationStage, callback
 
 
