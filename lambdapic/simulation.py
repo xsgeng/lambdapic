@@ -9,12 +9,12 @@ from libpic.maxwell.solver import MaxwellSolver2d
 from libpic.patch.patch import Patch2D, Patches
 from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from libpic.sort.particle_sort import ParticleSort2D
+from libpic.species import Species
 from libpic.utils.timer import Timer
 from pydantic import BaseModel, Field, validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 
-from libpic.species import Species
 from .callback.callback import SimulationStage, callback
 
 
@@ -87,8 +87,8 @@ class Simulation:
         self.species = []
         
         self.maxwell = MaxwellSolver2d(self.patches)
-        self.interpolator = FieldInterpolation2D(self.patches)
-        self.current_depositor = CurrentDeposition2D(self.patches)
+        self.interpolator = None
+        self.current_depositor = None
         
         self.itime = 0
         
@@ -156,7 +156,11 @@ class Simulation:
                 self.patches.add_species(s)
             else:
                 raise TypeError("`species` must be a sequence of Species objects")
+        self.patches.fill_particles()
+        self.patches.update_lists()
 
+        self.interpolator = FieldInterpolation2D(self.patches)
+        self.current_depositor = CurrentDeposition2D(self.patches)
 
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
@@ -164,12 +168,6 @@ class Simulation:
                 self.pusher.append(BorisPusher(self.patches, ispec))
             elif s.pusher == "photon":
                 self.pusher.append(PhotonPusher(self.patches, ispec))
-            
-        self.patches.fill_particles()
-        self.patches.update_lists()
-
-        self.interpolator.generate_particle_lists()
-        self.current_depositor.generate_particle_lists()
 
 
     def maxwell_stage(self):
