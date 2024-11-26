@@ -8,9 +8,11 @@ class SimulationStage(str, Enum):
     MAXWELL_FIRST = "maxwell first"
     PUSH_POSITION_FIRST = "push position first"
     INTERPOLATOR = "interpolator"
+    QED = "qed"
     PUSH_MOMENTUM = "push momentum"
     PUSH_POSITION_SECOND = "push position second"
     CURRENT_DEPOSITION = "current deposition"
+    QED_CREATE_PARTICLEs = "qed create particles"
     MAXWELL_SECOND = "maxwell second"
 
     @classmethod

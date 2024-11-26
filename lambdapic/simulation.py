@@ -8,6 +8,7 @@ from libpic.interpolation.field_interpolation import FieldInterpolation2D
 from libpic.maxwell.solver import MaxwellSolver2d
 from libpic.patch.patch import Patch2D, Patches
 from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
+from libpic.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from libpic.sort.particle_sort import ParticleSort2D
 from libpic.species import Species
 from libpic.utils.timer import Timer
@@ -169,12 +170,56 @@ class Simulation:
             elif s.pusher == "photon":
                 self.pusher.append(PhotonPusher(self.patches, ispec))
 
+        self.radiation: list[RadiationBase] = []
+        for ispec, s in enumerate(self.patches.species):
+            if not hasattr(s, "radiation"):
+                self.radiation.append(None)
+                continue
+            if s.radiation == "photons":
+                self.radiation.append(NonlinearComptonLCFA(self.patches, ispec))
+            elif s.radiation is None:
+                self.radiation.append(None)
+            else:
+                raise ValueError(f"Unknown radiation model: {s.radiation}")
 
     def maxwell_stage(self):
         self.maxwell.update_efield(0.5*self.dt)
         self.patches.sync_guard_fields()
         self.maxwell.update_bfield(0.5*self.dt)
         self.patches.sync_guard_fields()
+
+    def generate_lists(self):
+        self.patches.update_lists()
+        for p in self.pusher:
+            p.generate_particle_lists()
+        for r in self.radiation:
+            if r is not None:
+                r.generate_particle_lists()
+        self.interpolator.generate_particle_lists()
+        self.current_depositor.generate_particle_lists()
+
+    def update_lists(self):
+        for ispec, s in enumerate(self.patches.species):
+            for ipatch, p in enumerate(self.patches):
+                if p.particles[ispec].extended:
+                    self.current_depositor.update_particle_lists(ipatch, ispec)
+                    self.interpolator.update_particle_lists(ipatch, ispec)
+                    self.pusher[ispec].update_particle_lists(ipatch)
+        for r in self.radiation:
+            if r is None:
+                continue
+            for ispec in range(len(self.patches.species)):
+                if ispec not in [r.ispec, r.photon_ispec]:
+                    continue
+                for ipatch, p in enumerate(self.patches):
+                    if p.particles[ispec].extended:
+                        r.update_particle_lists(ipatch)
+
+        for ispec, s in enumerate(self.patches.species):
+            for ipatch, p in enumerate(self.patches):
+                p.particles[ispec].extended = False
+                    
+                    
 
     def run(self, nsteps: int, callbacks: Sequence[Callable] = None):
         stage_callbacks = SimulationCallbacks(callbacks, self)
@@ -199,10 +244,17 @@ class Simulation:
                 
                 stage_callbacks.run('push position first')
 
+                if self.interpolator:
+                    with Timer(f'Interpolation for {ispec} species'):
+                        self.interpolator(ispec)
+                    stage_callbacks.run('interpolator')
 
-                with Timer(f'Interpolation for {ispec} species'):
-                    self.interpolator(ispec)
-                stage_callbacks.run('interpolator')
+                if self.radiation[ispec] is not None:
+                    with Timer(f'chi for {self.species[ispec].name} species'):
+                        self.radiation[ispec].update_chi()
+                        self.radiation[ispec].event(dt=self.dt)
+                        self.radiation[ispec].reaction()
+                stage_callbacks.run('qed')
                 
                 # momentum from t to t+dt
                 with Timer(f"Pushing {ispec} species"):
@@ -214,29 +266,36 @@ class Simulation:
                     self.pusher[ispec].push_position(0.5*self.dt)
                 stage_callbacks.run('push position second')
                     
-                
-                with Timer(f"Current deposition for {ispec} species"):
-                    self.current_depositor(ispec, self.dt)
+                if self.current_depositor:
+                    with Timer(f"Current deposition for {ispec} species"):
+                        self.current_depositor(ispec, self.dt)
                     
-                with Timer("sync_currents"):
-                    self.patches.sync_currents()
+                    with Timer("sync_currents"):
+                        self.patches.sync_currents()
                     
-                stage_callbacks.run('current deposition')
+                    stage_callbacks.run('current deposition')
 
             # set ispec to None out of species loop
             self.ispec = None
             
+            # create photons after particle loop
+            # TODO: the position and momentum of ele are pushed
+            # before photons are created, so the photons are created
+            # at t+dt. It will be fixed later.
+            for ispec, s in enumerate(self.patches.species):
+                with Timer(f'create photons for {ispec} species'):
+                    if self.radiation[ispec] is not None:
+                        # creating photons involves two species
+                        # be careful updating the lists
+                        self.radiation[ispec].create_particles()
+
             with Timer("sync_particles"):
                 self.patches.sync_particles()
-                    
+
             with Timer("Updating lists"):
-                for ispec, s in enumerate(self.patches.species):
-                    for ipatch, p in enumerate(self.patches):
-                        if p.particles[ispec].extended:
-                            self.current_depositor.update_particle_lists(ipatch, ispec)
-                            self.interpolator.update_particle_lists(ipatch, ispec)
-                            self.pusher[ispec].update_particle_lists(ipatch)
-                            p.particles[ispec].extended = False
+                self.update_lists()
+
+            stage_callbacks.run("qed create particles")
 
             with Timer('Maxwell'):
                 # EM from t to t+0.5dt
