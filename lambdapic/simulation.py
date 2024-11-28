@@ -9,6 +9,7 @@ from libpic.maxwell.solver import MaxwellSolver2d
 from libpic.patch.patch import Patch2D, Patches
 from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from libpic.qed.radiation import NonlinearComptonLCFA, RadiationBase
+from libpic.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from libpic.sort.particle_sort import ParticleSort2D
 from libpic.species import Species
 from libpic.utils.timer import Timer
@@ -181,6 +182,14 @@ class Simulation:
                 self.radiation.append(None)
             else:
                 raise ValueError(f"Unknown radiation model: {s.radiation}")
+            
+        self.pairproduction: list[PairProductionBase] = []
+        for ispec, s in enumerate(self.patches.species):
+            if hasattr(s, "electron") and hasattr(s, "positron"):
+                if s.electron is not None and s.positron is not None:
+                    self.pairproduction.append(NonlinearPairProductionLCFA(self.patches, ispec))
+                    continue
+            self.pairproduction.append(None)
 
     def maxwell_stage(self):
         self.maxwell.update_efield(0.5*self.dt)
@@ -214,6 +223,16 @@ class Simulation:
                 for ipatch, p in enumerate(self.patches):
                     if p.particles[ispec].extended:
                         r.update_particle_lists(ipatch)
+        
+        for pp in self.pairproduction:
+            if pp is None:
+                continue
+            for ispec in range(len(self.patches.species)):
+                if ispec not in [pp.ispec, pp.electron_ispec, pp.positron_ispec]:
+                    continue
+                for ipatch, p in enumerate(self.patches):
+                    if p.particles[ispec].extended:
+                        pp.update_particle_lists(ipatch)
 
         for ispec, s in enumerate(self.patches.species):
             for ipatch, p in enumerate(self.patches):
@@ -250,10 +269,16 @@ class Simulation:
                     stage_callbacks.run('interpolator')
 
                 if self.radiation[ispec] is not None:
-                    with Timer(f'chi for {self.species[ispec].name} species'):
+                    with Timer(f'radiation for {self.species[ispec].name} species'):
                         self.radiation[ispec].update_chi()
                         self.radiation[ispec].event(dt=self.dt)
-                        self.radiation[ispec].reaction()
+                        
+
+                if self.pairproduction[ispec] is not None:
+                    with Timer(f'pairproduction for {self.species[ispec].name} species'):
+                        self.pairproduction[ispec].update_chi()
+                        self.pairproduction[ispec].event(dt=self.dt)
+                        
                 stage_callbacks.run('qed')
                 
                 # momentum from t to t+dt
@@ -287,7 +312,14 @@ class Simulation:
                     if self.radiation[ispec] is not None:
                         # creating photons involves two species
                         # be careful updating the lists
+                        self.radiation[ispec]._update_particle_lists()
                         self.radiation[ispec].create_particles()
+                        self.radiation[ispec].reaction()
+                    if self.pairproduction[ispec] is not None:
+                        self.pairproduction[ispec]._update_particle_lists()
+                        self.pairproduction[ispec].create_particles()
+                        self.pairproduction[ispec].reaction()
+
 
             with Timer("sync_particles"):
                 self.patches.sync_particles()
