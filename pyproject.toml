@@ -9,6 +9,7 @@ dependencies = [
     "tqdm",
     "loguru",
     "deprecated",
+    "mpi4py",
     "h5py"
 ]
 requires-python = ">=3.10"

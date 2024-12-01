@@ -14,9 +14,11 @@ def get_fields(sim: Simulation, fields=[]) -> list[np.ndarray]:
     patches = sim.patches
     nx_per_patch = sim.nx_per_patch
     ny_per_patch = sim.ny_per_patch
+    nx_per_rank = sim.npatch_x_per_rank * nx_per_patch
+    ny_per_rank = sim.npatch_y_per_rank * ny_per_patch
     n_guard = sim.n_guard
     for field in fields:
-        field_ = np.zeros((sim.nx, sim.ny))
+        field_ = np.zeros((nx_per_rank, ny_per_rank))
         for ipatch, p in enumerate(patches):
             s = np.s_[p.ipatch_x*nx_per_patch:p.ipatch_x*nx_per_patch+nx_per_patch,\
                         p.ipatch_y*ny_per_patch:p.ipatch_y*ny_per_patch+ny_per_patch]
@@ -32,12 +34,15 @@ class ExtractSpeciesDensity:
         self.species = species
         self.every = every
         self.ispec_target = sim.species.index(species)
-        self.density = np.zeros((sim.nx, sim.ny))
         
         self.patches = sim.patches
         self.nx_per_patch = sim.nx_per_patch
         self.ny_per_patch = sim.ny_per_patch
+        self.nx_per_rank = sim.npatch_x_per_rank * self.nx_per_patch
+        self.ny_per_rank = sim.npatch_y_per_rank * self.ny_per_patch
         self.n_guard = sim.n_guard
+
+        self.density = np.zeros((self.nx_per_rank, self.ny_per_rank))
 
     def _get_patch_slice(self, patch):
         return np.s_[

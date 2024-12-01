@@ -87,14 +87,7 @@ class Patch:
     zaxis: np.ndarray
 
     neighbor_index: np.ndarray[int]
-
-    # MPI neighbors
-    xmin_neighbor_rank: int
-    xmax_neighbor_rank: int
-    ymin_neighbor_rank: int
-    ymax_neighbor_rank: int
-    zmin_neighbor_rank: int
-    zmax_neighbor_rank: int
+    neighbor_rank: np.ndarray[int]
 
     fields: Fields
     def __init__(self) -> None:
@@ -216,15 +209,9 @@ class Patch2D(Patch):
         for neighbor in kwargs.keys():
             self.neighbor_index[Boundary2D[neighbor.upper()]] = kwargs[neighbor]
 
-    def set_neighbor_rank(self, *, xmin : int=-1, xmax : int=-1, ymin : int=-1, ymax : int=-1):
-        if xmin >= 0:
-            self.xmin_neighbor_rank = xmin
-        if xmax >= 0:
-            self.xmax_neighbor_rank = xmax
-        if ymin >= 0:
-            self.ymin_neighbor_rank = ymin
-        if ymax >= 0:
-            self.ymax_neighbor_rank = ymax
+    def set_neighbor_rank(self, **kwargs):
+        for neighbor in kwargs.keys():
+            self.neighbor_rank[Boundary2D[neighbor.upper()]] = kwargs[neighbor]
 
     def add_pml_boundary(self, pml: PML) -> None:
         assert (self.nx >= pml.thickness) and (self.ny >= pml.thickness)
@@ -344,15 +331,15 @@ class Patches:
         return iter(self.patches)
 
     def append(self, patch: Patch):
-        if self.patches:
-            assert self.patches[-1].index == patch.index - 1
+        # if self.patches:
+        #     assert self.patches[-1].index == patch.index - 1
         self.patches.append(patch)
         self.indexs.append(patch.index)
         self.npatches += 1
 
     def prepend(self, patch: Patch):
-        if self.patches:
-            assert self.patches[0].index == patch.index + 1
+        # if self.patches:
+        #     assert self.patches[0].index == patch.index + 1
         self.patches.insert(0, patch)
         self.indexs.insert(0, patch.index)
         self.npatches += 1

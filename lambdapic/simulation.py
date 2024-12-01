@@ -30,6 +30,8 @@ class SimulationConfig(BaseModel):
     dt_cfl: float = Field(0.95, gt=0, le=1, description="CFL condition factor")
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
+    nprocx: int = Field(1, gt=0, description="Number of MPI processes in x direction")
+    nprocy: int = Field(1, gt=0, description="Number of MPI processes in y direction")
 
     @model_validator(mode='after')
     def validate_nx_divisible(self):
@@ -67,6 +69,8 @@ class Simulation:
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         cpml_thickness: int = 6,
+        nprocx=1,
+        nprocy=1,
     ) -> None:
         config = SimulationConfig(
             nx=nx,
@@ -96,9 +100,22 @@ class Simulation:
         self.nx_per_patch = self.nx // self.npatch_x
         self.ny_per_patch = self.ny // self.npatch_y
 
+        self.npatch_x_per_rank = self.npatch_x // nprocx
+        self.npatch_y_per_rank = self.npatch_y // nprocy
+
+        self.mpi = MPIManager(
+            nprocx, nprocy, 
+            self.nx_per_patch, self.ny_per_patch, 
+            self.npatch_x_per_rank, self.npatch_y_per_rank, 
+            n_guard,
+            dx, dy
+        )
+
         self.create_patches()
         self.species: list[Species] = []
-        
+
+        self.mpi.set_patches(self.patches)
+
         self.maxwell = MaxwellSolver2D(self.patches)
         self.interpolator = None
         self.current_depositor = None
@@ -112,16 +129,18 @@ class Simulation:
     
     def create_patches(self):
         self.patches = Patches(dimension=2)
-        for j in range(self.npatch_y):
-            for i in range(self.npatch_x):
-                index = i + j * self.npatch_x
+        for j in range(self.npatch_y_per_rank):
+            for i in range(self.npatch_x_per_rank):
+                index = i + j * self.npatch_x_per_rank
+                x0 = i * self.Lx / self.npatch_x + self.mpi.rankx * self.Lx / self.mpi.nprocx
+                y0 = j * self.Ly / self.npatch_y + self.mpi.ranky * self.Ly / self.mpi.nprocy
                 p = Patch2D(
-                    rank=0, 
+                    rank=self.mpi.rank, 
                     index=index, 
                     ipatch_x=i, 
                     ipatch_y=j, 
-                    x0=i*self.Lx/self.npatch_x, 
-                    y0=j*self.Ly/self.npatch_y,
+                    x0=x0, 
+                    y0=y0,
                     nx=self.nx_per_patch, 
                     ny=self.ny_per_patch, 
                     dx=self.dx,
@@ -132,8 +151,8 @@ class Simulation:
                     ny=self.ny_per_patch, 
                     dx=self.dx,
                     dy=self.dy, 
-                    x0=i*self.Lx/self.npatch_x, 
-                    y0=j*self.Ly/self.npatch_y, 
+                    x0=x0, 
+                    y0=y0, 
                     n_guard=self.n_guard
                 )
                 
@@ -141,13 +160,41 @@ class Simulation:
 
                 if i == 0:
                     p.add_pml_boundary(PMLXmin(f, thickness=self.cpml_thickness))
-                if i == self.npatch_x - 1:
+                if i == self.npatch_x_per_rank - 1 and self.mpi.rankx == self.mpi.nprocx - 1:
                     p.add_pml_boundary(PMLXmax(f, thickness=self.cpml_thickness))
-                if j == 0:
+                if j == 0 and self.mpi.ranky == 0:
                     p.add_pml_boundary(PMLYmin(f, thickness=self.cpml_thickness))
-                if j == self.npatch_y - 1:
+                if j == self.npatch_y_per_rank - 1 and self.mpi.ranky == self.mpi.nprocy - 1:
                     p.add_pml_boundary(PMLYmax(f, thickness=self.cpml_thickness))
 
+                # mpi neighbors
+                rankx = self.mpi.rankx
+                ranky = self.mpi.ranky
+                # xmin
+                if rankx > 0 and i == 0:
+                    p.set_neighbor_rank(xmin=self.mpi.rank_from_rankxy(rankx - 1, ranky))
+                # xmax
+                if rankx < self.mpi.nprocx - 1 and i == self.npatch_x_per_rank - 1:
+                    p.set_neighbor_rank(xmax=self.mpi.rank_from_rankxy(rankx + 1, ranky))
+                # ymin
+                if ranky > 0 and j == 0:
+                    p.set_neighbor_rank(ymin=self.mpi.rank_from_rankxy(rankx, ranky - 1))
+                # ymax
+                if ranky < self.mpi.nprocy - 1 and j == self.npatch_y_per_rank - 1:
+                    p.set_neighbor_rank(ymax=self.mpi.rank_from_rankxy(rankx, ranky + 1))
+                # xminymin
+                if rankx > 0 and ranky > 0 and i == 0 and j == 0:
+                    p.set_neighbor_rank(xminymin=self.mpi.rank_from_rankxy(rankx - 1, ranky - 1))
+                # xminymax
+                if rankx > 0 and ranky < self.mpi.nprocy - 1 and i == 0 and j == self.npatch_y_per_rank - 1:
+                    p.set_neighbor_rank(xminymax=self.mpi.rank_from_rankxy(rankx - 1, ranky + 1))
+                # xmaxymin
+                if rankx < self.mpi.nprocx - 1 and ranky > 0 and i == self.npatch_x_per_rank - 1 and j == 0:
+                    p.set_neighbor_rank(xmaxymin=self.mpi.rank_from_rankxy(rankx + 1, ranky - 1))
+                # xmaxymax
+                if rankx < self.mpi.nprocx - 1 and ranky < self.mpi.nprocy - 1 and i == self.npatch_x_per_rank - 1 and j == self.npatch_y_per_rank - 1:
+                    p.set_neighbor_rank(xmaxymax=self.mpi.rank_from_rankxy(rankx + 1, ranky + 1))
+                
                 self.patches.append(p)
         self.patches.init_rect_neighbor_index_2d(npatch_x=self.npatch_x, npatch_y=self.npatch_y)
         self.patches.update_lists()
@@ -187,6 +234,7 @@ class Simulation:
 
         self._set_interpolator()
         self._set_current_depositor()
+        self.mpi.initialize_particle_buffers()
 
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
@@ -220,10 +268,12 @@ class Simulation:
             self.maxwell.update_efield(0.5*self.dt)
         with Timer('sync E field'):
             self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+            self.mpi.exchange_boundary_fields(self.patches)
         with Timer('update B field'):
             self.maxwell.update_bfield(0.5*self.dt)
         with Timer('sync B field'):
             self.patches.sync_guard_fields(['bx', 'by', 'bz'])
+            self.mpi.exchange_boundary_fields(self.patches)
 
     def generate_lists(self):
         self.patches.update_lists()
@@ -354,6 +404,7 @@ class Simulation:
                         
                 with Timer("sync_currents"):
                     self.patches.sync_currents()
+                    self.mpi.sync_currents(['rho', 'jx', 'jy', 'jz'])
                     
                 stage_callbacks.run('current deposition')
 
@@ -377,6 +428,8 @@ class Simulation:
                         self.pairproduction[ispec].create_particles()
                         self.pairproduction[ispec].reaction()
 
+            for ispec, s in enumerate(self.patches.species):
+                self.mpi.exchange_boundary_particles(ispec)
 
             with Timer("sync_particles"):
                 self.patches.sync_particles()
