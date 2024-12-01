@@ -254,7 +254,8 @@ class Simulation:
             stage_callbacks.run('maxwell first')
                 
 
-            self.current_depositor.reset()
+            if self.current_depositor:
+                self.current_depositor.reset()
             for ispec, s in enumerate(self.patches.species):
                 self.ispec = ispec
                 # position from t to t+0.5dt
