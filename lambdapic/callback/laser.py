@@ -127,13 +127,11 @@ class GaussianLaser:
     """
     stage = "start"
     
-    def __init__(self, sim: Simulation, a0: float, l0: float, w0: float, ctau: float, 
-                 polarization: str = 'z', focus_position: float = 0.0):
+    def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
+                 x0: float=None, tstop: float=None, pol_angle: float = 0.0, focus_position: float = 0.0, side: str = "xmin"):
         """
         Parameters:
         -----------
-        sim : Simulation
-            Simulation object
         a0 : float
             Normalized vector potential amplitude
         l0 : float
@@ -142,37 +140,32 @@ class GaussianLaser:
             Waist size at focus
         ctau : float
             Pulse duration (c*tau)
-        polarization : str
-            Laser polarization ('z' or 'y')
+        pol_angle : float
+            Polarization angle in radians (default: 0.0 for z-polarization)
         focus_position : float
             Position of the laser focus relative to the left boundary
+        side : str
+            Injection boundary ('xmin' or 'xmax')
         """
-        self.sim = sim
+        # Parameter validation
+        if any(p <= 0 for p in [a0, l0, w0, ctau]):
+            raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
+            
         self.a0 = a0
         self.l0 = l0
         self.omega0 = 2 * pi * c / l0
         self.k0 = self.omega0 / c
         self.w0 = w0
         self.ctau = ctau
+        self.x0 = 3*ctau if x0 is None else x0
+        self.tstop = 6*ctau if tstop is None else tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
-        self.polarization = polarization
+        self.pol_angle = pol_angle
         self.focus_position = focus_position
+        self.side = side
         
         # Derived parameters
         self.zR = pi * w0**2 / l0  # Rayleigh length
-        
-        # Pre-calculate fixed parameters at the boundary
-        x_rel = self.sim.cpml_thickness * self.sim.dx
-        self.boundary_w, self.boundary_R, self.boundary_psi = self.gaussian_beam_params(x_rel)
-        self.boundary_x_rel = x_rel
-        
-        # Pre-calculate transverse coordinates and spatial amplitude profile
-        for p in self.sim.patches:
-            if p.ipatch_x == 0:  # Only for leftmost patch
-                r = p.yaxis - self.sim.dy/2 - self.sim.Ly/2
-                self.boundary_amp = self.E0 * (self.w0/self.boundary_w) * np.exp(-r**2/self.boundary_w**2)
-                self.boundary_phase_curv = self.k0 * r**2/(2*self.boundary_R)
-                break
         
     def gaussian_beam_params(self, z):
         """Calculate Gaussian beam parameters at position z"""
@@ -190,28 +183,59 @@ class GaussianLaser:
         
         return w, R, psi
     
-    def __call__(self):
-        time = self.sim.itime * self.sim.dt
-        if c*time >= 2*self.ctau:  # Allow for 2*ctau to ensure smooth falloff
+    def __call__(self, sim: Simulation):
+        """
+        Inject the Gaussian laser pulse into the simulation.
+        """
+        time = sim.itime * sim.dt
+        if c*time >= self.tstop:
             return
             
         # Temporal envelope (Gaussian)
-        tenv = np.exp(-(c*time - self.ctau)**2 / (2*(self.ctau/4)**2))
+        tprof = np.exp(-(c*time - self.x0)**2 / self.ctau**2)
         
-        for p in self.sim.patches:
-            if p.ipatch_x > 0:
-                continue
+        # Calculate boundary parameters
+        x_rel = sim.cpml_thickness * sim.dx
+        boundary_w, boundary_R, boundary_psi = self.gaussian_beam_params(x_rel)
+        
+        if self.side == "xmin":
+            for p in sim.patches:
+                if p.ipatch_x > 0:
+                    continue
+                    
+                f = p.fields
+                r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
                 
-            f = p.fields
-            
-            # Phase terms (only time-dependent parts need to be calculated here)
-            phase = (self.omega0 * time -                # Oscillation
-                    self.k0 * self.boundary_x_rel -      # Propagation
-                    self.boundary_phase_curv -           # Curvature (pre-calculated)
-                    self.boundary_psi)                   # Gouy phase (pre-calculated)
-            
-            # Set fields based on polarization using pre-calculated amplitude
-            if self.polarization == 'z':
-                f.bz[self.sim.cpml_thickness, :] += self.boundary_amp/c * np.sin(phase) * tenv
-            else:  # y-polarization
-                f.by[self.sim.cpml_thickness, :] += self.boundary_amp/c * np.sin(phase) * tenv
+                # Calculate amplitude and phase
+                amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
+                phase_curv = self.k0 * r**2/(2*boundary_R)
+                phase = (self.omega0 * time -          # Oscillation
+                        self.k0 * x_rel -             # Propagation
+                        phase_curv -                  # Curvature
+                        boundary_psi)                 # Gouy phase
+                
+                # Set fields based on polarization
+                field = amp/c * np.sin(phase) * tprof
+                f.by[sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
+                f.bz[sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
+                    
+        elif self.side == "xmax":
+            for p in sim.patches:
+                if p.ipatch_x < sim.npatch_x - 1:
+                    continue
+                    
+                f = p.fields
+                r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
+                
+                # Calculate amplitude and phase
+                amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
+                phase_curv = self.k0 * r**2/(2*boundary_R)
+                phase = (self.omega0 * time -          # Oscillation
+                        self.k0 * x_rel -             # Propagation
+                        phase_curv -                  # Curvature
+                        boundary_psi)                 # Gouy phase
+                
+                # Set fields based on polarization
+                field = amp/c * np.sin(phase) * tprof
+                f.by[sim.nx_per_patch - sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
+                f.bz[sim.nx_per_patch - sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
