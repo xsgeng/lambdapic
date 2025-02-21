@@ -25,7 +25,7 @@ t0 = l0 / c
 omega0 = 2 * pi * c / l0
 nc = epsilon_0 * m_e * omega0**2 / e**2
 
-nx = 128
+nx = 512
 ny = 512
 dx = l0 / 20
 dy = l0 / 20
@@ -37,7 +37,7 @@ Ly = ny * dy
 def density(n0):
     def _density(x, y):
         ne = 0.0
-        if x > 1*um and x < Lx - 1*um:
+        if abs(x - Lx/2) < 0.05*um:
             ne = n0
         return ne
     return _density
@@ -46,14 +46,14 @@ laser1 = SimpleLaser(
     a0=1000,
     w0=2e-6,
     l0=0.8e-6,
-    ctau=5e-6,
+    ctau=10e-6,
     side="xmin"
 )
 laser2 = SimpleLaser(
     a0=1000,
     w0=2e-6,
     l0=0.8e-6,
-    ctau=5e-6,
+    ctau=10e-6,
     side="xmax"
 )
 
@@ -63,20 +63,18 @@ if __name__ == "__main__":
         ny=ny,
         dx=dx,
         dy=dy,
-        npatch_x=16,
-        npatch_y=16,
+        npatch_x=32,
+        npatch_y=32,
     )
 
-    ele = Electron(density=density(5*nc), ppc=10, radiation="photons")
+    ele = Electron(density=density(0.1*nc), ppc=10, radiation="photons")
     pho = Photon()
     pos = Positron()
 
     ele.set_photon(pho)
     pho.set_bw_pair(electron=ele, positron=pos)
 
-    proton = Proton(density=density(5*nc), ppc=10)
-
-    sim.add_species([ele, proton, pho, pos])
+    sim.add_species([ele, pho, pos])
 
     store_ne = ExtractSpeciesDensity(sim, ele, every=100)
 
@@ -122,7 +120,7 @@ if __name__ == "__main__":
             y_pho = np.concatenate(y_pho)
             ax.hist2d(x_pho, y_pho, bins=128)
 
-            figdir = Path('laser-target')
+            figdir = Path('cascade')
             if not figdir.exists():
                 figdir.mkdir()
 
@@ -190,7 +188,7 @@ if __name__ == "__main__":
         sim.update_lists()
         sim.patches.update_lists()
     
-    sim.run(1001, callbacks=[
+    sim.run(1501, callbacks=[
             tic,
             toc,
             laser1, 
@@ -198,7 +196,7 @@ if __name__ == "__main__":
             store_ne, 
             npho,
             plot_results,
-            prune,
+            # prune,
             # enable_radiation
         ]
     )

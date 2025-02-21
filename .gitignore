@@ -26,3 +26,4 @@ venv/
 
 # hdf5
 *.h5
+.aider*

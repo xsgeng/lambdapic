@@ -8,7 +8,7 @@ from matplotlib.colors import LinearSegmentedColormap as _LinearSegmentedColorma
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
 from lambdapic import Electron, Proton, Species, Simulation, callback
-from lambdapic.callback.laser import SimpleLaser
+from lambdapic.callback.laser import SimpleLaser, GaussianLaser
 from lambdapic.callback.utils import ExtractSpeciesDensity, get_fields
 
 logger.remove()
@@ -31,16 +31,17 @@ Ly = ny * dy
 def density(n0):
     def _density(x, y):
         ne = 0.0
-        if x > 1*um and x < 2*um:
+        if x > Lx/2 and x < Lx/2+1*um:
             ne = n0
         return ne
     return _density
 
-laser = SimpleLaser(
+laser = GaussianLaser(
     a0=10,
     w0=2e-6,
     l0=0.8e-6,
-    ctau=5e-6
+    ctau=5e-6,
+    focus_position=Lx/2,
 )
 
 if __name__ == "__main__":
