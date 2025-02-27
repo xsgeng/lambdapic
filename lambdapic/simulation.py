@@ -7,7 +7,7 @@ from libpic.fields import Fields2D
 from libpic.interpolation.field_interpolation import FieldInterpolation2D
 from libpic.maxwell.solver import MaxwellSolver2d
 from libpic.patch.patch import Patch2D, Patches
-from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
+from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase, UnifiedBorisPusher
 from libpic.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from libpic.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from libpic.sort.particle_sort import ParticleSort2D
@@ -242,6 +242,23 @@ class Simulation:
 
     def run(self, nsteps: int, callbacks: Sequence[Callable] = None):
         stage_callbacks = SimulationCallbacks(callbacks, self)
+        # check unified pusher
+        stages_in_pusher = {
+            "push position first",
+            "interpolator",  
+            "qed",     
+            "push momentum", 
+            "push position second",
+        }
+        use_unified_pusher = [False] * len(self.patches.species)
+        for ispec, pusher in enumerate(self.pusher):
+            if isinstance(pusher, BorisPusher) and \
+                not self.radiation[ispec] and \
+                not self.pairproduction[ispec] and \
+                not stages_in_pusher.intersection([stage for stage, cb in stage_callbacks.stage_callbacks.items() if cb]):
+                use_unified_pusher[ispec] = True
+
+            
 
         for self.istep in trange(nsteps):
             
@@ -258,48 +275,53 @@ class Simulation:
                 self.current_depositor.reset()
             for ispec, s in enumerate(self.patches.species):
                 self.ispec = ispec
-                # position from t to t+0.5dt
-                with Timer('push_position'):
-                    self.pusher[ispec].push_position(0.5*self.dt)
-                
-                stage_callbacks.run('push position first')
 
-                if self.interpolator:
-                    with Timer(f'Interpolation for {ispec} species'):
-                        self.interpolator(ispec)
-                    stage_callbacks.run('interpolator')
+                if use_unified_pusher[ispec]:
+                    with Timer(f"unified pusher for species {ispec}"):
+                        self.pusher[ispec](self.dt, unified=True)
+                else:
+                    # position from t to t+0.5dt
+                    with Timer('push_position'):
+                        self.pusher[ispec].push_position(0.5*self.dt)
+                    
+                    stage_callbacks.run('push position first')
 
-                if self.radiation[ispec] is not None:
-                    with Timer(f'radiation for {self.species[ispec].name} species'):
-                        self.radiation[ispec].update_chi()
-                        self.radiation[ispec].event(dt=self.dt)
+                    if self.interpolator:
+                        with Timer(f'Interpolation for {ispec} species'):
+                            self.interpolator(ispec)
+                        stage_callbacks.run('interpolator')
+
+                    if self.radiation[ispec] is not None:
+                        with Timer(f'radiation for {self.species[ispec].name} species'):
+                            self.radiation[ispec].update_chi()
+                            self.radiation[ispec].event(dt=self.dt)
+                            
+
+                    if self.pairproduction[ispec] is not None:
+                        with Timer(f'pairproduction for {self.species[ispec].name} species'):
+                            self.pairproduction[ispec].update_chi()
+                            self.pairproduction[ispec].event(dt=self.dt)
+                            
+                    stage_callbacks.run('qed')
+                    
+                    # momentum from t to t+dt
+                    with Timer(f"Pushing {ispec} species"):
+                        self.pusher[ispec](self.dt)
+                    stage_callbacks.run('push momentum')
+                    
+                    # position from t+0.5t to t+dt, using new momentum
+                    with Timer('push_position'):
+                        self.pusher[ispec].push_position(0.5*self.dt)
+                    stage_callbacks.run('push position second')
                         
-
-                if self.pairproduction[ispec] is not None:
-                    with Timer(f'pairproduction for {self.species[ispec].name} species'):
-                        self.pairproduction[ispec].update_chi()
-                        self.pairproduction[ispec].event(dt=self.dt)
+                    if self.current_depositor:
+                        with Timer(f"Current deposition for {ispec} species"):
+                            self.current_depositor(ispec, self.dt)
                         
-                stage_callbacks.run('qed')
-                
-                # momentum from t to t+dt
-                with Timer(f"Pushing {ispec} species"):
-                    self.pusher[ispec](self.dt)
-                stage_callbacks.run('push momentum')
-                
-                # position from t+0.5t to t+dt, using new momentum
-                with Timer('push_position'):
-                    self.pusher[ispec].push_position(0.5*self.dt)
-                stage_callbacks.run('push position second')
+                with Timer("sync_currents"):
+                    self.patches.sync_currents()
                     
-                if self.current_depositor:
-                    with Timer(f"Current deposition for {ispec} species"):
-                        self.current_depositor(ispec, self.dt)
-                    
-                    with Timer("sync_currents"):
-                        self.patches.sync_currents()
-                    
-                    stage_callbacks.run('current deposition')
+                stage_callbacks.run('current deposition')
 
             # set ispec to None out of species loop
             self.ispec = None
@@ -372,3 +394,12 @@ class SimulationCallbacks:
         """
         for cb in self.stage_callbacks[stage]:
             cb(self.simulation)
+
+    def non_empty_stages(self):
+        """
+        Return a list of stages that have at least one callback registered.
+        
+        Returns:
+            List of stages with callbacks
+        """
+        return [stage for stage, callbacks in self.stage_callbacks.items() if callbacks]
