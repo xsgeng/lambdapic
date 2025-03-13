@@ -3,7 +3,7 @@ name = "lambdapic"
 description = "A Particle-in-Cell framework with dynamic behavior modification through callbacks"
 version = "0.0.0"
 dependencies = [
-    "libpic>=0.0.11",
+    "libpic>=0.0.14",
     "pydantic",
     "tqdm",
     "scipy",

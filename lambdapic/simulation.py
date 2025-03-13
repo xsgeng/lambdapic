@@ -136,6 +136,15 @@ class Simulation:
                     p.set_neighbor_index(ymin=i + (j - 1) * self.npatch_x)
                 if j < self.npatch_y - 1:
                     p.set_neighbor_index(ymax=i + (j + 1) * self.npatch_x)
+                # Corner neighbors
+                if i > 0 and j > 0:
+                    p.set_neighbor_index(xminymin=(i - 1) + (j - 1) * self.npatch_x)
+                if i < self.npatch_x - 1 and j > 0:
+                    p.set_neighbor_index(xmaxymin=(i + 1) + (j - 1) * self.npatch_x)
+                if i > 0 and j < self.npatch_y - 1:
+                    p.set_neighbor_index(xminymax=(i - 1) + (j + 1) * self.npatch_x)
+                if i < self.npatch_x - 1 and j < self.npatch_y - 1:
+                    p.set_neighbor_index(xmaxymax=(i + 1) + (j + 1) * self.npatch_x)
 
                 if i == 0:
                     p.add_pml_boundary(PMLXmin(f, thickness=self.cpml_thickness))
