@@ -1,13 +1,13 @@
 from collections.abc import Callable, Sequence
 from typing import Optional
 
-from libpic.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin
-from libpic.current.deposition import CurrentDeposition2D
-from libpic.fields import Fields2D
-from libpic.interpolation.field_interpolation import FieldInterpolation2D
-from libpic.maxwell.solver import MaxwellSolver2d
-from libpic.patch.patch import Patch2D, Patches
-from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase, UnifiedBorisPusher
+from libpic.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
+from libpic.current.deposition import CurrentDeposition2D, CurrentDeposition3D
+from libpic.fields import Fields2D, Fields3D
+from libpic.interpolation.field_interpolation import FieldInterpolation2D, FieldInterpolation3D
+from libpic.maxwell.solver import MaxwellSolver2D, MaxwellSolver3D
+from libpic.patch.patch import Patch2D, Patch3D, Patches
+from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from libpic.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from libpic.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from libpic.sort.particle_sort import ParticleSort2D
@@ -41,6 +41,17 @@ class SimulationConfig(BaseModel):
     def validate_ny_divisible(cls, v, values):
         if 'npatch_y' in values and v % values['npatch_y'] != 0:
             raise ValueError(f'ny ({v}) must be divisible by npatch_y ({values["npatch_y"]})')
+        return v
+
+class Simulation3DConfig(SimulationConfig):
+    nz: int = Field(..., gt=0, description="Number of cells in z direction")
+    dz: float = Field(..., gt=0, description="Cell size in z direction")
+    npatch_z: int = Field(..., gt=0, description="Number of patches in z direction")
+
+    @validator('nz')
+    def validate_nz_divisible(cls, v, values):
+        if 'npatch_z' in values and v % values['npatch_z'] != 0:
+            raise ValueError(f'nz ({v}) must be divisible by npatch_z ({values["npatch_z"]})')
         return v
 
 
@@ -88,7 +99,7 @@ class Simulation:
         self.create_patches()
         self.species = []
         
-        self.maxwell = MaxwellSolver2d(self.patches)
+        self.maxwell = MaxwellSolver2D(self.patches)
         self.interpolator = None
         self.current_depositor = None
         
@@ -159,6 +170,11 @@ class Simulation:
 
         self.patches.update_lists()
 
+    def _set_interpolator(self):
+        self.interpolator = FieldInterpolation2D(self.patches)
+
+    def _set_current_depositor(self):
+        self.current_depositor = CurrentDeposition2D(self.patches)
 
     def add_species(self, species: Sequence[Species]):
         self.species.extend(species)
@@ -170,8 +186,8 @@ class Simulation:
         self.patches.fill_particles()
         self.patches.update_lists()
 
-        self.interpolator = FieldInterpolation2D(self.patches)
-        self.current_depositor = CurrentDeposition2D(self.patches)
+        self._set_interpolator()
+        self._set_current_depositor()
 
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
@@ -201,10 +217,14 @@ class Simulation:
             self.pairproduction.append(None)
 
     def maxwell_stage(self):
-        self.maxwell.update_efield(0.5*self.dt)
-        self.patches.sync_guard_fields()
-        self.maxwell.update_bfield(0.5*self.dt)
-        self.patches.sync_guard_fields()
+        with Timer('update E field'):
+            self.maxwell.update_efield(0.5*self.dt)
+        with Timer('sync E field'):
+            self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+        with Timer('update B field'):
+            self.maxwell.update_bfield(0.5*self.dt)
+        with Timer('sync B field'):
+            self.patches.sync_guard_fields(['bx', 'by', 'bz'])
 
     def generate_lists(self):
         self.patches.update_lists()
@@ -275,8 +295,7 @@ class Simulation:
             stage_callbacks.run('start')
             
             # EM from t to t+0.5dt
-            with Timer('Maxwell'):
-                self.maxwell_stage()
+            self.maxwell_stage()
             stage_callbacks.run('maxwell first')
                 
 
@@ -361,14 +380,112 @@ class Simulation:
 
             stage_callbacks.run("qed create particles")
 
-            with Timer('Maxwell'):
-                # EM from t to t+0.5dt
-                self.maxwell_stage()
+            # EM from t to t+0.5dt
+            self.maxwell_stage()
             stage_callbacks.run('maxwell second')
         
             self.itime += 1
 
 
+class Simulation3D(Simulation):
+    def __init__(
+        self,
+        nx: int, ny: int, nz: int,
+        dx: float, dy: float, dz: float,
+        npatch_x: int, npatch_y: int, npatch_z: int,
+        dt_cfl: float = 0.95,
+        n_guard: int = 3,
+        cpml_thickness: int = 6,
+    ) -> None:
+        config = Simulation3DConfig(
+            nx=nx, ny=ny, nz=nz,
+            dx=dx, dy=dy, dz=dz,
+            npatch_x=npatch_x, npatch_y=npatch_y, npatch_z=npatch_z,
+            dt_cfl=dt_cfl,
+            n_guard=n_guard,
+            cpml_thickness=cpml_thickness,
+        )
+        
+        self.nx = config.nx
+        self.ny = config.ny
+        self.nz = config.nz
+        self.dx = config.dx
+        self.dy = config.dy
+        self.dz = config.dz
+
+        self.npatch_x = config.npatch_x
+        self.npatch_y = config.npatch_y
+        self.npatch_z = config.npatch_z
+
+        self.dt = config.dt_cfl * (dx**-2 + dy**-2 + dz**-2)**-0.5 / c
+        self.n_guard = config.n_guard
+        self.cpml_thickness = config.cpml_thickness
+
+        self.Lx = self.nx * self.dx
+        self.Ly = self.ny * self.dy
+        self.Lz = self.nz * self.dz
+
+        self.nx_per_patch = self.nx // self.npatch_x
+        self.ny_per_patch = self.ny // self.npatch_y
+        self.nz_per_patch = self.nz // self.npatch_z
+
+        self.create_patches()
+        self.species = []
+        
+        self.maxwell = MaxwellSolver3D(self.patches)
+        self.interpolator = None
+        self.current_depositor = None
+        
+        self.itime = 0
+
+    def create_patches(self):
+        self.patches = Patches(dimension=3)
+        for k in range(self.npatch_z):
+            for j in range(self.npatch_y):
+                for i in range(self.npatch_x):
+                    index = i + j * self.npatch_x + k*self.npatch_x*self.npatch_y
+                    p = Patch3D(
+                        rank=0, index=index, 
+                        ipatch_x=i, ipatch_y=j, ipatch_z=k,
+                        x0=i*self.Lx/self.npatch_x, y0=j*self.Ly/self.npatch_y, z0=k*self.Lz/self.npatch_z,
+                        nx=self.nx_per_patch, ny=self.ny_per_patch, nz=self.nz_per_patch,
+                        dx=self.dx, dy=self.dy, dz=self.dz
+                    )
+                    f = Fields3D(
+                        nx=self.nx_per_patch, ny=self.ny_per_patch, nz=self.nz_per_patch,
+                        dx=self.dx, dy=self.dy, dz=self.dz,
+                        x0=i*self.Lx/self.npatch_x, y0=j*self.Ly/self.npatch_y, z0=k*self.Lz/self.npatch_z,
+                        n_guard=self.n_guard
+                    )
+                    
+                    p.set_fields(f)
+
+                    if i == 0:
+                        p.add_pml_boundary(PMLXmin(f, thickness=self.cpml_thickness))
+                    if i == self.npatch_x - 1:
+                        p.add_pml_boundary(PMLXmax(f, thickness=self.cpml_thickness))
+                    if j == 0:
+                        p.add_pml_boundary(PMLYmin(f, thickness=self.cpml_thickness))
+                    if j == self.npatch_y - 1:
+                        p.add_pml_boundary(PMLYmax(f, thickness=self.cpml_thickness))
+                    if k == 0:
+                        p.add_pml_boundary(PMLZmin(f, thickness=self.cpml_thickness))
+                    if k == self.npatch_z - 1:
+                        p.add_pml_boundary(PMLZmax(f, thickness=self.cpml_thickness))
+
+                    self.patches.append(p)
+
+        self.patches.init_rect_neighbor_index_3d(self.npatch_x, self.npatch_y, self.npatch_z)
+
+        self.patches.update_lists()
+
+
+    def _set_interpolator(self):
+        self.interpolator = FieldInterpolation3D(self.patches)
+
+    def _set_current_depositor(self):
+        self.current_depositor = CurrentDeposition3D(self.patches)
+        
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
     
