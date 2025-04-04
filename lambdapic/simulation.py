@@ -13,7 +13,7 @@ from libpic.qed.pair_production import NonlinearPairProductionLCFA, PairProducti
 from libpic.sort.particle_sort import ParticleSort2D
 from libpic.species import Species
 from libpic.utils.timer import Timer
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 
@@ -31,28 +31,28 @@ class SimulationConfig(BaseModel):
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
 
-    @validator('nx')
-    def validate_nx_divisible(cls, v, values):
-        if 'npatch_x' in values and v % values['npatch_x'] != 0:
-            raise ValueError(f'nx ({v}) must be divisible by npatch_x ({values["npatch_x"]})')
-        return v
+    @model_validator(mode='after')
+    def validate_nx_divisible(self):
+        if self.nx % self.npatch_x != 0:
+            raise ValueError(f'nx ({self.nx}) must be divisible by npatch_x ({self.npatch_x})')
+        return self
 
-    @validator('ny')
-    def validate_ny_divisible(cls, v, values):
-        if 'npatch_y' in values and v % values['npatch_y'] != 0:
-            raise ValueError(f'ny ({v}) must be divisible by npatch_y ({values["npatch_y"]})')
-        return v
+    @model_validator(mode='after')
+    def validate_ny_divisible(self):
+        if self.ny % self.npatch_y != 0:
+            raise ValueError(f'ny ({self.ny}) must be divisible by npatch_y ({self.npatch_y})')
+        return self
 
 class Simulation3DConfig(SimulationConfig):
     nz: int = Field(..., gt=0, description="Number of cells in z direction")
     dz: float = Field(..., gt=0, description="Cell size in z direction")
     npatch_z: int = Field(..., gt=0, description="Number of patches in z direction")
 
-    @validator('nz')
-    def validate_nz_divisible(cls, v, values):
-        if 'npatch_z' in values and v % values['npatch_z'] != 0:
-            raise ValueError(f'nz ({v}) must be divisible by npatch_z ({values["npatch_z"]})')
-        return v
+    @model_validator(mode='after')
+    def validate_nz_divisible(self):
+        if self.nz % self.npatch_z != 0:
+            raise ValueError(f'nz ({self.nz}) must be divisible by npatch_z ({self.npatch_z})')
+        return self
 
 
 class Simulation:
@@ -139,24 +139,6 @@ class Simulation:
                 
                 p.set_fields(f)
 
-                if i > 0:
-                    p.set_neighbor_index(xmin=(i - 1) + j * self.npatch_x)
-                if i < self.npatch_x - 1:
-                    p.set_neighbor_index(xmax=(i + 1) + j * self.npatch_x)
-                if j > 0:
-                    p.set_neighbor_index(ymin=i + (j - 1) * self.npatch_x)
-                if j < self.npatch_y - 1:
-                    p.set_neighbor_index(ymax=i + (j + 1) * self.npatch_x)
-                # Corner neighbors
-                if i > 0 and j > 0:
-                    p.set_neighbor_index(xminymin=(i - 1) + (j - 1) * self.npatch_x)
-                if i < self.npatch_x - 1 and j > 0:
-                    p.set_neighbor_index(xmaxymin=(i + 1) + (j - 1) * self.npatch_x)
-                if i > 0 and j < self.npatch_y - 1:
-                    p.set_neighbor_index(xminymax=(i - 1) + (j + 1) * self.npatch_x)
-                if i < self.npatch_x - 1 and j < self.npatch_y - 1:
-                    p.set_neighbor_index(xmaxymax=(i + 1) + (j + 1) * self.npatch_x)
-
                 if i == 0:
                     p.add_pml_boundary(PMLXmin(f, thickness=self.cpml_thickness))
                 if i == self.npatch_x - 1:
@@ -167,7 +149,7 @@ class Simulation:
                     p.add_pml_boundary(PMLYmax(f, thickness=self.cpml_thickness))
 
                 self.patches.append(p)
-
+        self.patches.init_rect_neighbor_index_2d(npatch_x=self.npatch_x, npatch_y=self.npatch_y)
         self.patches.update_lists()
 
     def _set_interpolator(self):
