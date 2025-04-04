@@ -1,11 +1,24 @@
 import numpy as np
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
+from libpic.patch.patch import Patch
+
 from ..simulation import Simulation
 from numba import njit, prange
 
+class Laser2D:
+    def _get_r(self, sim: Simulation, patch: Patch) -> np.ndarray:
+        f = patch.fields
+        r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2)
+        return r
 
-class SimpleLaser:
+class Laser3D:
+    def _get_r(self, sim: Simulation, patch: Patch) -> np.ndarray:
+        f = patch.fields
+        r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2)**2 + (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2)**2)**0.5
+        return r
+    
+class SimpleLaser(Laser2D):
     """
     A simple laser pulse implementation with basic spatial and temporal profiles.
     This class provides a straightforward way to inject a laser pulse into the simulation
@@ -54,71 +67,6 @@ class SimpleLaser:
         self.pol_angle = pol_angle
         self.side = side
     
-
-    def __call__(self, sim: Simulation):
-        """
-        Inject the laser pulse into the simulation.
-        This method is called at each timestep and updates the electromagnetic fields
-        at the left boundary to create the laser pulse.
-        
-        The laser has:
-        - Smooth temporal envelope: sin²(πct/2ctau) for t < 2ctau
-        - Gaussian transverse profile: exp(-r²/w0²)
-        - Sinusoidal oscillation at the laser frequency
-        - Arbitrary polarization in the y-z plane determined by pol_angle
-        
-        The sin² envelope ensures smooth turn-on and turn-off of the pulse,
-        reducing numerical artifacts compared to a sharp cutoff.
-        """
-        time = sim.itime * sim.dt
-        # Stop injecting after twice the pulse duration for smooth falloff
-        if c*time >= 2*self.ctau:
-            return
-
-        # Calculate temporal profile (sin² envelope for smooth turn-on/off)
-        tprof = np.sin(c*time/(2*self.ctau)*pi)**2 * (c*time < 2*self.ctau)
-        
-        # Inject the laser from the left boundary
-        if self.side == "xmin":
-            for p in sim.patches:
-                # Only inject from the leftmost patch
-                if p.ipatch_x > 0:
-                    continue
-                f = p.fields
-                # Calculate radial distance from the center of the simulation box
-                r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
-                
-                # Calculate base field amplitude with:
-                # - Gaussian transverse profile: exp(-r²/w0²)
-                # - Temporal oscillation: sin(ω₀t)
-                # - Smooth temporal envelope: tprof
-                field = self.E0 / c * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
-                
-                # Update By and Bz fields at the left boundary (CPML layer) based on polarization angle
-                f.by[sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
-                f.bz[sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
-        
-        # Inject the laser from the right boundary
-        if self.side == "xmax":
-            for p in sim.patches:
-                # Only inject from the leftmost patch
-                if p.ipatch_x < sim.npatch_x - 1:
-                    continue
-                f = p.fields
-                # Calculate radial distance from the center of the simulation box
-                r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
-                
-                # Calculate base field amplitude with:
-                # - Gaussian transverse profile: exp(-r²/w0²)
-                # - Temporal oscillation: sin(ω₀t)
-                # - Smooth temporal envelope: tprof
-                field = self.E0 / c * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
-                
-                # Update By and Bz fields at the left boundary (CPML layer) based on polarization angle
-                f.by[sim.nx_per_patch - sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
-                f.bz[sim.nx_per_patch - sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
-
-class SimpleLaser3D(SimpleLaser):
     def __call__(self, sim: Simulation):
         time = sim.itime * sim.dt
         # Stop injecting after twice the pulse duration for smooth falloff
@@ -138,22 +86,24 @@ class SimpleLaser3D(SimpleLaser):
         for p in sim.patches:
             # Only inject from the leftmost patch
             if p.ipatch_x == ipatch_x:
-                f = p.fields
                 # Calculate radial distance from the center of the simulation box
-                r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2)**2 + (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2)**2)**0.5
-                
+                r = self._get_r(sim, p)
                 # Calculate base field amplitude with:
                 # - Gaussian transverse profile: exp(-r²/w0²)
                 # - Temporal oscillation: sin(ω₀t)
                 # - Smooth temporal envelope: tprof
                 field = self.E0 / c * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
                 
+                f = p.fields
                 # Update By and Bz fields at the left boundary (CPML layer) based on polarization angle
                 f.by[ix, :] += field * np.sin(self.pol_angle)
                 f.bz[ix, :] += field * np.cos(self.pol_angle)
 
+class SimpleLaser3D(SimpleLaser, Laser3D):
+    ...
 
-class GaussianLaser:
+
+class GaussianLaser(Laser2D):
     """
     Implementation of a proper Gaussian laser beam with:
     - Gaussian temporal and spatial profiles
@@ -235,33 +185,15 @@ class GaussianLaser:
         boundary_w, boundary_R, boundary_psi = self.gaussian_beam_params(x_rel)
         
         if self.side == "xmin":
-            for p in sim.patches:
-                if p.ipatch_x > 0:
-                    continue
-                    
-                f = p.fields
-                r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
-                
-                # Calculate amplitude and phase
-                amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
-                phase_curv = self.k0 * r**2/(2*boundary_R)
-                phase = (self.omega0 * time -          # Oscillation
-                        self.k0 * x_rel -             # Propagation
-                        phase_curv -                  # Curvature
-                        boundary_psi)                 # Gouy phase
-                
-                # Set fields based on polarization
-                field = amp/c * np.sin(phase) * tprof
-                f.by[sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
-                f.bz[sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
-                    
+            ipatch_x = 0
+            ix = sim.cpml_thickness
         elif self.side == "xmax":
-            for p in sim.patches:
-                if p.ipatch_x < sim.npatch_x - 1:
-                    continue
-                    
-                f = p.fields
-                r = f.yaxis[0, :] - sim.dy/2 - sim.Ly/2
+            ipatch_x = sim.npatch_x - 1
+            ix = sim.nx_per_patch - sim.cpml_thickness
+            
+        for p in sim.patches:
+            if p.ipatch_x == ipatch_x:
+                r = self._get_r(sim, p)
                 
                 # Calculate amplitude and phase
                 amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
@@ -273,5 +205,9 @@ class GaussianLaser:
                 
                 # Set fields based on polarization
                 field = amp/c * np.sin(phase) * tprof
-                f.by[sim.nx_per_patch - sim.cpml_thickness, :] += field * np.sin(self.pol_angle)
-                f.bz[sim.nx_per_patch - sim.cpml_thickness, :] += field * np.cos(self.pol_angle)
+                f = p.fields
+                f.by[ix, :] += field * np.sin(self.pol_angle)
+                f.bz[ix, :] += field * np.cos(self.pol_angle)
+                
+class GaussianLaser3D(GaussianLaser, Laser3D):
+    ...
