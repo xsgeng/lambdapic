@@ -97,7 +97,7 @@ class Simulation:
         self.ny_per_patch = self.ny // self.npatch_y
 
         self.create_patches()
-        self.species = []
+        self.species: list[Species] = []
         
         self.maxwell = MaxwellSolver2D(self.patches)
         self.interpolator = None
@@ -173,7 +173,11 @@ class Simulation:
                 raise TypeError("`species` must be a sequence of Species objects")
         
         self.species.extend(species_list)
-        
+
+        # Assign ispec
+        for ispec, s in enumerate(self.species):
+            s.ispec = ispec
+
         # Add species to patches
         for s in species_list:
             self.patches.add_species(s)
