@@ -21,6 +21,7 @@ def uniquify_species_names(existing_species: list[Species], new_species: list[Sp
         
         # Directly modify the name attribute of the original object
         if max_suffix >= 0:
+            print(f"warning: species name {base_name} already exists, rename to {base_name}.{max_suffix + 1}")
             s.name = f"{base_name}.{max_suffix + 1}"
         else:
             s.name = base_name

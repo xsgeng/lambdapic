@@ -25,32 +25,6 @@ def get_fields(sim: Simulation, fields=[]) -> list[np.ndarray]:
 
     return ret
 
-def save_fields_to_hdf5(sim: Simulation, fields: list, every: int, prefix: [Path|str]='.'):
-    import h5py
-
-    prefix = Path(prefix)
-    def save_fields(it):
-        if it % every == 0:
-            field_data = get_fields(sim, fields)
-            
-            # 创建HDF5文件
-            with h5py.File(prefix/f'fields_{it:04d}.h5', 'w') as f:
-                # 存储电磁场数据
-                for field, data in zip(fields, field_data):
-                    f.create_dataset(field, data=data)
-                
-                # 存储其他相关参数
-                f.attrs['nx'] = sim.nx
-                f.attrs['ny'] = sim.ny
-                f.attrs['dx'] = sim.dx
-                f.attrs['dy'] = sim.dy
-                f.attrs['Lx'] = sim.Lx
-                f.attrs['Ly'] = sim.Ly
-                f.attrs['it'] = it
-
-    return save_fields
-
-
 class ExtractSpeciesDensity:
     stage = "current deposition"
     def __init__(self, sim: Simulation, species: Species, every: Union[int, Callable]):
