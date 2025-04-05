@@ -159,12 +159,25 @@ class Simulation:
         self.current_depositor = CurrentDeposition2D(self.patches)
 
     def add_species(self, species: Sequence[Species]):
-        self.species.extend(species)
-        for s in species:
-            if isinstance(s, Species):
-                self.patches.add_species(s)
-            else:
+        from .utils import uniquify_species_names
+        
+        # Convert to list for modification
+        species_list = list(species)
+        
+        # Directly modify the names of original species
+        uniquify_species_names(self.species, species_list)
+        
+        # Add type checking
+        for s in species_list:
+            if not isinstance(s, Species):
                 raise TypeError("`species` must be a sequence of Species objects")
+        
+        self.species.extend(species_list)
+        
+        # Add species to patches
+        for s in species_list:
+            self.patches.add_species(s)
+            
         self.patches.fill_particles()
         self.patches.update_lists()
 
