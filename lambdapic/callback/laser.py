@@ -7,12 +7,14 @@ from ..simulation import Simulation
 from numba import njit, prange
 
 class Laser2D:
+    stage = "_laser"
     def _get_r(self, sim: Simulation, patch: Patch) -> np.ndarray:
         f = patch.fields
         r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2)
         return r
 
 class Laser3D:
+    stage = "_laser"
     def _get_r(self, sim: Simulation, patch: Patch) -> np.ndarray:
         f = patch.fields
         r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2)**2 + (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2)**2)**0.5
@@ -38,7 +40,6 @@ class SimpleLaser(Laser2D):
         For more accurate physics including proper beam evolution, wavefront curvature,
         and Gouy phase, use the GaussianLaser class instead.
     """
-    stage = "start"
     def __init__(self, a0: float, w0: float, ctau: float, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
         """
         Initialize the SimpleLaser with given parameters.
@@ -78,7 +79,7 @@ class SimpleLaser(Laser2D):
         
         if self.side == "xmin":
             ipatch_x = 0
-            ix = sim.cpml_thickness
+            ix = sim.cpml_thickness + 2
         if self.side == "xmax":
             ipatch_x = sim.npatch_x - 1
             ix = sim.nx_per_patch - sim.cpml_thickness
@@ -92,12 +93,27 @@ class SimpleLaser(Laser2D):
                 # - Gaussian transverse profile: exp(-r²/w0²)
                 # - Temporal oscillation: sin(ω₀t)
                 # - Smooth temporal envelope: tprof
-                field = self.E0 / c * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
+                efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
                 
                 f = p.fields
+                ny = sim.ny_per_patch
                 # Update By and Bz fields at the left boundary (CPML layer) based on polarization angle
-                f.by[ix, :] += field * np.sin(self.pol_angle)
-                f.bz[ix, :] += field * np.cos(self.pol_angle)
+                f.bx[ix-1, :ny] = f.bx[0, :ny]
+                f.bz[ix-1, :ny] = 1 / ((c*sim.dt / sim.dx + 1)*c) * (
+                    + 4 * efield[:ny] * np.cos(self.pol_angle)
+                    + 2 * (f.ey[0, :ny] + c * 0.5*(f.bz[0, :ny] + f.bz[-1, :ny]))
+                    - 2 * f.ey[ix, :ny]
+                    + sim.dt/epsilon_0 * f.jy[ix, :ny]
+                    + (c*sim.dt / sim.dx - 1)*c * f.bz[ix, :ny]
+                )
+                f.by[ix-1, :ny] = 1 / ((c*sim.dt / sim.dx + 1)*c) * (
+                    - 4 * efield[:ny] * np.sin(self.pol_angle)
+                    - 2 * (f.ez[0, :ny] - c * 0.5*(f.by[0, :ny] + f.by[-1, :ny]))
+                    + 2 * f.ez[ix, :ny]
+                    - (sim.dt*c**2) * (f.bx[ix, :ny] - np.roll(f.bx[ix, :], 1)[:ny])/sim.dy
+                    - sim.dt/epsilon_0 * f.jz[ix, :ny]
+                    + (c*sim.dt / sim.dx - 1)*c * f.by[ix, :ny]
+                )
 
 class SimpleLaser3D(SimpleLaser, Laser3D):
     ...
@@ -111,8 +127,6 @@ class GaussianLaser(Laser2D):
     - Gouy phase
     - Wavefront curvature
     """
-    stage = "start"
-    
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
                  x0: float=None, tstop: float=None, pol_angle: float = 0.0, focus_position: float = 0.0, side: str = "xmin"):
         """

@@ -13,6 +13,7 @@ class SimulationStage(str, Enum):
     PUSH_POSITION_SECOND = "push position second"
     CURRENT_DEPOSITION = "current deposition"
     QED_CREATE_PARTICLEs = "qed create particles"
+    LASER = "_laser"
     MAXWELL_SECOND = "maxwell second"
 
     @classmethod

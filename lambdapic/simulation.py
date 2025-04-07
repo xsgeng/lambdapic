@@ -294,7 +294,14 @@ class Simulation:
             stage_callbacks.run('start')
             
             # EM from t to t+0.5dt
-            self.maxwell_stage()
+            with Timer('update E field'):
+                self.maxwell.update_efield(0.5*self.dt)
+            with Timer('sync E field'):
+                self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('update B field'):
+                self.maxwell.update_bfield(0.5*self.dt)
+            with Timer('sync B field'):
+                self.patches.sync_guard_fields(['bx', 'by', 'bz'])
             stage_callbacks.run('maxwell first')
                 
 
@@ -380,7 +387,17 @@ class Simulation:
             stage_callbacks.run("qed create particles")
 
             # EM from t to t+0.5dt
-            self.maxwell_stage()
+            with Timer('update B field'):
+                self.maxwell.update_bfield(0.5*self.dt)
+            stage_callbacks.run('_laser')
+            with Timer('sync B field'):
+                self.patches.sync_guard_fields(['bx', 'by', 'bz'])
+                
+
+            with Timer('update E field'):
+                self.maxwell.update_efield(0.5*self.dt)
+            with Timer('sync E field'):
+                self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
             stage_callbacks.run('maxwell second')
         
             self.itime += 1
