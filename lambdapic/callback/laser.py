@@ -1,10 +1,11 @@
 import numpy as np
+from libpic.fields import Fields
+from libpic.patch.patch import Patch
+from numba import njit, prange
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
-from libpic.patch.patch import Patch
-
 from ..simulation import Simulation
-from numba import njit, prange
+
 
 class Laser2D:
     stage = "_laser"
@@ -12,6 +13,28 @@ class Laser2D:
         f = patch.fields
         r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2)
         return r
+
+    def _update_bfields(self, laserpos: int, f: Fields, ey_source: np.ndarray, ez_source: np.ndarray, dt: float):
+        ny = f.ny
+        dx = f.dx
+        dy = f.dy
+
+        f.bx[laserpos-1, :ny] = f.bx[0, :ny]
+        f.bz[laserpos-1, :ny] = 1 / ((c*dt / dx + 1)*c) * (
+            + 4 * ey_source[:ny]
+            + 2 * (f.ey[0, :ny] + c * 0.5*(f.bz[0, :ny] + f.bz[-1, :ny]))
+            - 2 * f.ey[laserpos, :ny]
+            + dt/epsilon_0 * f.jy[laserpos, :ny]
+            + (c*dt / dx - 1)*c * f.bz[laserpos, :ny]
+        )
+        f.by[laserpos-1, :ny] = 1 / ((c*dt / dx + 1)*c) * (
+            - 4 * ez_source[:ny]
+            - 2 * (f.ez[0, :ny] - c * 0.5*(f.by[0, :ny] + f.by[-1, :ny]))
+            + 2 * f.ez[laserpos, :ny]
+            - (dt*c**2) * (f.bx[laserpos, :ny] - np.roll(f.bx[laserpos, :], 1)[:ny])/dy
+            - dt/epsilon_0 * f.jz[laserpos, :ny]
+            + (c*dt / dx - 1)*c * f.by[laserpos, :ny]
+        )
 
 class Laser3D:
     stage = "_laser"
@@ -67,7 +90,8 @@ class SimpleLaser(Laser2D):
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
         self.side = side
-    
+
+
     def __call__(self, sim: Simulation):
         time = sim.itime * sim.dt
         # Stop injecting after twice the pulse duration for smooth falloff
@@ -94,26 +118,7 @@ class SimpleLaser(Laser2D):
                 # - Temporal oscillation: sin(ω₀t)
                 # - Smooth temporal envelope: tprof
                 efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
-                
-                f = p.fields
-                ny = sim.ny_per_patch
-                # Update By and Bz fields at the left boundary (CPML layer) based on polarization angle
-                f.bx[ix-1, :ny] = f.bx[0, :ny]
-                f.bz[ix-1, :ny] = 1 / ((c*sim.dt / sim.dx + 1)*c) * (
-                    + 4 * efield[:ny] * np.cos(self.pol_angle)
-                    + 2 * (f.ey[0, :ny] + c * 0.5*(f.bz[0, :ny] + f.bz[-1, :ny]))
-                    - 2 * f.ey[ix, :ny]
-                    + sim.dt/epsilon_0 * f.jy[ix, :ny]
-                    + (c*sim.dt / sim.dx - 1)*c * f.bz[ix, :ny]
-                )
-                f.by[ix-1, :ny] = 1 / ((c*sim.dt / sim.dx + 1)*c) * (
-                    - 4 * efield[:ny] * np.sin(self.pol_angle)
-                    - 2 * (f.ez[0, :ny] - c * 0.5*(f.by[0, :ny] + f.by[-1, :ny]))
-                    + 2 * f.ez[ix, :ny]
-                    - (sim.dt*c**2) * (f.bx[ix, :ny] - np.roll(f.bx[ix, :], 1)[:ny])/sim.dy
-                    - sim.dt/epsilon_0 * f.jz[ix, :ny]
-                    + (c*sim.dt / sim.dx - 1)*c * f.by[ix, :ny]
-                )
+                self._update_bfields(ix, p.fields, efield*np.cos(self.pol_angle), efield*np.sin(self.pol_angle), sim.dt)
 
 class SimpleLaser3D(SimpleLaser, Laser3D):
     ...
@@ -200,7 +205,7 @@ class GaussianLaser(Laser2D):
         
         if self.side == "xmin":
             ipatch_x = 0
-            ix = sim.cpml_thickness
+            ix = sim.cpml_thickness + 2
         elif self.side == "xmax":
             ipatch_x = sim.npatch_x - 1
             ix = sim.nx_per_patch - sim.cpml_thickness
@@ -218,10 +223,8 @@ class GaussianLaser(Laser2D):
                         boundary_psi)                 # Gouy phase
                 
                 # Set fields based on polarization
-                field = amp/c * np.sin(phase) * tprof
-                f = p.fields
-                f.by[ix, :] += field * np.sin(self.pol_angle)
-                f.bz[ix, :] += field * np.cos(self.pol_angle)
+                efield = amp * np.sin(phase) * tprof
+                self._update_bfields(ix, p.fields, efield*np.cos(self.pol_angle), efield*np.sin(self.pol_angle), sim.dt)
                 
 class GaussianLaser3D(GaussianLaser, Laser3D):
     ...
