@@ -12,7 +12,7 @@ from scipy.special import airy
 
 # built-in tables
 table_path = os.path.join(os.path.dirname(__file__), 'optical_depth_tables_sigmoid.h5')
-if os.path.exists(table_path) and __name__ == "libpic.qed.optical_depth_tables_sigmoid":
+if os.path.exists(table_path) and __name__ == "lambdapic.core.qed.optical_depth_tables_sigmoid":
     with h5py.File(table_path, 'r') as f:
         # 1d
         _photon_prob_rate_total_table = f['photon_prob_rate_total'][()]

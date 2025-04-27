@@ -1,18 +1,18 @@
 from collections.abc import Callable, Sequence
 from typing import Optional
 
-from libpic.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
-from libpic.current.deposition import CurrentDeposition2D, CurrentDeposition3D
-from libpic.fields import Fields2D, Fields3D
-from libpic.interpolation.field_interpolation import FieldInterpolation2D, FieldInterpolation3D
-from libpic.maxwell.solver import MaxwellSolver2D, MaxwellSolver3D
-from libpic.patch.patch import Patch2D, Patch3D, Patches
-from libpic.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
-from libpic.qed.radiation import NonlinearComptonLCFA, RadiationBase
-from libpic.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
-from libpic.sort.particle_sort import ParticleSort2D
-from libpic.species import Species
-from libpic.utils.timer import Timer
+from .core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
+from .core.current.deposition import CurrentDeposition2D, CurrentDeposition3D
+from .core.fields import Fields2D, Fields3D
+from .core.interpolation.field_interpolation import FieldInterpolation2D, FieldInterpolation3D
+from .core.maxwell.solver import MaxwellSolver2D, MaxwellSolver3D
+from .core.patch.patch import Patch2D, Patch3D, Patches
+from .core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
+from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
+from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
+from .core.sort.particle_sort import ParticleSort2D
+from .core.species import Species
+from .core.utils.timer import Timer
 from pydantic import BaseModel, Field, model_validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange

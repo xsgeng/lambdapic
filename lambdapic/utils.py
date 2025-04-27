@@ -1,5 +1,5 @@
 import re
-from libpic.species import Species
+from .core.species import Species
 
 def uniquify_species_names(existing_species: list[Species], new_species: list[Species]):
     """Directly modify the name attribute of species in the input list"""

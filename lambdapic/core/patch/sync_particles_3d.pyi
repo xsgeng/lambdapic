@@ -1,4 +1,4 @@
-from libpic.particles import ParticlesBase
+from ..particles import ParticlesBase
 from numpy import ndarray
 
 def get_npart_to_extend_3d(
