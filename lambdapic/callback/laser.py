@@ -1,6 +1,6 @@
 import numpy as np
-from libpic.fields import Fields
-from libpic.patch.patch import Patch
+from ..core.fields import Fields
+from ..core.patch.patch import Patch
 from numba import njit, prange, typed
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 

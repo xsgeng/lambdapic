@@ -4,7 +4,7 @@ import numpy as np
 
 from typing import Callable, Union
 
-from libpic.species import Species
+from ..core.species import Species
 
 from pathlib import Path
 
