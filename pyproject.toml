@@ -1,7 +1,6 @@
 [project]
 name = "lambdapic"
 description = "A Particle-in-Cell framework with dynamic behavior modification through callbacks"
-version = "0.0.0"
 dependencies = [
     "numpy",
     "numba",
@@ -13,6 +12,8 @@ dependencies = [
     "h5py"
 ]
 requires-python = ">=3.10"
+
+dynamic = ["version"]
 
 authors = [
   {name = "xsgeng", email = "xsgeng@siom.ac.cn"}
@@ -32,8 +33,11 @@ Homepage = "https://github.com/xsgeng/lambdapic"
 [build-system]
 requires = [
     "setuptools",
+    "setuptools_scm",
     "numpy",
     "h5py",
     "numba",
     "scipy"
 ]
+
+[tool.setuptools_scm]
