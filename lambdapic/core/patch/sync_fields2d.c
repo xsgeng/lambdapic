@@ -149,20 +149,11 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
 
 static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
     PyObject *fields_list, *patches_list, *attrs;
-    npy_intp npatches, nx, ny, ng, nsync;
+    npy_intp npatches, nx, ny, ng;
 
     if (!PyArg_ParseTuple(args, "OOOnnnnn", 
         &fields_list, &patches_list, &attrs,
-        &npatches, &nx, &ny, &ng, &nsync)) {
-        return NULL;
-    }
-
-    if (nsync == 0) {
-        Py_RETURN_NONE;
-    }
-
-    if (nsync > ng) {
-        PyErr_SetString(PyExc_ValueError, "nsync must be less than ng");
+        &npatches, &nx, &ny, &ng)) {
         return NULL;
     }
 

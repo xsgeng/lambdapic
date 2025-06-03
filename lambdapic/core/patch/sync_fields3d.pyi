@@ -35,7 +35,7 @@ def sync_guard_fields_3d(
     fields_list: List[Fields],
     patches_list: List[Patch3D],
     attrs: list[str],
-    npatches: int, nx: int, ny: int, nz: int, ng: int, nsync: int
+    npatches: int, nx: int, ny: int, nz: int, ng: int,
 ):
     """
     Synchronize guard cells between patches for custom field attributes in 3D.
@@ -58,8 +58,6 @@ def sync_guard_fields_3d(
         Number of cells in z direction (excluding guards)
     ng : int
         Number of guard cells
-    nsync : int
-        Number of guard cells to synchronize (must be <= ng)
     """
     pass
 

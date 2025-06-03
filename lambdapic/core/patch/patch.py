@@ -470,23 +470,20 @@ class Patches:
                     neighbor_index = neighbor_i + neighbor_j * npatch_x + neighbor_k * npatch_x * npatch_y
                     p.set_neighbor_index(**{name: neighbor_index})
                 
-    def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz'], nsync=None):
-        if nsync is None:
-            nsync = self.n_guard
-            
+    def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
         if self.dimension == 2:
             sync_guard_fields_2d(
                 [p.fields for p in self.patches],
                 self.patches,
                 attrs,
-                self.npatches, self.nx, self.ny, self.n_guard, nsync
+                self.npatches, self.nx, self.ny, self.n_guard
             )
         if self.dimension == 3:
             sync_guard_fields_3d(
                 [p.fields for p in self.patches],
                 self.patches,
                 attrs,
-                self.npatches, self.nx, self.ny, self.nz, self.n_guard, nsync
+                self.npatches, self.nx, self.ny, self.nz, self.n_guard
             )
         
 
