@@ -10,6 +10,7 @@ dependencies = [
     "loguru",
     "deprecated",
     "mpi4py",
+    "pymetis",
     "h5py"
 ]
 requires-python = ">=3.10"
