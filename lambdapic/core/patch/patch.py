@@ -69,6 +69,7 @@ class Boundary3D(IntEnum):
     XMAXYMAXZMAX = auto()
 class Patch:
     rank: int
+    # the global index of the patch
     index: int
     ipatch_x: int
     ipatch_y: int
@@ -86,8 +87,11 @@ class Patch:
     yaxis: np.ndarray
     zaxis: np.ndarray
 
+    # the global index of the neighbor patch
     neighbor_index: np.ndarray[int]
     neighbor_rank: np.ndarray[int]
+    # the index of the neighbor patch in the patches of the same rank
+    neighbor_ipatch: np.ndarray[int]
 
     fields: Fields
     def __init__(self) -> None:
@@ -117,6 +121,15 @@ class Patch:
 
     def add_particles(self, particles: ParticlesBase) -> None:
         self.particles.append(particles)
+
+    def set_neighbor_index(self, **kwargs):
+        raise NotImplementedError
+    
+    def set_neighbor_rank(self, **kwargs):
+        raise NotImplementedError
+    
+    def set_neighbor_ipatch(self, **kwargs):
+        raise NotImplementedError
 
     def set_fields(self, fields: Fields, **kwargs: dict[str, Fields]) -> None:
         """
@@ -201,9 +214,9 @@ class Patch2D(Patch):
         self.xaxis = np.arange(self.nx) * self.dx + x0
         self.yaxis = np.arange(self.ny) * self.dy + y0
 
-        self.neighbor_index = np.full(len(Boundary2D), -1, dtype=int)
-
-        self.neighbor_rank = np.full(len(Boundary2D), -1, dtype=int)
+        self.neighbor_index  = np.full(len(Boundary2D), -1, dtype=int)
+        self.neighbor_rank   = np.full(len(Boundary2D), -1, dtype=int)
+        self.neighbor_ipatch = np.full(len(Boundary2D), -1, dtype=int)
 
     def set_neighbor_index(self, **kwargs):
         for neighbor in kwargs.keys():
@@ -212,6 +225,10 @@ class Patch2D(Patch):
     def set_neighbor_rank(self, **kwargs):
         for neighbor in kwargs.keys():
             self.neighbor_rank[Boundary2D[neighbor.upper()]] = kwargs[neighbor]
+            
+    def set_neighbor_ipatch(self, **kwargs):
+        for neighbor in kwargs.keys():
+            self.neighbor_ipatch[Boundary2D[neighbor.upper()]] = kwargs[neighbor]
 
     def add_pml_boundary(self, pml: PML) -> None:
         assert (self.nx >= pml.thickness) and (self.ny >= pml.thickness)
@@ -288,8 +305,9 @@ class Patch3D(Patch):
         self.yaxis = np.arange(self.ny) * self.dy + y0
         self.zaxis = np.arange(self.nz) * self.dz + z0
 
-        self.neighbor_index = np.full(len(Boundary3D), -1, dtype=int)
-        self.neighbor_rank = np.full(len(Boundary3D), -1, dtype=int)
+        self.neighbor_index  = np.full(len(Boundary3D), -1, dtype=int)
+        self.neighbor_rank   = np.full(len(Boundary3D), -1, dtype=int)
+        self.neighbor_ipatch = np.full(len(Boundary3D), -1, dtype=int)
 
     def set_neighbor_index(self, **kwargs):
         for neighbor in kwargs.keys():
@@ -317,7 +335,7 @@ class Patches:
         self.dimension: int = dimension
 
         self.npatches: int = 0
-        self.indexs : list[int] = []
+        self.indices : list[int] = []
         self.patches : list[Patch] = []
         self.species : list[Species] = []
     
@@ -334,18 +352,18 @@ class Patches:
         # if self.patches:
         #     assert self.patches[-1].index == patch.index - 1
         self.patches.append(patch)
-        self.indexs.append(patch.index)
+        self.indices.append(patch.index)
         self.npatches += 1
 
     def prepend(self, patch: Patch):
         # if self.patches:
         #     assert self.patches[0].index == patch.index + 1
         self.patches.insert(0, patch)
-        self.indexs.insert(0, patch.index)
+        self.indices.insert(0, patch.index)
         self.npatches += 1
     
     def pop(self, i):
-        self.indexs.pop(i)
+        self.indices.pop(i)
         self.npatches -= 1
         p = self.patches.pop(i)
 
@@ -389,12 +407,7 @@ class Patches:
         """ 
         Initialize the neighbor index for a rectangular grid of 2D patches.
         
-        Parameters
-        ----------
-        npatch_x : int
-            Number of patches in x-direction
-        npatch_y : int
-            Number of patches in y-direction
+        Called on global patches
         """
         # Define all possible neighbor offsets and their corresponding names
         neighbor_offsets = [
@@ -422,6 +435,8 @@ class Patches:
     def init_rect_neighbor_index_3d(self, npatch_x, npatch_y, npatch_z):
         """ 
         Initialize the neighbor index for a rectangular grid of patches.
+        
+        Called on global patches
         """
         # Define all possible neighbor offsets and their corresponding names
         neighbor_offsets = [
@@ -456,7 +471,34 @@ class Patches:
                     # Calculate neighbor index
                     neighbor_index = neighbor_i + neighbor_j * npatch_x + neighbor_k * npatch_x * npatch_y
                     p.set_neighbor_index(**{name: neighbor_index})
-                
+
+    def init_neighbor_rank_2d(self):
+        """
+        Initialize the neighbor rank for a rectangular grid of 2D patches.
+        
+        Called on global patches
+        """
+        for p in self.patches:
+            for bound in Boundary2D:
+                neighbor_index = p.neighbor_index[bound]
+                if neighbor_index >= 0:
+                    neighbor_rank = self.patches[neighbor_index].rank
+                    if neighbor_rank != p.rank:
+                        p.set_neighbor_rank(**{bound.name.lower(): neighbor_rank})
+
+    def init_neighbor_ipatch_2d(self):
+        """
+        Initialize the neighbor ipatch for a rectangular grid of 2D patches.
+        
+        Called on local patches
+        """
+        for p in self.patches:
+            for bound in Boundary2D:
+                neighbor_index = p.neighbor_index[bound]
+                if neighbor_index >= 0 and neighbor_index in self.indices:
+                    neighbor_ipatch = self.indices.index(neighbor_index)
+                    p.set_neighbor_ipatch(**{bound.name.lower(): neighbor_ipatch})
+                    
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
         if self.dimension == 2:
             sync_guard_fields_2d(
@@ -679,3 +721,4 @@ class Patches:
                     )
     
             print(f"{(perf_counter_ns() - tic)/1e6} ms.")
+        self.update_lists()

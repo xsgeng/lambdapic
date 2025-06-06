@@ -103,7 +103,14 @@ extensions = [
         extra_link_args=extra_link_args,
         libraries=["mpi"],
     ),
-
+    Extension(
+        name="lambdapic.core.mpi.sync_fields2d", 
+        sources=["lambdapic/core/mpi/sync_fields2d.c"],
+        include_dirs=include_dirs,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+        libraries=["mpi"],
+    ),
 ]
 
 class QEDBuildCommand(build_ext):

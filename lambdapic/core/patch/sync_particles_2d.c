@@ -210,7 +210,7 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     AUTOFREE npy_intp *npart_list = get_attr_int(particles_list, npatches, "npart");
     AUTOFREE npy_bool **is_dead_list = get_attr_array_bool(particles_list, npatches, "is_dead");
     
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patch_list, npatches, "neighbor_index");
+    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patch_list, npatches, "neighbor_ipatch");
 
     AUTOFREE double *xmin_list = get_attr_double(patch_list, npatches, "xmin");
     AUTOFREE double *xmax_list = get_attr_double(patch_list, npatches, "xmax");
@@ -326,7 +326,7 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     AUTOFREE npy_intp *npart_list = get_attr_int(particles_list, npatches, "npart");
     AUTOFREE npy_bool **is_dead_list = get_attr_array_bool(particles_list, npatches, "is_dead");
 
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patch_list, npatches, "neighbor_index");
+    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patch_list, npatches, "neighbor_ipatch");
 
     AUTOFREE double *xmin_list = get_attr_double(patch_list, npatches, "xmin");
     AUTOFREE double *xmax_list = get_attr_double(patch_list, npatches, "xmax");

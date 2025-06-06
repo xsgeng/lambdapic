@@ -56,7 +56,7 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
     AUTOFREE double **jz = get_attr_array_double(fields_list, npatches, "jz");
     AUTOFREE double **rho = get_attr_array_double(fields_list, npatches, "rho");
 
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_index");
+    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_ipatch");
 
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for
@@ -151,7 +151,7 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
     PyObject *fields_list, *patches_list, *attrs;
     npy_intp npatches, nx, ny, ng;
 
-    if (!PyArg_ParseTuple(args, "OOOnnnnn", 
+    if (!PyArg_ParseTuple(args, "OOOnnnn", 
         &fields_list, &patches_list, &attrs,
         &npatches, &nx, &ny, &ng)) {
         return NULL;
@@ -166,7 +166,7 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
         attrs_list[i] = get_attr_array_double(fields_list, npatches, PyUnicode_AsUTF8(PyList_GetItem(attrs, i)));
     }
 
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_index");
+    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_ipatch");
 
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for

@@ -351,7 +351,7 @@ static PyObject* sync_guard_fields_3d(PyObject* self, PyObject* args) {
     PyObject *fields_list, *patches_list, *attrs;
     npy_intp npatches, nx, ny, nz, ng;
 
-    if (!PyArg_ParseTuple(args, "OOOnnnnnn",
+    if (!PyArg_ParseTuple(args, "OOOnnnnn",
         &fields_list, &patches_list, &attrs,
         &npatches, &nx, &ny, &nz, &ng)) {
         return NULL;

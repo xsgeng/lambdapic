@@ -108,36 +108,36 @@ void get_boundary_currents(
 ) {
     switch (ibound) {
         case XMIN:
-            *ix_dst = 0; *ix_src = nx; *nx_sync = ng;
-            *iy_dst = 0; *iy_src = 0; *ny_sync = ny;
+            *ix_dst = 0;     *ix_src = -ng; *nx_sync = ng;
+            *iy_dst = 0;     *iy_src = 0;   *ny_sync = ny;
             break;
         case XMAX:
-            *ix_dst = nx-ng; *ix_src = -ng; *nx_sync = ng;
-            *iy_dst = 0; *iy_src = 0; *ny_sync = ny;
+            *ix_dst = nx-ng; *ix_src = nx; *nx_sync = ng;
+            *iy_dst = 0;     *iy_src = 0;  *ny_sync = ny;
             break;
         case YMIN:
-            *ix_dst = 0; *ix_src = 0; *nx_sync = nx;
-            *iy_dst = 0; *iy_src = ny; *ny_sync = ng;
+            *ix_dst = 0;     *ix_src = 0;   *nx_sync = nx;
+            *iy_dst = 0;     *iy_src = -ng; *ny_sync = ng;
             break;
         case YMAX:
-            *ix_dst = 0; *ix_src = 0; *nx_sync = nx;
-            *iy_dst = ny-ng; *iy_src = -ng; *ny_sync = ng;
+            *ix_dst = 0;     *ix_src = 0;   *nx_sync = nx;
+            *iy_dst = ny-ng; *iy_src = ny;  *ny_sync = ng;
             break;
         case XMINYMIN:
-            *ix_dst = 0; *ix_src = nx; *nx_sync = ng;
-            *iy_dst = 0; *iy_src = ny; *ny_sync = ng;
+            *ix_dst = 0;     *ix_src = -ng; *nx_sync = ng;
+            *iy_dst = 0;     *iy_src = -ng; *ny_sync = ng;
             break;
         case XMAXYMIN:
-            *ix_dst = nx-ng; *ix_src = -ng; *nx_sync = ng;
-            *iy_dst = 0; *iy_src = ny; *ny_sync = ng;
+            *ix_dst = nx-ng; *ix_src = nx;  *nx_sync = ng;
+            *iy_dst = 0;     *iy_src = -ng; *ny_sync = ng;
             break;
         case XMINYMAX:
-            *ix_dst = 0; *ix_src = nx; *nx_sync = ng;
-            *iy_dst = ny-ng; *iy_src = -ng; *ny_sync = ng;
+            *ix_dst = 0;     *ix_src = -ng; *nx_sync = ng;
+            *iy_dst = ny-ng; *iy_src = ny;  *ny_sync = ng;
             break;
         case XMAXYMAX:
-            *ix_dst = nx-ng; *ix_src = -ng; *nx_sync = ng;
-            *iy_dst = ny-ng; *iy_src = -ng; *ny_sync = ng;
+            *ix_dst = nx-ng; *ix_src = nx;  *nx_sync = ng;
+            *iy_dst = ny-ng; *iy_src = ny;  *ny_sync = ng;
             break;
     }
 }
@@ -150,37 +150,36 @@ void get_boundary_guards(
 ) {
     switch (ibound) {
         case XMIN:
-            *ix_dst = -ng; *ix_src = nx-ng; *nx_sync = ng;
+            *ix_dst = -ng; *ix_src = 0; *nx_sync = ng;
             *iy_dst = 0; *iy_src = 0; *ny_sync = ny;
             break;
-            break;
         case XMAX:
-            *ix_dst = nx; *ix_src = 0; *nx_sync = ng;
+            *ix_dst = nx; *ix_src = nx-ng; *nx_sync = ng;
             *iy_dst = 0; *iy_src = 0; *ny_sync = ny;
             break;
         case YMIN:
             *ix_dst = 0; *ix_src = 0; *nx_sync = nx;
-            *iy_dst = -ng; *iy_src = ny-ng; *ny_sync = ng;
+            *iy_dst = -ng; *iy_src = 0; *ny_sync = ng;
             break;
         case YMAX:
             *ix_dst = 0; *ix_src = 0; *nx_sync = nx;
-            *iy_dst = ny; *iy_src = 0; *ny_sync = ng;
+            *iy_dst = ny; *iy_src = ny-ng; *ny_sync = ng;
             break;
         case XMINYMIN:
-            *ix_dst = -ng; *ix_src = nx-ng; *nx_sync = ng;
-            *iy_dst = -ng; *iy_src = ny-ng; *ny_sync = ng;
+            *ix_dst = -ng; *ix_src = 0; *nx_sync = ng;
+            *iy_dst = -ng; *iy_src = 0; *ny_sync = ng;
             break;
         case XMAXYMIN:
-            *ix_dst = nx; *ix_src = 0; *nx_sync = ng;
+            *ix_dst = nx; *ix_src = nx-ng; *nx_sync = ng;
             *iy_dst = -ng; *iy_src = 0; *ny_sync = ng;
             break;
         case XMINYMAX:
-            *ix_dst = -ng; *ix_src = nx-ng; *nx_sync = ng;
-            *iy_dst = ny; *iy_src = 0; *ny_sync = ng;
+            *ix_dst = -ng; *ix_src = 0; *nx_sync = ng;
+            *iy_dst = ny; *iy_src = ny-ng; *ny_sync = ng;
             break;
         case XMAXYMAX:
-            *ix_dst = nx; *ix_src = 0; *nx_sync = ng;
-            *iy_dst = ny; *iy_src = 0; *ny_sync = ng;
+            *ix_dst = nx; *ix_src = nx-ng; *nx_sync = ng;
+            *iy_dst = ny; *iy_src = ny-ng; *ny_sync = ng;
             break;
     }
 }
@@ -190,7 +189,7 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
     PyObject* comm_py;
     npy_intp npatches, nx, ny, ng;
 
-    if (!PyArg_ParseTuple(args, "OOnnnn", 
+    if (!PyArg_ParseTuple(args, "OOOnnnn", 
         &fields_list, &patches_list,
         &comm_py,
         &npatches, &nx, &ny, &ng)) {
@@ -237,6 +236,7 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
         for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (neighbor_rank < 0) {
+                buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
                 continue;
             }
             int ix_src, ix_dst, nx_sync, iy_src, iy_dst, ny_sync;
@@ -268,12 +268,9 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
     // read buffers
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        const npy_intp* neighbor_index = neighbor_index_list[ipatch];
-        const npy_intp index = index_list[ipatch];
-
         for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            // repeat above
-            if (neighbor_index[ibound] < 0) {
+            int neighbor_rank = neighbor_rank_list[ipatch][ibound];
+            if (neighbor_rank < 0) {
                 continue;
             }
             int ix_src, ix_dst, nx_sync, iy_src, iy_dst, ny_sync;
@@ -303,7 +300,7 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
     PyObject* comm_py;
     npy_intp npatches, nx, ny, ng;
 
-    if (!PyArg_ParseTuple(args, "OOOnnnnn", 
+    if (!PyArg_ParseTuple(args, "OOOOnnnn", 
         &fields_list, &patches_list, 
         &comm_py,
         &attrs,
@@ -353,6 +350,7 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
         for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (neighbor_rank < 0) {
+                buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
                 continue;
             }
             int ix_src, ix_dst, nx_sync, iy_src, iy_dst, ny_sync;
@@ -369,7 +367,7 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
                 int offset = iattr*nx_sync*ny_sync;
                 for (npy_intp ix = 0; ix < nx_sync; ix++) {
                     for (npy_intp iy = 0; iy < ny_sync; iy++) {
-                        buf[ipatch*NUM_BOUNDARIES + ibound][ix*ny_sync + iy + offset] = attrs_list[iattr][ipatch][INDEX2(ix_dst+ix, iy_dst+iy)];
+                        buf[ipatch*NUM_BOUNDARIES + ibound][ix*ny_sync + iy + offset] = attrs_list[iattr][ipatch][INDEX2(ix_src+ix, iy_src+iy)];
                     }
                 }
             }
@@ -377,7 +375,7 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
             int send_tag = index * NUM_BOUNDARIES + ibound;                                                           
             int recv_tag = neighbor_index[ibound] * NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
             
-            MPI_Sendrecv_replace(
+            MPI_Isendrecv_replace(
                 buf[ipatch*NUM_BOUNDARIES + ibound], nattrs*nx_sync*ny_sync, MPI_DOUBLE, 
                 neighbor_rank, send_tag, 
                 neighbor_rank, recv_tag, 
@@ -388,12 +386,9 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
     // read buffers
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        const npy_intp* neighbor_index = neighbor_index_list[ipatch];
-        const npy_intp index = index_list[ipatch];
-
         for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            // repeat above
-            if (neighbor_index[ibound] < 0) {
+            int neighbor_rank = neighbor_rank_list[ipatch][ibound];
+            if (neighbor_rank < 0) {
                 continue;
             }
             int ix_src, ix_dst, nx_sync, iy_src, iy_dst, ny_sync;

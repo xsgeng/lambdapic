@@ -2,29 +2,66 @@ from ..simulation import Simulation
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 import numpy as np
 
-from typing import Callable, Union
+from typing import Callable, Union, List
 
 from ..core.species import Species
 
 from pathlib import Path
 
 
-def get_fields(sim: Simulation, fields=[]) -> list[np.ndarray]:
+def get_fields(sim: Simulation, fields: List[str]) -> list[np.ndarray]:
+    """
+    Get fields from all patches.
+    
+    Only rank 0 will gather the data, other ranks will get None.
+    
+    Args:
+        sim (Simulation): Simulation instance.
+        fields (List[str]): List of fields to get.
+        
+    Returns:
+        list[np.ndarray]: List of fields named as field.
+    """
     ret = []
     patches = sim.patches
     nx_per_patch = sim.nx_per_patch
     ny_per_patch = sim.ny_per_patch
-    nx_per_rank = sim.npatch_x_per_rank * nx_per_patch
-    ny_per_rank = sim.npatch_y_per_rank * ny_per_patch
-    n_guard = sim.n_guard
+    npatch_x = sim.npatch_x
+    npatch_y = sim.npatch_y
+    nx = sim.nx
+    ny = sim.ny
+    ng = sim.n_guard
+    
+    if not fields:
+        return
+    
     for field in fields:
-        field_ = np.zeros((nx_per_rank, ny_per_rank))
-        for ipatch, p in enumerate(patches):
-            s = np.s_[p.ipatch_x*nx_per_patch:p.ipatch_x*nx_per_patch+nx_per_patch,\
-                        p.ipatch_y*ny_per_patch:p.ipatch_y*ny_per_patch+ny_per_patch]
-            field_[s] = getattr(p.fields, field)[:-2*n_guard, :-2*n_guard]
-        ret.append(field_)
-
+        if sim.mpi.rank == 0:
+            local_patches = {p.index: ipatch for ipatch, p in enumerate(patches)}
+            field_ = np.zeros((nx, ny))
+            
+            buf = np.zeros((nx_per_patch+2*ng, ny_per_patch+2*ng))
+            for ipatch_x in range(npatch_x):
+                for ipatch_y in range(npatch_y):
+                    s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
+                              ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
+                    # local
+                    index = ipatch_y*npatch_x + ipatch_x
+                    if index in local_patches:
+                        p = patches[local_patches[index]]
+                        field_[s] = getattr(p.fields, field)[:-2*ng, :-2*ng]
+                    #remote
+                    else:
+                        sim.mpi.comm.Recv(buf, tag=index)
+                        field_[s] = buf[:-2*ng, :-2*ng]
+                        
+            ret.append(field_)
+        else: # other ranks
+            for p in patches:
+                sim.mpi.comm.Isend(getattr(p.fields, field), dest=0, tag=p.index)
+            ret.append(None)
+        sim.mpi.comm.Barrier()
+        
     return ret
 
 class ExtractSpeciesDensity:
@@ -38,8 +75,6 @@ class ExtractSpeciesDensity:
         self.patches = sim.patches
         self.nx_per_patch = sim.nx_per_patch
         self.ny_per_patch = sim.ny_per_patch
-        self.nx_per_rank = sim.npatch_x_per_rank * self.nx_per_patch
-        self.ny_per_rank = sim.npatch_y_per_rank * self.ny_per_patch
         self.n_guard = sim.n_guard
 
         self.density = np.zeros((self.nx_per_rank, self.ny_per_rank))

@@ -45,7 +45,8 @@ def fill_particles_from_boundary_2d(
     comm: Comm,
     npatches: int,
     dx: float,
-    dy: float
+    dy: float,
+    attrs: list[str]
 ) -> None:
     """
     Fill particles from boundary using MPI.
