@@ -568,13 +568,14 @@ class Patches:
         return self[0].fields.n_guard
 
 
-    def add_species(self, species : Species, aux_attrs: list[str]=None) -> None:
-        if aux_attrs is None:
-            aux_attrs = []
-
-        print(f"Initializing Species {species.name}...", end=" ")
-        tic = perf_counter_ns()
+    def calculate_npart(self, species: Species) -> np.ndarray[int]:
+        """
+        Calculate the number of macro particles in each patch based on the species density function.
         
+        Returns:
+            num_macro_particles: np.ndarray[int]
+                An array of integers representing the number of macro particles in each patch.
+        """
         if self.dimension == 2:
             xaxis = typed.List([p.xaxis for p in self.patches])
             yaxis = typed.List([p.yaxis for p in self.patches])
@@ -608,12 +609,21 @@ class Patches:
                 )
             else:
                 num_macro_particles = np.zeros(self.npatches, dtype='int64')
-        else:
-            # 1D case or fallback
-            num_macro_particles = np.zeros(self.npatches, dtype='int64')
+        
+        return num_macro_particles
 
-        for ipatch in range(self.npatches):
-            particles : ParticlesBase = species.create_particles(ipatch=ipatch)
+        
+    def add_species(self, species : Species, aux_attrs: list[str]=None) -> None:
+        if aux_attrs is None:
+            aux_attrs = []
+
+        print(f"Initializing Species {species.name}...", end=" ")
+        tic = perf_counter_ns()
+        
+        num_macro_particles = self.calculate_npart(species)
+
+        for ipatch, p in enumerate(self.patches):
+            particles : ParticlesBase = species.create_particles(ipatch=ipatch, rank=p.rank)
             particles.attrs += aux_attrs
             particles.initialize(num_macro_particles[ipatch])
             self[ipatch].add_particles(particles)
