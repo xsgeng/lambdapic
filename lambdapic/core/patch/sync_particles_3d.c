@@ -77,12 +77,13 @@ static const enum Boundary3D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
 
 // Implementation of count_outgoing_particles function
 static void count_outgoing_particles(
-    double* x, double* y, double* z,
+    double* x, double* y, double* z, npy_bool* is_dead,
     double xmin, double xmax, double ymin, double ymax, double zmin, double zmax,
     npy_intp npart,
     npy_intp* npart_out
 ) {
     for (npy_intp ip = 0; ip < npart; ip++) {
+        if (is_dead[ip]) continue;
         if (z[ip] < zmin) {
             if (y[ip] < ymin) {
                 if (x[ip] < xmin) {
@@ -201,7 +202,7 @@ static void count_outgoing_particles(
 
 // Get indices of incoming particles from neighboring patches
 static void get_incoming_index(
-    double* x, double* y, double* z, npy_intp npart,
+    double* x, double* y, double* z, npy_bool* is_dead, npy_intp npart,
     double xmin, double xmax, 
     double ymin, double ymax, 
     double zmin, double zmax,
@@ -215,6 +216,7 @@ static void get_incoming_index(
     }
     npy_intp ipatch, ibound;
     for (npy_intp ip = 0; ip < npart; ip++) {
+        if (is_dead[ip]) continue;
         if (z[ip] < zmin) {
             if (y[ip] < ymin) {
                 if (x[ip] < xmin) {
@@ -409,7 +411,7 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
         npy_intp npart_out[NUM_BOUNDARIES] = {0};
         
         count_outgoing_particles(
-            x_list[ipatch], y_list[ipatch], z_list[ipatch], 
+            x_list[ipatch], y_list[ipatch], z_list[ipatch], is_dead_list[ipatch],
             xmin_list[ipatch], xmax_list[ipatch], 
             ymin_list[ipatch], ymax_list[ipatch], 
             zmin_list[ipatch], zmax_list[ipatch],
@@ -563,7 +565,7 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
         for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
             // Get indices of incoming particles
             get_incoming_index(
-                x_list[ipatch], y_list[ipatch], z_list[ipatch], npart_list[ipatch],
+                x_list[ipatch], y_list[ipatch], z_list[ipatch], is_dead_list[ipatch], npart_list[ipatch],
                 xmin_list[ipatch], xmax_list[ipatch], 
                 ymin_list[ipatch], ymax_list[ipatch],
                 zmin_list[ipatch], zmax_list[ipatch],
