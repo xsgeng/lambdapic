@@ -98,7 +98,7 @@ static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {
     AUTOFREE double **jz = get_attr_array_double(fields_list, npatches, "jz");
     AUTOFREE double **rho = get_attr_array_double(fields_list, npatches, "rho");
 
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_index");
+    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_ipatch");
 
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for
@@ -367,7 +367,7 @@ static PyObject* sync_guard_fields_3d(PyObject* self, PyObject* args) {
         attrs_list[i] = get_attr_array_double(fields_list, npatches, PyUnicode_AsUTF8(PyList_GetItem(attrs, i)));
     }
 
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_index");
+    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patches_list, npatches, "neighbor_ipatch");
 
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for

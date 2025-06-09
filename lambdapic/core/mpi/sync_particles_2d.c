@@ -145,50 +145,6 @@ static void get_outgoing_indices(
     }
 }
 
-// Fill buffer with boundary particles
-// static void fill_boundary_particles_to_buffer(
-//     double** attrs_list, npy_intp nattrs,
-//     npy_intp** incoming_indices,
-//     npy_intp* npart_incoming,
-//     npy_intp* boundary_index,
-//     double* buffer
-// ) {
-//     for (npy_intp iattr = 0; iattr < nattrs; iattr++) {
-//         npy_intp ibuff = 0;
-
-//         for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-//             if (boundary_index[ibound] >= 0) {
-//                 double* attr = attrs_list[boundary_index[ibound]*nattrs + iattr];
-//                 for (npy_intp i = 0; i < npart_incoming[ibound]; i++) {
-//                     npy_intp idx = incoming_indices[ibound][i];
-//                     buffer[ibuff*nattrs+iattr] = attr[idx];
-//                     ibuff++;
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// Mark out-of-bound particles as dead
-static void mark_out_of_bound_as_dead(
-    double *x, double *y, npy_bool *is_dead, npy_intp npart, 
-    double xmin, double xmax, 
-    double ymin, double ymax
-) {
-    for (npy_intp ipart = 0; ipart < npart; ipart++) {
-        if (is_dead[ipart]) {
-            // x[ipart] = NAN;
-            // y[ipart] = NAN;
-            continue;
-        }
-        if ((x[ipart] < xmin) || (x[ipart] > xmax) || (y[ipart] < ymin) || (y[ipart] > ymax)) {
-            is_dead[ipart] = 1;
-            x[ipart] = NAN;
-            y[ipart] = NAN;
-        }
-    }
-}
-
 PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     // Parse input arguments
     PyObject* particles_list;
@@ -367,13 +323,11 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     // Fill particles from buffer
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        npy_intp npart = npart_list[ipatch];
         npy_bool *is_dead = is_dead_list[ipatch];
         
         npy_intp ipart = 0;
         for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
             npy_intp npart_new = npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
-            int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (npart_new <= 0) {
                 continue;
             }

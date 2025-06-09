@@ -316,7 +316,10 @@ class Patch3D(Patch):
     def set_neighbor_rank(self, **kwargs):
         for neighbor in kwargs.keys():
             self.neighbor_rank[Boundary3D[neighbor.upper()]] = kwargs[neighbor]
-
+    
+    def set_neighbor_ipatch(self, **kwargs):
+        for neighbor in kwargs.keys():
+            self.neighbor_ipatch[Boundary3D[neighbor.upper()]] = kwargs[neighbor]
 
     def add_pml_boundary(self, pml: PML) -> None:
         assert (self.nx >= pml.thickness) and (self.ny >= pml.thickness)
@@ -486,6 +489,21 @@ class Patches:
                     if neighbor_rank != p.rank:
                         p.set_neighbor_rank(**{bound.name.lower(): neighbor_rank})
 
+    def init_neighbor_rank_3d(self):
+        """
+        Initialize the neighbor rank for a rectangular grid of 3D patches.
+        
+        Called on global patches
+        """
+        for p in self.patches:
+            for bound in Boundary3D:
+                neighbor_index = p.neighbor_index[bound]
+                if neighbor_index >= 0:
+                    neighbor_rank = self.patches[neighbor_index].rank
+                    if neighbor_rank != p.rank:
+                        p.set_neighbor_rank(**{bound.name.lower(): neighbor_rank})
+
+
     def init_neighbor_ipatch_2d(self):
         """
         Initialize the neighbor ipatch for a rectangular grid of 2D patches.
@@ -498,7 +516,21 @@ class Patches:
                 if neighbor_index >= 0 and neighbor_index in self.indices:
                     neighbor_ipatch = self.indices.index(neighbor_index)
                     p.set_neighbor_ipatch(**{bound.name.lower(): neighbor_ipatch})
-                    
+    
+    def init_neighbor_ipatch_3d(self):
+        """
+        Initialize the neighbor ipatch for a rectangular grid of 3D patches.
+        
+        Called on local patches
+        """
+        for p in self.patches:
+            for bound in Boundary3D:
+                neighbor_index = p.neighbor_index[bound]
+                if neighbor_index >= 0 and neighbor_index in self.indices:
+                    neighbor_ipatch = self.indices.index(neighbor_index)
+                    p.set_neighbor_ipatch(**{bound.name.lower(): neighbor_ipatch})
+
+
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
         if self.dimension == 2:
             sync_guard_fields_2d(

@@ -87,6 +87,7 @@ class Simulation:
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
         )
+        self.dimension = 2
         
         self.nx = config.nx
         self.ny = config.ny
@@ -119,11 +120,7 @@ class Simulation:
         return self.itime * self.dt
     
     def initialize(self):
-        if isinstance(self, Simulation):
-            dim = 2
-        elif isinstance(self, Simulation3D):
-            dim = 3
-        patches_list = [Patches(dim) for _ in range(MPIManager.get_size())]
+        patches_list = [Patches(self.dimension) for _ in range(MPIManager.get_size())]
         if MPIManager.get_rank() == 0:
             # patches are created, fields and particles are not.
             patches = self.create_patches()
@@ -146,18 +143,23 @@ class Simulation:
             #     _load_array[p.ipatch_x, p.ipatch_y] = patches_load[p.index]
             # print(f"Rank array:\n{_rank_array}")
             # print(f"Load array:\n{_load_array}")
-
-            patches.init_neighbor_rank_2d()
+            if self.dimension == 2:
+                patches.init_neighbor_rank_2d()
+            elif self.dimension == 3:
+                patches.init_neighbor_rank_3d()
             
             for p in patches:
                 patches_list[p.rank].append(p)
 
         self.patches: Patches = MPIManager.get_comm().scatter(patches_list, root=0)
-        self.patches.init_neighbor_ipatch_2d()
+        if self.dimension == 2:
+            self.patches.init_neighbor_ipatch_2d()
+        elif self.dimension == 3:
+            self.patches.init_neighbor_ipatch_3d()
 
         self._init_fields()
         
-        self.mpi = MPIManager(self.patches)
+        self.mpi = MPIManager.create(self.patches)
 
         self._init_pml()
         # Add species to patches
@@ -387,6 +389,7 @@ class Simulation:
                 self.ispec = ispec
 
                 if use_unified_pusher[ispec]:
+                    ...
                     with Timer(f"unified pusher for species {ispec}"):
                         self.pusher[ispec](self.dt, unified=True)
                 else:
@@ -503,6 +506,7 @@ class Simulation3D(Simulation):
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
         )
+        self.dimension = 3
         
         self.nx = config.nx
         self.ny = config.ny
@@ -527,56 +531,67 @@ class Simulation3D(Simulation):
         self.ny_per_patch = self.ny // self.npatch_y
         self.nz_per_patch = self.nz // self.npatch_z
 
-        self.create_patches()
-        self.species = []
+        self.species: list[Species] = []
         
-        self.maxwell = MaxwellSolver3D(self.patches)
+        self.maxwell = None
         self.interpolator = None
         self.current_depositor = None
         
         self.itime = 0
 
+    def _init_fields(self):
+        for p in self.patches:
+            f = Fields3D(
+                nx=self.nx_per_patch,
+                ny=self.ny_per_patch,
+                nz=self.nz_per_patch,
+                dx=self.dx,
+                dy=self.dy,
+                dz=self.dz,
+                x0=p.x0,
+                y0=p.y0,
+                z0=p.z0,
+                n_guard=self.n_guard
+            )
+            p.set_fields(f)
+    
+    def _init_pml(self):
+        for p in self.patches:
+            if p.ipatch_x == 0:
+                p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_x == self.npatch_x - 1:
+                p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_y == 0:
+                p.add_pml_boundary(PMLYmin(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_y == self.npatch_y - 1:
+                p.add_pml_boundary(PMLYmax(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_z == 0:
+                p.add_pml_boundary(PMLZmin(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_z == self.npatch_z - 1:
+                p.add_pml_boundary(PMLZmax(p.fields, thickness=self.cpml_thickness))
+
     def create_patches(self):
-        self.patches = Patches(dimension=3)
+        patches = Patches(dimension=3)
         for k in range(self.npatch_z):
             for j in range(self.npatch_y):
                 for i in range(self.npatch_x):
                     index = i + j * self.npatch_x + k*self.npatch_x*self.npatch_y
                     p = Patch3D(
-                        rank=0, index=index, 
+                        rank=None, index=index, 
                         ipatch_x=i, ipatch_y=j, ipatch_z=k,
                         x0=i*self.Lx/self.npatch_x, y0=j*self.Ly/self.npatch_y, z0=k*self.Lz/self.npatch_z,
                         nx=self.nx_per_patch, ny=self.ny_per_patch, nz=self.nz_per_patch,
                         dx=self.dx, dy=self.dy, dz=self.dz
                     )
-                    f = Fields3D(
-                        nx=self.nx_per_patch, ny=self.ny_per_patch, nz=self.nz_per_patch,
-                        dx=self.dx, dy=self.dy, dz=self.dz,
-                        x0=i*self.Lx/self.npatch_x, y0=j*self.Ly/self.npatch_y, z0=k*self.Lz/self.npatch_z,
-                        n_guard=self.n_guard
-                    )
-                    
-                    p.set_fields(f)
 
-                    if i == 0:
-                        p.add_pml_boundary(PMLXmin(f, thickness=self.cpml_thickness))
-                    if i == self.npatch_x - 1:
-                        p.add_pml_boundary(PMLXmax(f, thickness=self.cpml_thickness))
-                    if j == 0:
-                        p.add_pml_boundary(PMLYmin(f, thickness=self.cpml_thickness))
-                    if j == self.npatch_y - 1:
-                        p.add_pml_boundary(PMLYmax(f, thickness=self.cpml_thickness))
-                    if k == 0:
-                        p.add_pml_boundary(PMLZmin(f, thickness=self.cpml_thickness))
-                    if k == self.npatch_z - 1:
-                        p.add_pml_boundary(PMLZmax(f, thickness=self.cpml_thickness))
+                    patches.append(p)
 
-                    self.patches.append(p)
+        patches.init_rect_neighbor_index_3d(self.npatch_x, self.npatch_y, self.npatch_z)
+        patches.update_lists()
+        return patches
 
-        self.patches.init_rect_neighbor_index_3d(self.npatch_x, self.npatch_y, self.npatch_z)
-
-        self.patches.update_lists()
-
+    def _init_maxwell_solver(self):
+        self.maxwell = MaxwellSolver3D(self.patches)
 
     def _init_interpolator(self):
         self.interpolator = FieldInterpolation3D(self.patches)
