@@ -20,7 +20,7 @@ dynamic = ["version"]
 authors = [
   {name = "xsgeng", email = "xsgeng@siom.ac.cn"}
 ]
-license = {file = "LICENSE"}
+license = "GPL-3.0"
 readme = "README.md"
 keywords = ["Plasma Physics", "Strong field", "PIC"]
 classifiers = [
@@ -37,7 +37,6 @@ requires = [
     "setuptools",
     "setuptools_scm",
     "numpy",
-    "h5py",
     "numba",
     "scipy"
 ]
