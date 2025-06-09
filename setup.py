@@ -129,40 +129,27 @@ extensions = [
     ),
 ]
 
-class QEDBuildCommand(build_ext):
-    """集成HDF5表生成的官方推荐实现"""
-    def run(self):
-        # 标准构建流程
-        super().run()
+def _generate_qed_tables():
+    for table in ["optical_depth_tables_sigmoid", "optical_depth_tables"]:
+        if os.path.exists(f"lambdapic/core/qed/{table}.npz"):
+            continue
+        gen_script = os.path.join(
+            os.path.dirname(__file__),
+            f"lambdapic/core/qed/{table}.py"
+        )
+    
+        cmd = [
+            sys.executable,
+            gen_script,
+        ]
 
-        # 确保在构建环境可用后才生成
-        self._generate_qed_tables()
-
-    def _generate_qed_tables(self):
-        """使用独立进程生成表数据"""
-
-        for table in ["optical_depth_tables_sigmoid", "optical_depth_tables"]:
-            if os.path.exists(f"lambdapic/core/qed/{table}.h5"):
-                continue
-            gen_script = os.path.join(
-                os.path.dirname(__file__),
-                f"lambdapic/core/qed/{table}.py"
-            )
-      
-            # 在独立Python进程中执行生成
-            cmd = [
-                sys.executable,
-                gen_script,
-            ]
-
-            print(f"\n🚀 Generating {table}:")
-            print(" ".join(cmd))
-            subprocess.check_call(cmd)
+        print(f"\n🚀 Generating {table}:")
+        print(" ".join(cmd))
+        subprocess.check_call(cmd)
+        
+_generate_qed_tables()
 
 setup(
     name="lambdapic",
     ext_modules=extensions,
-    cmdclass={
-        'build_ext': QEDBuildCommand
-    },
 )

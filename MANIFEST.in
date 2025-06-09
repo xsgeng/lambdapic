@@ -1,2 +1,2 @@
-include lambdapic/core/qed/*.h5
+include lambdapic/core/qed/*.npz
 include lambdapic/core/utils/cutils.h

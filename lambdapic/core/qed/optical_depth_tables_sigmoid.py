@@ -3,7 +3,6 @@ import math
 import multiprocessing
 import os
 
-import h5py
 import numpy as np
 from numba import cfunc, njit
 from scipy.constants import alpha, c, hbar, m_e, pi
@@ -11,22 +10,22 @@ from scipy.integrate import quad
 from scipy.special import airy
 
 # built-in tables
-table_path = os.path.join(os.path.dirname(__file__), 'optical_depth_tables_sigmoid.h5')
+table_path = os.path.join(os.path.dirname(__file__), 'optical_depth_tables_sigmoid.npz')
 if os.path.exists(table_path) and __name__ == "lambdapic.core.qed.optical_depth_tables_sigmoid":
-    with h5py.File(table_path, 'r') as f:
-        # 1d
-        _photon_prob_rate_total_table = f['photon_prob_rate_total'][()]
-        _pair_prob_rate_total_table = f['pair_prob_rate_total'][()]
-        # 2d
-        _integral_photon_prob_along_delta = f['integral_photon_prob_along_delta'][()]
-        _integral_pair_prob_along_delta = f['integral_pair_prob_along_delta'][()]
+    f = np.load(table_path)
+    # 1d
+    _photon_prob_rate_total_table = f['photon_prob_rate_total'][()]
+    _pair_prob_rate_total_table = f['pair_prob_rate_total'][()]
+    # 2d
+    _integral_photon_prob_along_delta = f['integral_photon_prob_along_delta'][()]
+    _integral_pair_prob_along_delta = f['integral_pair_prob_along_delta'][()]
 
-        _chi_N = f.attrs['chi_N']
-        _log_chi_range = f.attrs['log_chi_range']
-        _log_chi_delta = f.attrs['log_chi_delta']
-        _delta_N = f.attrs['delta_N']
-        _delta_range = f.attrs['delta_range']
-        _A = f.attrs['A']
+    _chi_N = f['chi_N']
+    _log_chi_range = f['log_chi_range']
+    _log_chi_delta = f['log_chi_delta']
+    _delta_N = f['delta_N']
+    _delta_range = f['delta_range']
+    _A = f['A']
 
     del f
 
@@ -211,31 +210,33 @@ def table_gen(
     chi_N=128, log_chi_min=-3.0, log_chi_max=2.0, 
     delta_N=128, delta_min=1.5e-4,
 ):
-    with h5py.File(os.path.join(table_path, 'optical_depth_tables_sigmoid.h5'), 'w') as h5f:
+    print("计算不同chi_e的总辐射概率")
+    _photon_prob_rate_total = photon_prob_rate_total(chi_N, log_chi_min, log_chi_max)
+    print("计算不同chi_gamma的总电子对概率")
+    _pair_prob_rate_total = pair_prob_rate_total(chi_N, log_chi_min, log_chi_max)
 
-        print("计算不同chi_e的总辐射概率")
-        h5f.create_dataset('photon_prob_rate_total', data=photon_prob_rate_total(chi_N, log_chi_min, log_chi_max))
+    chi = np.logspace(log_chi_min, log_chi_max, chi_N)
+    print("计算不同chi_e辐射概率的积分")
+    with multiprocessing.Pool() as pool:
+        _integral_photon_prob_along_delta = pool.starmap(integral_photon_prob_along_delta, zip(chi, [delta_N]*chi_N, [delta_min]*chi_N))
 
-        print("计算不同chi_gamma的总电子对概率")
-        h5f.create_dataset('pair_prob_rate_total', data=pair_prob_rate_total(chi_N, log_chi_min, log_chi_max))
+    print("计算不同chi_gamma电子对概率的积分")
+    with multiprocessing.Pool() as pool:
+        _integral_pair_prob_along_delta = pool.starmap(integral_pair_prob_along_delta, zip(chi, [delta_N]*chi_N, [delta_min]*chi_N))
 
-        chi = np.logspace(log_chi_min, log_chi_max, chi_N)
-        print("计算不同chi_e辐射概率的积分")
-        with multiprocessing.Pool() as pool:
-            integ = pool.starmap(integral_photon_prob_along_delta, zip(chi, [delta_N]*chi_N, [delta_min]*chi_N))
-        h5f.create_dataset('integral_photon_prob_along_delta', data=integ)
-
-        print("计算不同chi_gamma电子对概率的积分")
-        with multiprocessing.Pool() as pool:
-            integ = pool.starmap(integral_pair_prob_along_delta, zip(chi, [delta_N]*chi_N, [delta_min]*chi_N))
-        h5f.create_dataset('integral_pair_prob_along_delta', data=integ)
-
-        h5f.attrs['chi_N'] = chi_N
-        h5f.attrs['log_chi_range'] = (log_chi_min, log_chi_max)
-        h5f.attrs['log_chi_delta'] = (log_chi_max - log_chi_min) / (chi_N - 1)
-        h5f.attrs['delta_N'] = delta_N
-        h5f.attrs['delta_range'] = (delta_min, 1-delta_min)
-        h5f.attrs['A'] = np.log(1/delta_min - 1)
+    np.savez(
+        os.path.join(table_path, 'optical_depth_tables_sigmoid.npz'),
+        photon_prob_rate_total=_photon_prob_rate_total,
+        pair_prob_rate_total=_pair_prob_rate_total,
+        integral_photon_prob_along_delta=_integral_photon_prob_along_delta,
+        integral_pair_prob_along_delta=_integral_pair_prob_along_delta,
+        chi_N=chi_N,
+        log_chi_range=(log_chi_min, log_chi_max),
+        log_chi_delta=(log_chi_max - log_chi_min) / (chi_N - 1),
+        delta_N=delta_N,
+        delta_range=(delta_min, 1-delta_min),
+        A=np.log(1/delta_min - 1),
+    )
 
 
 if __name__ == '__main__':
