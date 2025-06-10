@@ -539,6 +539,8 @@ class Simulation3D(Simulation):
         
         self.itime = 0
 
+        self.initialized = False
+
     def _init_fields(self):
         for p in self.patches:
             f = Fields3D(
