@@ -94,9 +94,11 @@ class SaveFieldsToHDF5:
                     end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
                     data = getattr(p.fields, field)
                     dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
-                    
-            # Only rank 0 writes metadata
-            if rank == 0:
+
+        comm.Barrier()    
+        # Only rank 0 writes metadata
+        if rank == 0:
+            with h5py.File(filename, 'a') as f:
                 f.attrs['nx'] = sim.nx
                 f.attrs['ny'] = sim.ny
                 f.attrs['dx'] = sim.dx
@@ -133,8 +135,10 @@ class SaveFieldsToHDF5:
                     end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
                     data = getattr(p.fields, field)
                     dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-
-            if rank == 0:
+        comm.Barrier()    
+        # Only rank 0 writes metadata
+        if rank == 0:
+            with h5py.File(filename, 'a') as f:
                 f.attrs['nx'] = sim.nx
                 f.attrs['ny'] = sim.ny
                 f.attrs['nz'] = sim.nz
@@ -222,7 +226,9 @@ class SaveParticlesToHDF5:
                 f['id'][start:start+npart_patches[ipatch]] = p.particles[self.species.ispec].id[is_alive]
                 start += npart_patches[ipatch]
 
-            # meta data
-            if rank == 0:
+        comm.Barrier()    
+        # Only rank 0 writes metadata
+        if rank == 0:
+            with h5py.File(filename, 'a') as f:
                 f.attrs['time'] = sim.time
                 f.attrs['itime'] = sim.itime
