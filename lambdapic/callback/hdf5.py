@@ -1,8 +1,12 @@
 import os
+from typing import Callable, List, Optional, Set, Union
+
 import h5py
 import numpy as np
-from typing import List, Optional, Set, Union, Callable
+
+from ..simulation import Simulation, Simulation3D
 from .utils import get_fields
+from ..core.species import Species
 
 class SaveFieldsToHDF5:
     """
@@ -47,34 +51,101 @@ class SaveFieldsToHDF5:
             
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
-            
-    def __call__(self, sim):
+    
+    def __call__(self, sim: Simulation|Simulation3D):
         """Save field data if current timestep is at save interval"""
         if callable(self.interval):
             if not self.interval(sim):
                 return
         elif sim.itime % self.interval != 0:
             return
-            
-        # Get complete fields
-        field_data = get_fields(sim, self.components)
-            
-        # Create new file for this timestep
+        
         filename = f"{self.prefix}_t{sim.itime:06d}.h5"
-        with h5py.File(filename, 'w') as f:
-            # Save field data
-            for field, data in zip(self.components, field_data):
-                f.create_dataset(field, data=data)
-                
-            # Save metadata
-            f.attrs['nx'] = sim.nx
-            f.attrs['ny'] = sim.ny
-            f.attrs['dx'] = sim.dx
-            f.attrs['dy'] = sim.dy
-            f.attrs['Lx'] = sim.Lx
-            f.attrs['Ly'] = sim.Ly
-            f.attrs['time'] = sim.time
-            f.attrs['itime'] = sim.itime
+        if sim.dimension == 2:
+            self._write_2d(sim, filename)
+        elif sim.dimension == 3:
+            self._write_3d(sim, filename)
+    
+    def _write_2d(self, sim: Simulation, filename: str):
+        # Get MPI communicator
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        
+        chunk_size = (sim.nx_per_patch, sim.ny_per_patch)
+        # Create filename with timestep
+
+        if rank == 0:
+            with h5py.File(filename, 'w') as f:
+                for field in self.components:
+                    dset = f.create_dataset(
+                        field, 
+                        data=np.zeros((sim.nx, sim.ny)),
+                        dtype='f8',
+                        chunks=chunk_size
+                    )
+        comm.Barrier()
+        
+        # Create chunked dataset with parallel access
+        with h5py.File(filename, 'a', locking=False) as f:
+            for field in self.components:
+                dset = f[field]
+                for p in sim.patches:
+                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
+                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
+                    data = getattr(p.fields, field)
+                    dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
+                    
+            # Only rank 0 writes metadata
+            if rank == 0:
+                f.attrs['nx'] = sim.nx
+                f.attrs['ny'] = sim.ny
+                f.attrs['dx'] = sim.dx
+                f.attrs['dy'] = sim.dy
+                f.attrs['Lx'] = sim.Lx
+                f.attrs['Ly'] = sim.Ly
+                f.attrs['time'] = sim.time
+                f.attrs['itime'] = sim.itime
+
+    def _write_3d(self, sim: Simulation3D, filename: str):
+        # Get MPI communicator
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        
+        chunk_size = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
+        # Create filename with timestep
+        if rank == 0:
+            with h5py.File(filename, 'w') as f:
+                for field in self.components:
+                    dset = f.create_dataset(
+                        field, 
+                        data=np.zeros((sim.nx, sim.ny, sim.nz)),
+                        dtype='f8',
+                        chunks=chunk_size
+                    )
+        comm.Barrier()
+        
+        # Create chunked dataset with parallel access
+        with h5py.File(filename, 'a', locking=False) as f:
+            for field in self.components:
+                dset = f[field]
+                for p in sim.patches:
+                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
+                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
+                    data = getattr(p.fields, field)
+                    dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+
+            if rank == 0:
+                f.attrs['nx'] = sim.nx
+                f.attrs['ny'] = sim.ny
+                f.attrs['nz'] = sim.nz
+                f.attrs['dx'] = sim.dx
+                f.attrs['dy'] = sim.dy
+                f.attrs['dz'] = sim.dz
+                f.attrs['Lx'] = sim.Lx
+                f.attrs['Ly'] = sim.Ly
+                f.attrs['Lz'] = sim.Lz
+                f.attrs['time'] = sim.time
+                f.attrs['itime'] = sim.itime
 
 
 class SaveParticlesToHDF5:
@@ -85,15 +156,10 @@ class SaveParticlesToHDF5:
     'prefix_t000100.h5', 'prefix_t000200.h5', etc.
     
     The data structure in each file:
-    - /species/
-        - species_0/
-            - patch_0/
-                - x, y (positions)
-                - w (weights)
-                - other particle attributes
-            - patch_1/
-        - species_1/
-        ...
+    - /id
+    - /x, y (positions)
+    - /w (weights)
+    - /...
     
     Args:
         prefix: Prefix for output filenames
@@ -104,49 +170,59 @@ class SaveParticlesToHDF5:
     """
     stage="maxwell second"
     def __init__(self,
-                 prefix: str,
+                 species: Species,
+                 prefix: str='',
                  interval: Union[int, Callable] = 100,
                  attrs: Optional[List[str]] = None) -> None:
         self.prefix = prefix
         self.interval = interval
         self.attrs = attrs
+        self.species = species
+
+        self.attrs.remove('id')
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
             
-    def __call__(self, sim):
+    def __call__(self, sim: Simulation):
         """Save particle data if current timestep is at save interval"""
         if callable(self.interval):
             if not self.interval(sim):
                 return
         elif sim.itime % self.interval != 0:
             return
-            
+        
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        # gather number of particles in each patch
+        npart_patches = [p.particles[self.species.ispec].is_alive.sum() for p in sim.patches]
+        npart_allpatches = comm.allgather(npart_patches)
+
         # Create new file for this timestep
-        filename = f"{self.prefix}_t{sim.itime:06d}.h5"
-        with h5py.File(filename, 'w') as f:
-            species_group = f.create_group('species')
-            
-            for i, species in enumerate(sim.species):
-                species_subgroup = species_group.create_group(f'species_{i}')
-                species_subgroup.attrs['name'] = species.name
-                
-                for patch in sim.patches:
-                    patch_group = species_subgroup.create_group(f'patch_{patch.index}')
-                    particles = patch.particles[i]
-                    
-                    # Save number of particles
-                    patch_group.attrs['npart'] = particles.npart
-                    
-                    # Determine which attributes to save
-                    attrs_to_save = (self.attrs if self.attrs is not None 
-                                   else particles.attrs)
-                    
-                    # Save selected particle attributes
-                    for attr in attrs_to_save:
-                        if attr not in particles.attrs:
-                            continue
-                        data = getattr(particles, attr)
-                        if attr in ['x', 'y', 'w']:  # Only save active particles
-                            data = data[:particles.npart]
-                        patch_group.create_dataset(attr, data=data)
+        filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
+        attrs = sim.patches[0].particles[self.species.ispec].attrs if self.attrs is None else self.attrs
+        if rank == 0:
+            npart_total = sum([sum(n) for n in npart_allpatches])
+            with h5py.File(filename, 'w') as f:
+                for attr in attrs:
+                    f.create_dataset(attr, data=np.zeros((npart_total,)), dtype='f8')
+                f.create_dataset('id', data=np.zeros((npart_total,)), dtype='u8')
+        
+        comm.Barrier()
+        
+        # Create chunked dataset with parallel access
+        with h5py.File(filename, 'a', locking=False) as f:
+            start = sum([sum(n) for n in npart_allpatches[:rank]])
+            for ipatch, p in enumerate(sim.patches):
+                is_alive = p.particles[self.species.ispec].is_alive
+                for attr in attrs:
+                    dset = f[attr]
+                    data = getattr(p.particles[self.species.ispec], attr)
+                    dset[start:start+npart_patches[ipatch]] = data[is_alive]
+                f['id'][start:start+npart_patches[ipatch]] = p.particles[self.species.ispec].id[is_alive]
+                start += npart_patches[ipatch]
+
+            # meta data
+            if rank == 0:
+                f.attrs['time'] = sim.time
+                f.attrs['itime'] = sim.itime
