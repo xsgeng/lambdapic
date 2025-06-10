@@ -3,17 +3,18 @@ from ..core.fields import Fields
 from ..core.patch.patch import Patch
 from numba import njit, prange, typed
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
+from numpy.typing import NDArray
 
 from ..simulation import Simulation
 
 @njit(parallel=True, cache=True)
-def update_laser_bfields_2d(
+def _update_laser_bfields_2d(
     laserpos,
     ex, ey, ez,
     bx, by, bz,
     jx, jy, jz, 
     dx, dy, nx, ny, dt,
-    ey_source: np.ndarray, ez_source: np.ndarray, 
+    ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], 
 ):
     for iy in prange(ny):
         bx[laserpos-1, iy] = bx[0, iy]
@@ -35,13 +36,13 @@ def update_laser_bfields_2d(
         )
 
 @njit(parallel=True, cache=True)
-def update_laser_bfields_3d(
+def _update_laser_bfields_3d(
     laserpos,
     ex, ey, ez,
     bx, by, bz,
     jx, jy, jz, 
     dx, dy, dz, nx, ny, nz, dt,
-    ey_source: np.ndarray, ez_source: np.ndarray, 
+    ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], 
 ):
     for iy in prange(ny):
         bx[laserpos-1, iy, :] = bx[0, iy, :]
@@ -63,25 +64,23 @@ def update_laser_bfields_3d(
         )
 
         
-class Laser2D:
-    stage = "_laser"
-
-    ex_list: typed.List = None
-    ey_list: typed.List = None
-    ez_list: typed.List = None
-    bx_list: typed.List = None
-    by_list: typed.List = None
-    bz_list: typed.List = None
-    jx_list: typed.List = None
-    jy_list: typed.List = None
-    jz_list: typed.List = None
-    def _get_r(self, sim: Simulation, patch: Patch) -> np.ndarray:
+class Laser:
+    staget = "_laser"
+    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64][np.float64]:
+        """Calculate the radial distance from the center of the laser beam."""
+        raise NotImplementedError
+    
+    def _update_bfields(self, laserpos: int, f: Fields, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+        raise NotImplementedError
+    
+class Laser2D(Laser):
+    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         f = patch.fields
         r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2)
         return r
 
-    def _update_bfields(self, laserpos: int, f: Fields, ey_source: np.ndarray, ez_source: np.ndarray, dt: float):
-        update_laser_bfields_2d(
+    def _update_bfields(self, laserpos: int, f: Fields, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+        _update_laser_bfields_2d(
             laserpos,
             f.ex, f.ey, f.ez,
             f.bx, f.by, f.bz,
@@ -91,15 +90,14 @@ class Laser2D:
             ez_source
         )
 
-class Laser3D:
-    stage = "_laser"
-    def _get_r(self, sim: Simulation, patch: Patch) -> np.ndarray:
+class Laser3D(Laser):
+    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         f = patch.fields
         r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2)**2 + (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2)**2)**0.5
         return r
     
-    def _update_bfields(self, laserpos: int, f: Fields, ey_source: np.ndarray, ez_source: np.ndarray, dt: float):
-        update_laser_bfields_3d(
+    def _update_bfields(self, laserpos: int, f: Fields, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+        _update_laser_bfields_3d(
             laserpos,
             f.ex, f.ey, f.ez,
             f.bx, f.by, f.bz,
@@ -109,7 +107,7 @@ class Laser3D:
             ez_source
         )
     
-class SimpleLaser(Laser2D):
+class SimpleLaser(Laser):
     """
     A simple laser pulse implementation with basic spatial and temporal profiles.
     This class provides a straightforward way to inject a laser pulse into the simulation
@@ -178,7 +176,7 @@ class SimpleLaser(Laser2D):
         for p in sim.patches:
             # Only inject from the leftmost patch
             if p.ipatch_x == ipatch_x:
-                # Calculate radial distance from the center of the simulation box
+                # r is 2D or 3D depending on the simulation dimension
                 r = self._get_r(sim, p)
                 # Calculate base field amplitude with:
                 # - Gaussian transverse profile: exp(-r²/w0²)
@@ -187,6 +185,9 @@ class SimpleLaser(Laser2D):
                 efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
                 f = p.fields
                 self._update_bfields(laserpos, f, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
+
+class SimpleLaser2D(SimpleLaser, Laser2D):
+    ...
 
 class SimpleLaser3D(SimpleLaser, Laser3D):
     ...
@@ -280,6 +281,7 @@ class GaussianLaser(Laser2D):
 
         for p in sim.patches:
             if p.ipatch_x == ipatch_x:
+                # r is 2D or 3D depending on the simulation dimension
                 r = self._get_r(sim, p)
                 
                 # Calculate amplitude and phase
