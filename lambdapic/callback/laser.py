@@ -66,7 +66,7 @@ def _update_laser_bfields_3d(
         
 class Laser:
     staget = "_laser"
-    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64][np.float64]:
+    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
         raise NotImplementedError
     
@@ -186,14 +186,14 @@ class SimpleLaser(Laser):
                 f = p.fields
                 self._update_bfields(laserpos, f, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
 
-class SimpleLaser2D(SimpleLaser, Laser2D):
+class SimpleLaser2D(Laser2D, SimpleLaser):
     ...
 
-class SimpleLaser3D(SimpleLaser, Laser3D):
+class SimpleLaser3D(Laser3D, SimpleLaser):
     ...
 
 
-class GaussianLaser(Laser2D):
+class GaussianLaser(Laser):
     """
     Implementation of a proper Gaussian laser beam with:
     - Gaussian temporal and spatial profiles
@@ -296,6 +296,9 @@ class GaussianLaser(Laser2D):
                 efield = amp * np.sin(phase) * tprof
                 f = p.fields
                 self._update_bfields(laserpos, f, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
-                
-class GaussianLaser3D(GaussianLaser, Laser3D):
+
+class GaussianLaser2D(Laser2D, GaussianLaser):
+    ...
+
+class GaussianLaser3D(Laser3D, GaussianLaser):
     ...
