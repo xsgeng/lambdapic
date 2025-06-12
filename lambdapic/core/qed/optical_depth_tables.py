@@ -60,14 +60,19 @@ def _bisect_interp(chi, table2d):
     low, high = 0, _delta_N-1
     chi_idx = _get_chi_idx(chi)
     
-    ymin = (table2d[chi_idx, 0] + table2d[chi_idx+1, 0])*0.5
-    ymax = (table2d[chi_idx, -1] + table2d[chi_idx+1, -1])*0.5
+    # Calculate fractional position between chi grid points
+    log_chi = np.log10(chi)
+    log_chi_left = _log_chi_range[0] + chi_idx * _log_chi_delta
+    t = (log_chi - log_chi_left) / _log_chi_delta
+    
+    # Bilinear interpolation for ymin/ymax
+    ymin = table2d[chi_idx, 0] * (1 - t) + table2d[chi_idx+1, 0] * t
+    ymax = table2d[chi_idx, -1] * (1 - t) + table2d[chi_idx+1, -1] * t
 
-    # lower than ymin are ignored
     r = np.random.rand() * (ymax-ymin) + ymin
     while low <= high:
         mid = int((low + high)/2)
-        mid_delta = (table2d[chi_idx, mid] + table2d[chi_idx+1, mid])*0.5
+        mid_delta = table2d[chi_idx, mid] * (1 - t) + table2d[chi_idx+1, mid] * t
 
         if mid_delta < r:
             low = mid + 1
@@ -75,10 +80,10 @@ def _bisect_interp(chi, table2d):
             high = mid - 1
     
     # interp
-    delta_idx = high # high = low - 1, the left index
-
-    y1 = (table2d[chi_idx,delta_idx  ] + table2d[chi_idx+1,delta_idx  ])*0.5
-    y2 = (table2d[chi_idx,delta_idx+1] + table2d[chi_idx+1,delta_idx+1])*0.5
+    delta_idx = high
+    
+    y1 = table2d[chi_idx, delta_idx] * (1 - t) + table2d[chi_idx+1, delta_idx] * t
+    y2 = table2d[chi_idx, delta_idx+1] * (1 - t) + table2d[chi_idx+1, delta_idx+1] * t
     k = _log_delta_delta / (y2 - y1)
     log_delta_left = _log_delta_range[0] + delta_idx*_log_delta_delta
     log_delta = log_delta_left + k * (r - y1)   
