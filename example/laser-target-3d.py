@@ -12,9 +12,6 @@ from lambdapic.callback.laser import SimpleLaser3D, GaussianLaser3D
 from lambdapic.callback.utils import ExtractSpeciesDensity, get_fields
 from lambdapic.callback.hdf5 import SaveFieldsToHDF5
 
-logger.remove()
-logger.add("log.txt", level='Timer', format="{level}: {message}")
-
 um = 1e-6
 l0 = 0.8 * um
 t0 = l0 / c

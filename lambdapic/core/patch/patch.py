@@ -687,13 +687,10 @@ class Patches:
         return num_macro_particles
 
         
-    def add_species(self, species : Species, aux_attrs: list[str]=None) -> None:
+    def add_species(self, species : Species, aux_attrs: list[str]=None) -> int:
         if aux_attrs is None:
             aux_attrs = []
 
-        print(f"Initializing Species {species.name}...", end=" ")
-        tic = perf_counter_ns()
-        
         num_macro_particles = self.calculate_npart(species)
 
         for ipatch, p in enumerate(self.patches):
@@ -705,15 +702,10 @@ class Patches:
         self.species.append(species)
         
         num_macro_particles_sum = sum(num_macro_particles)
-        print(f"{(perf_counter_ns() - tic)/1e6} ms.")
-        print(f"Species {species.name} initialized with {sum(num_macro_particles)} macro particles.")
         return num_macro_particles_sum
 
     def fill_particles(self):
         for ispec, s in enumerate(self.species):
-            print(f"Creating Species {s.name}...", end=" ")
-            tic = perf_counter_ns()
-            
             if s.density is not None:
                 if self.dimension == 2:
                     xaxis = typed.List([p.xaxis for p in self.patches])
@@ -752,5 +744,4 @@ class Patches:
                         x_list, y_list, z_list, w_list
                     )
     
-            print(f"{(perf_counter_ns() - tic)/1e6} ms.")
         self.update_lists()

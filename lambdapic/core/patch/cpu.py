@@ -7,9 +7,9 @@ from numba import njit, prange
 def get_num_macro_particles_2d(density_func, xaxis_list, yaxis_list, npatches, dens_min, ppc) -> NDArray[np.int64]:
     num_particles = np.zeros(npatches, dtype=np.int64)
     for ipatch in prange(npatches):
-        xaxis =  xaxis_list[ipatch]
-        yaxis =  yaxis_list[ipatch]
-
+        ip = np.int64(ipatch)
+        xaxis = xaxis_list[ip]
+        yaxis = yaxis_list[ip]
         for x_grid in xaxis:
             for y_grid in yaxis:
                 dens = density_func(x_grid, y_grid)
@@ -23,11 +23,12 @@ def fill_particles_2d(density_func, xaxis_list, yaxis_list, npatches, dens_min, 
     dx = xaxis_list[0][1] - xaxis_list[0][0]
     dy = yaxis_list[0][1] - yaxis_list[0][0]
     for ipatch in prange(npatches):
-        xaxis =  xaxis_list[ipatch]
-        yaxis =  yaxis_list[ipatch]
-        x = x_list[ipatch]
-        y = y_list[ipatch]
-        w = w_list[ipatch]
+        ip = np.int64(ipatch)
+        xaxis = xaxis_list[ip]
+        yaxis = yaxis_list[ip]
+        x = x_list[ip]
+        y = y_list[ip]
+        w = w_list[ip]
         ipart = 0
         for x_grid in xaxis:
             for y_grid in yaxis:
@@ -45,9 +46,10 @@ def get_num_macro_particles_3d(
 ) -> NDArray[np.int64]:
     num_particles = np.zeros(npatches, dtype=np.int64)
     for ipatch in prange(npatches):
-        xaxis = xaxis_list[ipatch]
-        yaxis = yaxis_list[ipatch]
-        zaxis = zaxis_list[ipatch]
+        ip = np.int64(ipatch)
+        xaxis = xaxis_list[ip]
+        yaxis = yaxis_list[ip]
+        zaxis = zaxis_list[ip]
         for x_grid in xaxis:
             for y_grid in yaxis:
                 for z_grid in zaxis:
@@ -67,13 +69,14 @@ def fill_particles_3d(
     dz = zaxis_list[0][1] - zaxis_list[0][0]
     
     for ipatch in prange(npatches):
-        xaxis = xaxis_list[ipatch]
-        yaxis = yaxis_list[ipatch]
-        zaxis = zaxis_list[ipatch]
-        x = x_list[ipatch]
-        y = y_list[ipatch]
-        z = z_list[ipatch]
-        w = w_list[ipatch]
+        ip = np.int64(ipatch)
+        xaxis = xaxis_list[ip]
+        yaxis = yaxis_list[ip]
+        zaxis = zaxis_list[ip]
+        x = x_list[ip]
+        y = y_list[ip]
+        z = z_list[ip]
+        w = w_list[ip]
         ipart = 0
         
         for x_grid in xaxis:
