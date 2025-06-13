@@ -31,6 +31,8 @@ def get_fields(sim: Simulation, fields: List[str]) -> list[np.ndarray]:
     nx = sim.nx
     ny = sim.ny
     ng = sim.n_guard
+
+    assert sim.dimension == 2, "Only 2D simulation is supported"
     
     if not fields:
         return

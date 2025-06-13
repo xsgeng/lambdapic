@@ -1,17 +1,13 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import mytools
-import numpy as np
-from loguru import logger
-from matplotlib.colors import LinearSegmentedColormap as _LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
-from lambdapic import Electron, Proton, Species, Simulation, callback
-from lambdapic.callback.laser import SimpleLaser, GaussianLaser
-from lambdapic.callback.utils import ExtractSpeciesDensity, get_fields
-
-logger.remove()
+from lambdapic import Electron, Proton, Simulation, Species, callback
+from lambdapic.callback.hdf5 import SaveFieldsToHDF5
+from lambdapic.callback.laser import GaussianLaser2D
+from lambdapic.callback.utils import get_fields
 
 um = 1e-6
 l0 = 0.8 * um
@@ -36,7 +32,7 @@ def density(n0):
         return ne
     return _density
 
-laser = GaussianLaser(
+laser = GaussianLaser2D(
     a0=10,
     w0=2e-6,
     l0=0.8e-6,
@@ -60,34 +56,42 @@ if __name__ == "__main__":
 
     sim.add_species([ele, carbon, proton])
 
-    store_ne = ExtractSpeciesDensity(sim, ele, every=100)
-    store_proton = ExtractSpeciesDensity(sim, proton, every=100)
-
     @callback()
-    def plot_results(sim):
+    def plot_results(sim: Simulation):
         it = sim.itime
         if it % 100 == 0:
             ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
             
+            if sim.mpi.rank > 0:
+                return
             ey *= e / (m_e * c * omega0)
 
+            bwr_alpha = LinearSegmentedColormap(
+                'bwr_alpha', 
+                dict( 
+                    red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
+                    green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
+                    blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
+                    alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
+                )
+            )
             fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 
             h1 = ax.imshow(
+                -rho.T/e/nc, 
+                extent=[0, Lx, 0, Ly],
+                origin='lower',
+                cmap='Grays',
+                vmax=20,
+                vmin=0,
+            )
+            h2 = ax.imshow(
                 ey.T, 
                 extent=[0, Lx, 0, Ly],
                 origin='lower',
-                cmap="bwr",
+                cmap=bwr_alpha,
                 vmax=laser.a0,
                 vmin=-laser.a0,
-            )
-            h2 = ax.imshow(
-                store_proton.density.T/nc, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap=mytools.cmap.grey_alpha,
-                vmax=5,
-                vmin=0,
             )
             fig.colorbar(h1)
             fig.colorbar(h2)
@@ -102,8 +106,7 @@ if __name__ == "__main__":
     
     sim.run(2001, callbacks=[
             laser, 
-            store_ne, 
-            store_proton, 
             plot_results,
+            SaveFieldsToHDF5('laser-target/fields', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
         ]
     )

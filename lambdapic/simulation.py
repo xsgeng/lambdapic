@@ -528,6 +528,8 @@ class Simulation:
                 stage_callbacks.run('maxwell second')
         
             self.itime += 1
+        
+        self.mpi.comm.Barrier()
 
 
 class Simulation3D(Simulation):

@@ -1,15 +1,7 @@
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-import mytools
-import numpy as np
-from loguru import logger
-from matplotlib.colors import LinearSegmentedColormap as _LinearSegmentedColormap
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
 from lambdapic import Electron, Proton, Species, Simulation3D, callback
-from lambdapic.callback.laser import SimpleLaser3D, GaussianLaser3D
-from lambdapic.callback.utils import ExtractSpeciesDensity, get_fields
+from lambdapic.callback.laser import  GaussianLaser3D
 from lambdapic.callback.hdf5 import SaveFieldsToHDF5
 
 um = 1e-6
