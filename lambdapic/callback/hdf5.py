@@ -107,7 +107,7 @@ class SaveFieldsToHDF5:
                 f.attrs['Ly'] = sim.Ly
                 f.attrs['time'] = sim.time
                 f.attrs['itime'] = sim.itime
-
+                
     def _write_3d(self, sim: Simulation3D, filename: str):
         # Get MPI communicator
         comm = sim.mpi.comm
@@ -151,6 +151,130 @@ class SaveFieldsToHDF5:
                 f.attrs['time'] = sim.time
                 f.attrs['itime'] = sim.itime
 
+
+class SaveSpeciesDensityToHDF5:
+    stage = "current deposition"
+    def __init__(self, species: Species, prefix: str, interval: Union[int, Callable] = 100):
+        self.species = species
+        self.prefix = prefix
+        self.interval = interval
+        self.prev_rho = None
+        self.species = species
+        os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
+
+    @property
+    def ispec_target(self):
+        assert self.species.ispec >= 0, f"Species {self.species.name} has not been initialized."
+        return self.species.ispec
+    
+    def __call__(self, sim: Simulation):
+        if callable(self.interval):
+            if not self.interval(sim):
+                return
+        elif sim.itime % self.interval != 0:
+            return
+            
+        if self.ispec_target == 0:
+            if sim.ispec == 0:
+                density = self._compute_density(sim)
+                if sim.dimension == 2:
+                    self._write_2d(sim, density)
+                elif sim.dimension == 3:
+                    self._write_3d(sim, density)
+        else:
+            if sim.ispec == self.ispec_target - 1:
+                self.prev_rho = []
+                for p in sim.patches:
+                    self.prev_rho.append(p.fields.rho.copy())
+            elif sim.ispec == self.ispec_target:
+                density = self._compute_density(sim)
+                if sim.dimension == 2:
+                    self._write_2d(sim, density)
+                elif sim.dimension == 3:
+                    self._write_3d(sim, density)
+                self.prev_rho = None
+
+    def _compute_density(self, sim: Simulation) -> list:
+        density = []
+        for ip, p in enumerate(sim.patches):
+            if self.ispec_target == 0:
+                d = p.fields.rho / self.species.q
+            else:
+                d = (p.fields.rho - self.prev_rho[ip]) / self.species.q
+            density.append(d)
+        return density
+
+    def _write_2d(self, sim: Simulation, density_per_patch: list):
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
+        
+        if rank == 0:
+            with h5py.File(filename, 'w') as f:
+                dset = f.create_dataset(
+                    'density', 
+                    data=np.zeros((sim.nx, sim.ny), dtype='f8'),
+                    chunks=(sim.nx_per_patch, sim.ny_per_patch)
+                )
+        comm.Barrier()
+
+        with h5py.File(filename, 'a', locking=False) as f:
+            dset = f['density']
+            for ip, p in enumerate(sim.patches):
+                start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
+                end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
+                dset[start[0]:end[0], start[1]:end[1]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch]
+        comm.Barrier()
+
+        if rank == 0:
+            with h5py.File(filename, 'a') as f:
+                f.attrs['time'] = sim.time
+                f.attrs['itime'] = sim.itime
+                f.attrs['species'] = self.species.name
+                f.attrs['nx'] = sim.nx
+                f.attrs['ny'] = sim.ny
+                f.attrs['dx'] = sim.dx
+                f.attrs['dy'] = sim.dy
+                f.attrs['Lx'] = sim.Lx
+                f.attrs['Ly'] = sim.Ly
+
+    def _write_3d(self, sim: Simulation3D, density_per_patch: list):
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
+        
+        if rank == 0:
+            with h5py.File(filename, 'w') as f:
+                dset = f.create_dataset(
+                    'density', 
+                    (sim.nx, sim.ny, sim.nz),
+                    dtype='f8',
+                    chunks=(sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
+                )
+        comm.Barrier()
+
+        with h5py.File(filename, 'a', locking=False) as f:
+            dset = f['density']
+            for ip, p in enumerate(sim.patches):
+                start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
+                end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
+                dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        comm.Barrier()
+
+        if rank == 0:
+            with h5py.File(filename, 'a') as f:
+                f.attrs['time'] = sim.time
+                f.attrs['itime'] = sim.itime
+                f.attrs['species'] = self.species.name
+                f.attrs['nx'] = sim.nx
+                f.attrs['ny'] = sim.ny
+                f.attrs['nz'] = sim.nz
+                f.attrs['dx'] = sim.dx
+                f.attrs['dy'] = sim.dy
+                f.attrs['dz'] = sim.dz
+                f.attrs['Lx'] = sim.Lx
+                f.attrs['Ly'] = sim.Ly
+                f.attrs['Lz'] = sim.Lz
 
 class SaveParticlesToHDF5:
     """

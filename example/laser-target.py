@@ -5,7 +5,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
 from lambdapic import Electron, Proton, Simulation, Species, callback
-from lambdapic.callback.hdf5 import SaveFieldsToHDF5
+from lambdapic.callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5
 from lambdapic.callback.laser import GaussianLaser2D
 from lambdapic.callback.utils import get_fields
 
@@ -108,5 +108,7 @@ if __name__ == "__main__":
             laser, 
             plot_results,
             SaveFieldsToHDF5('laser-target/fields', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
+            SaveSpeciesDensityToHDF5(carbon, 'laser-target/density', 100),
+            SaveSpeciesDensityToHDF5(ele, 'laser-target/density', 100),
         ]
     )
