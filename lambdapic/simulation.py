@@ -122,6 +122,7 @@ class Simulation:
         return self.itime * self.dt
     
     def initialize(self):
+        comm = MPIManager.get_comm()
         rank = MPIManager.get_rank()
         size = MPIManager.get_size()
         
@@ -159,8 +160,9 @@ class Simulation:
                 assert p.rank is not None
                 patches_list[p.rank].append(p)
 
-        logger.info(f"Rank {rank}: Receiving patches")
-        self.patches: Patches = MPIManager.get_comm().scatter(patches_list, root=0)
+        comm.Barrier()
+        logger.info(f"Rank {rank}: Receiving patch info")
+        self.patches: Patches = comm.scatter(patches_list, root=0)
         
         logger.info(f"Rank {rank}: Initializing neighbor indices")
         if self.dimension == 2:
@@ -202,7 +204,7 @@ class Simulation:
         self.initialized = True
         logger.success(f"Rank {rank}: Initialization complete")
 
-        MPIManager.get_comm().Barrier()
+        comm.Barrier()
 
     def _init_fields(self):
         for p in self.patches:
@@ -289,8 +291,10 @@ class Simulation:
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
             if s.pusher == "boris":
+                logger.info(f"Using Boris pusher for {s.name}")
                 self.pusher.append(BorisPusher(self.patches, ispec))
             elif s.pusher == "photon":
+                logger.info(f"Using Photon pusher for {s.name}")
                 self.pusher.append(PhotonPusher(self.patches, ispec))
 
     def _init_qed(self):
@@ -301,6 +305,7 @@ class Simulation:
                 continue
             if hasattr(s, "radiation"):
                 if s.radiation == "photons":
+                    logger.info(f"Using nonlinear Compton LCFA for {s.name}")
                     self.radiation.append(NonlinearComptonLCFA(self.patches, ispec))
                 elif s.radiation is None:
                     self.radiation.append(None)
@@ -311,6 +316,7 @@ class Simulation:
         for ispec, s in enumerate(self.patches.species):
             if hasattr(s, "electron") and hasattr(s, "positron"):
                 if s.electron is not None and s.positron is not None:
+                    logger.info(f"Using nonlinear pair production LCFA for {s.name}")
                     self.pairproduction.append(NonlinearPairProductionLCFA(self.patches, ispec))
                     continue
             self.pairproduction.append(None)
@@ -390,9 +396,10 @@ class Simulation:
                 not self.pairproduction[ispec] and \
                 not stages_in_pusher.intersection([stage for stage, cb in stage_callbacks.stage_callbacks.items() if cb]):
                 use_unified_pusher[ispec] = True
+                logger.info(f"Rank {self.mpi.rank}: No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}")
 
-            
-
+        if self.mpi.rank == 0:
+            logger.info("Starting simulation")
         for self.istep in trange(nsteps, disable=self.mpi.rank>0):
             
             # start of simulation stages
@@ -421,7 +428,6 @@ class Simulation:
                 self.ispec = ispec
 
                 if use_unified_pusher[ispec]:
-                    ...
                     with Timer(f"unified pusher for {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt, unified=True)
                 else:
