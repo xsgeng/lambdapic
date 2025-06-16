@@ -8,8 +8,10 @@ from numpy import log, random
 if os.environ.get("LIBPIC_USE_SIGMOID_SAMPLING") == "1":
     from .optical_depth_tables_sigmoid import (
         _integral_photon_prob_along_delta,
+        _integral_pair_prob_along_delta,
         _log_chi_range,
         _photon_prob_rate_total_table,
+        _pair_prob_rate_total_table,
         integ_pair_prob_rate_from_table,
         integ_photon_prob_rate_from_table,
         pair_delta_from_chi_delta_table,
@@ -19,8 +21,10 @@ if os.environ.get("LIBPIC_USE_SIGMOID_SAMPLING") == "1":
 else:
     from .optical_depth_tables import (
         _integral_photon_prob_along_delta,
+        _integral_pair_prob_along_delta,
         _log_chi_range,
         _photon_prob_rate_total_table,
+        _pair_prob_rate_total_table,
         integ_pair_prob_rate_from_table,
         integ_photon_prob_rate_from_table,
         pair_delta_from_chi_delta_table,

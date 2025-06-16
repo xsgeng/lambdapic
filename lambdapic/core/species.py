@@ -4,7 +4,7 @@ from typing import Callable, Literal
 
 from numba import njit
 from numba.extending import is_jitted
-from pydantic import BaseModel, computed_field, Field
+from pydantic import BaseModel, computed_field, Field, model_validator
 from scipy.constants import e, m_e, m_p
 
 from .particles import (ParticlesBase, QEDParticles, SpinParticles,
@@ -16,16 +16,16 @@ class Species(BaseModel):
     charge: int
     mass: float
 
-    density: Callable = None
+    density: Callable|None = None
     density_min: float = 0
     ppc: int = 0
 
-    momentum: tuple[Callable, Callable, Callable] = (None, None, None)
-    polarization: tuple[float, float, float] = None
+    momentum: tuple[Callable|None, Callable|None, Callable|None] = (None, None, None)
+    polarization: tuple[float, float, float]|None = None
 
     pusher: Literal["boris", "photon", "boris+tbmt"] = "boris"
 
-    ispec: int = None
+    ispec: int|None = None
 
     @computed_field
     @cached_property
@@ -49,7 +49,7 @@ class Species(BaseModel):
             return None
         
 
-    def create_particles(self, ipatch: int=None, rank: int=None) -> ParticlesBase:
+    def create_particles(self, ipatch: int|None=None, rank: int|None=None) -> ParticlesBase:
         """ 
         Create Particles from the species.
 
@@ -65,15 +65,15 @@ class Electron(Species):
     name: str = 'electron'
     charge: int = -1
     mass: float = 1
-    radiation: Literal["ll", "photons"] = None
-    photon: Species = None
+    radiation: Literal["ll", "photons"]|None = None
+    photon: Species|None = None
 
     def set_photon(self, photon: Species):
         assert self.radiation == "photons"
         assert isinstance(photon, Species)
         self.photon = photon
 
-    def create_particles(self, ipatch: int=None, rank: int=None) -> ParticlesBase:
+    def create_particles(self, ipatch: int|None=None, rank: int|None=None) -> ParticlesBase:
         if self.photon:
             if self.polarization is None:
                 return QEDParticles(ipatch, rank)
@@ -101,10 +101,10 @@ class Photon(Species):
     charge: int = 0
     mass: float = 0
 
-    pusher: str = "photon"
+    pusher: Literal["boris", "photon", "boris+tbmt"] = "photon"
 
-    electron: Species = None
-    positron: Species = None
+    electron: Species|None = None
+    positron: Species|None = None
 
     def set_bw_pair(self, *, electron: Species, positron: Species):
         assert isinstance(electron, Species)
@@ -112,7 +112,7 @@ class Photon(Species):
         self.electron = electron
         self.positron = positron
 
-    def create_particles(self, ipatch: int=None, rank: int=None) -> ParticlesBase:
+    def create_particles(self, ipatch: int|None=None, rank: int|None=None) -> ParticlesBase:
         if self.electron is not None:
             return QEDParticles(ipatch, rank)
         # else:

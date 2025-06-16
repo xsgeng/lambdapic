@@ -1,8 +1,9 @@
 import pymetis
 import numpy as np
+from numpy.typing import NDArray
 from .patch import Patches
 
-def compute_rank(patches: Patches, nrank, weights, rank_prev=None) -> tuple[list, list]:
+def compute_rank(patches: Patches, nrank: int, weights: NDArray[np.int64], rank_prev: NDArray[np.int64]|None=None) -> tuple[list[int], list[int]]:
     assert all(np.array([p.index for p in patches]) == np.arange(len(patches))), "patch index must be 1..., n-1"
     adjacency_list = [p.neighbor_index[p.neighbor_index >= 0] for p in patches]
 

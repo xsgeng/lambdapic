@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.constants import e, m_e
 from numpy.typing import NDArray
-from numpy import float64, uint64
+from numpy import bool_, float64, uint64, bool_
 from loguru import logger
 
 class ParticlesBase:
@@ -21,7 +21,7 @@ class ParticlesBase:
     by_part: NDArray[float64]
     bz_part: NDArray[float64]
 
-    is_dead: NDArray[bool]
+    is_dead: NDArray[bool_]
 
     # 64bit float for id. composed of 14bit for rank, 18bit for ipatch, 32bit for local particle
     _id: NDArray[float64]
@@ -29,7 +29,7 @@ class ParticlesBase:
     npart: int # length of the particles, including dead
     _npart_created: int  # counter for generating sequential local IDs
 
-    def __init__(self, ipatch: int=None, rank: int=None) -> None:
+    def __init__(self, ipatch: int|None=None, rank: int|None=None) -> None:
         """
         Initialize the particle class.
 
@@ -148,7 +148,11 @@ class ParticlesBase:
 
 
 class QEDParticles(ParticlesBase):
-    def __init__(self, ipatch: int, rank: int = 0) -> None:
+    chi: NDArray[float64]
+    tau: NDArray[float64]
+    delta: NDArray[float64]
+    event: NDArray[bool_]
+    def __init__(self, ipatch: int|None, rank: int|None = 0) -> None:
         super().__init__(ipatch=ipatch, rank=rank)
         self.attrs += ["chi", "tau", "delta"]
 
@@ -168,11 +172,14 @@ class QEDParticles(ParticlesBase):
 
 
 class SpinParticles(ParticlesBase):
-    def __init__(self, ipatch: int, rank: int = 0) -> None:
+    sx: NDArray[float64]
+    sy: NDArray[float64]
+    sz: NDArray[float64]
+    def __init__(self, ipatch: int|None, rank: int|None = 0) -> None:
         super().__init__(ipatch=ipatch, rank=rank)
         self.attrs += ["sx", "sy", "sz"]
 
 
 class SpinQEDParticles(SpinParticles, QEDParticles):
-    def __init__(self, ipatch: int, rank: int = 0) -> None:
+    def __init__(self, ipatch: int|None, rank: int|None = 0) -> None:
         super().__init__(ipatch=ipatch, rank=rank)

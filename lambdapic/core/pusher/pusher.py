@@ -4,6 +4,8 @@ import numpy as np
 from numba import njit, prange, typed, types
 from scipy.constants import c, e, epsilon_0, mu_0
 
+from lambdapic.core.particles import SpinParticles
+
 from ..patch import Patches
 
 from .cpu import boris_push_patches, push_position_patches_2d, photon_push_patches
@@ -166,6 +168,7 @@ class BorisTBMTPusher(PusherBase):
     def update_particle_lists(self, ipatch: int) -> None:
         super().update_particle_lists(ipatch)
         particles = self.patches[ipatch].particles[self.ispec]
+        assert isinstance(particles, SpinParticles)
         self.sx_list[ipatch] = particles.sx
         self.sy_list[ipatch] = particles.sy
         self.sz_list[ipatch] = particles.sz

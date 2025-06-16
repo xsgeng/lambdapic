@@ -1,21 +1,27 @@
 from collections.abc import Callable, Sequence
+from tkinter import NO
 from typing import Optional
 
 import numpy as np
-from .core.utils.logger import logger
+from numpy.typing import NDArray
 from pydantic import BaseModel, Field, model_validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 
 from .callback.callback import SimulationStage, callback
 from .core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
-from .core.current.deposition import CurrentDeposition2D, CurrentDeposition3D
+from .core.current.deposition import (
+    CurrentDeposition,
+    CurrentDeposition2D,
+    CurrentDeposition3D,
+)
 from .core.fields import Fields2D, Fields3D
 from .core.interpolation.field_interpolation import (
+    FieldInterpolation,
     FieldInterpolation2D,
     FieldInterpolation3D,
 )
-from .core.maxwell.solver import MaxwellSolver2D, MaxwellSolver3D
+from .core.maxwell.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
 from .core.mpi.mpi_manager import MPIManager
 from .core.patch.metis import compute_rank
 from .core.patch.patch import Patch2D, Patch3D, Patches
@@ -23,7 +29,8 @@ from .core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D
-from .core.species import Species
+from .core.species import Electron, Photon, Species
+from .core.utils.logger import logger
 from .core.utils.timer import Timer
 
 
@@ -37,8 +44,6 @@ class SimulationConfig(BaseModel):
     dt_cfl: float = Field(0.95, gt=0, le=1, description="CFL condition factor")
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
-    nprocx: int = Field(1, gt=0, description="Number of MPI processes in x direction")
-    nprocy: int = Field(1, gt=0, description="Number of MPI processes in y direction")
 
     @model_validator(mode='after')
     def validate_nx_divisible(self):
@@ -107,10 +112,6 @@ class Simulation:
         self.ny_per_patch = self.ny // self.npatch_y
 
         self.species: list[Species] = []
-
-        self.maxwell = None
-        self.interpolator = None
-        self.current_depositor = None
         
         self.itime = 0
         
@@ -138,14 +139,14 @@ class Simulation:
             patches = self.create_patches()
 
             logger.info("Calculating patch loads")
-            patches_load = np.zeros(patches.npatches, dtype='int64')
+            patches_load: NDArray[np.int64] = np.zeros(patches.npatches, dtype='int64')
             for ispec, s in enumerate(self.species):
                 patches_load += patches.calculate_npart(s)
             patches_load += int(self.nx_per_patch * self.ny_per_patch / 2)
 
             logger.info("Computing rank assignments")
             ranks, npatch_per_rank = compute_rank(patches, size, patches_load)
-            for p, r in zip(patches, ranks):
+            for p, r in zip(patches.patches, ranks):
                 p.rank = r
                 
             logger.info("Initializing neighbor ranks")
@@ -155,6 +156,7 @@ class Simulation:
                 patches.init_neighbor_rank_3d()
             
             for p in patches:
+                assert p.rank is not None
                 patches_list[p.rank].append(p)
 
         logger.info(f"Rank {rank}: Receiving patches")
@@ -292,19 +294,20 @@ class Simulation:
                 self.pusher.append(PhotonPusher(self.patches, ispec))
 
     def _init_qed(self):
-        self.radiation: list[RadiationBase] = []
+        self.radiation: list[RadiationBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if not hasattr(s, "radiation"):
                 self.radiation.append(None)
                 continue
-            if s.radiation == "photons":
-                self.radiation.append(NonlinearComptonLCFA(self.patches, ispec))
-            elif s.radiation is None:
-                self.radiation.append(None)
-            else:
-                raise ValueError(f"Unknown radiation model: {s.radiation}")
+            if hasattr(s, "radiation"):
+                if s.radiation == "photons":
+                    self.radiation.append(NonlinearComptonLCFA(self.patches, ispec))
+                elif s.radiation is None:
+                    self.radiation.append(None)
+                else:
+                    raise ValueError(f"Unknown radiation model: {s.radiation}")
             
-        self.pairproduction: list[PairProductionBase] = []
+        self.pairproduction: list[PairProductionBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if hasattr(s, "electron") and hasattr(s, "positron"):
                 if s.electron is not None and s.positron is not None:
@@ -367,7 +370,7 @@ class Simulation:
                     
                     
 
-    def run(self, nsteps: int, callbacks: Sequence[Callable] = None):
+    def run(self, nsteps: int, callbacks: Sequence[Callable[['Simulation'], None]]|None = None):
         if not self.initialized:
             self.initialize()
             
@@ -436,8 +439,8 @@ class Simulation:
                         with Timer("callback interpolator"):
                             stage_callbacks.run('interpolator')
 
-                    if self.radiation[ispec] is not None:
-                        with Timer(f'radiation for {self.species[ispec].name}'):
+                    with Timer(f'radiation for {self.species[ispec].name}'):
+                        if self.radiation[ispec] is not None:
                             self.radiation[ispec].update_chi()
                             self.radiation[ispec].event(dt=self.dt)
                             
@@ -648,7 +651,7 @@ class Simulation3D(Simulation):
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
     
-    def __init__(self, callbacks: list[Callable], simulation):
+    def __init__(self, callbacks: Sequence[Callable[[Simulation], None]]|None, simulation):
         """
         Initialize the callback manager.
         

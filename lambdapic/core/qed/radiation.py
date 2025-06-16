@@ -1,6 +1,8 @@
 
 from numba import typed
 
+from lambdapic.core.particles import QEDParticles
+
 from ..patch import Patches
 from ..species import Electron, Photon, Species
 from .cpu import (
@@ -35,6 +37,7 @@ class RadiationBase:
         self.npatches = patches.npatches
 
         self.ispec = ispec
+        self.photon_ispec = None
 
 
     def generate_particle_lists(self) -> None:
@@ -61,6 +64,8 @@ class RadiationBase:
 
     def update_particle_lists(self, ipatch: int) -> None:
         particles = self.patches[ipatch].particles[self.ispec]
+        assert isinstance(particles, QEDParticles)
+
         self.tau_list[ipatch] = particles.tau
         self.chi_list[ipatch] = particles.chi
         self.delta_list[ipatch] = particles.delta
@@ -107,11 +112,11 @@ class NonlinearComptonLCFA(RadiationBase):
     def __init__(self, patches: Patches, ispec: int) -> None:
         super().__init__(patches, ispec)
 
-        radiation_species: Electron = patches.species[ispec]
-        assert isinstance(radiation_species, Electron)
-        assert isinstance(radiation_species.photon, Photon)
-
-        self.photon_ispec = patches.species.index(radiation_species.photon)
+        radiation_species = patches.species[ispec]
+        assert isinstance(radiation_species, Electron), "Only support electron radiation. Please use `Electron` species."
+        assert isinstance(radiation_species.photon, Photon), "Please use `Photon` species."
+        assert radiation_species.photon.ispec is not None
+        self.photon_ispec = radiation_species.photon.ispec
 
         self.generate_particle_lists()
 
@@ -245,12 +250,11 @@ class ContinuousRadiation(RadiationBase):
 
         self.ispec = ispec
 
-        radiation_species: Electron = patches.species[ispec]
+        radiation_species = patches.species[ispec]
         assert isinstance(radiation_species, Electron)
         assert radiation_species.photon is None
 
-        self.photon_ispec = patches.species.index(radiation_species.photon)
-
+        self.photon_ispec = None
         self.q = radiation_species.q
 
         self.generate_particle_lists()
@@ -259,7 +263,7 @@ class ContinuousRadiation(RadiationBase):
     def event(self, dt: float) -> None:
         pass
 
-    def create_particles(self) -> None:
+    def create_particles(self, extra_buff=0.25) -> None:
         pass
 
     def reaction(self) -> None:

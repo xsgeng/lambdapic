@@ -148,16 +148,9 @@ class FieldInterpolation2D(FieldInterpolation):
 
     def __call__(self, ispec: int) -> None:
         interpolation_patches_2d(
-            self.x_list[ispec], self.y_list[ispec],
-            self.ex_part_list[ispec], self.ey_part_list[ispec], self.ez_part_list[ispec],
-            self.bx_part_list[ispec], self.by_part_list[ispec], self.bz_part_list[ispec],
-            self.is_dead_list[ispec],
-            self.ex_list, self.ey_list, self.ez_list,
-            self.bx_list, self.by_list, self.bz_list,
-            self.x0s, self.y0s,
+            [p.particles[ispec] for p in self.patches],
+            [p.fields for p in self.patches],
             self.npatches,
-            self.dx, self.dy,
-            self.nx + 2*self.patches.n_guard, self.ny + 2*self.patches.n_guard,
         )
 
 class FieldInterpolation3D(FieldInterpolation2D):
@@ -177,7 +170,7 @@ class FieldInterpolation3D(FieldInterpolation2D):
 
     def __call__(self, ispec: int) -> None:
         interpolation_patches_3d(
-            [p.fields for p in self.patches],
             [p.particles[ispec] for p in self.patches],
+            [p.fields for p in self.patches],
             self.npatches,
         )

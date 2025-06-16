@@ -1,6 +1,7 @@
 from time import perf_counter_ns
 
 import numpy as np
+from numpy.typing import NDArray
 from numba import njit, typed
 
 from ..boundary.cpml import PML, PMLX, PMLY
@@ -13,7 +14,7 @@ from ..patch.cpu import (
     fill_particles_3d,
     get_num_macro_particles_3d,
 )
-from ..species import Species
+from ..species import Electron, Photon, Species
 from .sync_fields2d import sync_currents_2d, sync_guard_fields_2d
 from .sync_fields3d import sync_currents_3d, sync_guard_fields_3d
 
@@ -68,13 +69,15 @@ class Boundary3D(IntEnum):
     XMAXYMAXZMIN = auto()
     XMAXYMAXZMAX = auto()
 class Patch:
-    rank: int
+    rank: int|None
     # the global index of the patch
     index: int
     ipatch_x: int
     ipatch_y: int
+    ipatch_z: int
     x0: float
     y0: float
+    z0: float
 
     nx: int
     ny: int
@@ -83,15 +86,15 @@ class Patch:
     dy: float
     dz: float
 
-    xaxis: np.ndarray
-    yaxis: np.ndarray
-    zaxis: np.ndarray
+    xaxis: NDArray
+    yaxis: NDArray
+    zaxis: NDArray
 
     # the global index of the neighbor patch
-    neighbor_index: np.ndarray[int]
-    neighbor_rank: np.ndarray[int]
+    neighbor_index: NDArray[np.int64]
+    neighbor_rank: NDArray[np.int64]
     # the index of the neighbor patch in the patches of the same rank
-    neighbor_ipatch: np.ndarray[int]
+    neighbor_ipatch: NDArray[np.int64]
 
     fields: Fields
     def __init__(self) -> None:
@@ -160,7 +163,7 @@ class Patch:
 class Patch2D(Patch):
     def __init__(
         self,
-        rank: int,
+        rank: int|None,
         index: int,
         ipatch_x: int,
         ipatch_y: int,
@@ -340,7 +343,7 @@ class Patches:
         self.npatches: int = 0
         self.indices : list[int] = []
         self.patches : list[Patch] = []
-        self.species : list[Species] = []
+        self.species : list[Species|Electron|Photon] = []
     
     def __getitem__(self, i: int) -> Patch:
         return self.patches[i]
@@ -587,7 +590,7 @@ class Patches:
                     [p for p in self],
                     npart_incoming, npart_outgoing,
                     self.npatches, self.dx, self.dy,
-                    self[ipatches].particles[ispec].attrs
+                    self[0].particles[ispec].attrs
                 )
         if self.dimension == 3:
             for ispec, s in enumerate(self.species):
@@ -608,7 +611,7 @@ class Patches:
                     [p for p in self],
                     npart_incoming, npart_outgoing,
                     self.npatches, self.dx, self.dy, self.dz,
-                    self[ipatches].particles[ispec].attrs
+                    self[0].particles[ispec].attrs
                 )
 
         
@@ -642,12 +645,12 @@ class Patches:
         return self[0].fields.n_guard
 
 
-    def calculate_npart(self, species: Species) -> np.ndarray[int]:
+    def calculate_npart(self, species: Species) -> NDArray[np.int64]:
         """
         Calculate the number of macro particles in each patch based on the species density function.
         
         Returns:
-            num_macro_particles: np.ndarray[int]
+            num_macro_particles: NDArray[int]
                 An array of integers representing the number of macro particles in each patch.
         """
         if self.dimension == 2:
@@ -683,11 +686,12 @@ class Patches:
                 )
             else:
                 num_macro_particles = np.zeros(self.npatches, dtype='int64')
-        
+        else:
+            raise ValueError('dimension must be 2 or 3')
         return num_macro_particles
 
         
-    def add_species(self, species : Species, aux_attrs: list[str]=None) -> int:
+    def add_species(self, species : Species, aux_attrs: list[str]|None=None) -> int:
         if aux_attrs is None:
             aux_attrs = []
 
