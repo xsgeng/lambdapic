@@ -409,11 +409,11 @@ class Patches:
             for attr in patch.particles[ispec].attrs:
                 plists[ispec][attr][ipatch] = getattr(patch.particles[ispec], attr)
 
-    def init_rect_neighbor_index_2d(self, npatch_x, npatch_y):
+    def init_rect_neighbor_index_2d(self, npatch_x: int, npatch_y: int, patch_index_map: dict[tuple, int]={}):
         """ 
         Initialize the neighbor index for a rectangular grid of 2D patches.
         
-        Called on global patches
+        Called on **global** patches, or provide a dict of (ipatch_x, ipatch_y) to patch index
         """
         # Define all possible neighbor offsets and their corresponding names
         neighbor_offsets = [
@@ -425,7 +425,11 @@ class Patches:
             ((-1, +1), 'xminymax'), ((+1, +1), 'xmaxymax'),
         ]
 
+        if not patch_index_map:
+            patch_index_map = {(p.ipatch_x, p.ipatch_y): p.index for p in self.patches}
+
         for p in self.patches:
+            p.neighbor_index.fill(-1)
             i, j = p.ipatch_x, p.ipatch_y
             
             for (dx, dy), name in neighbor_offsets:
@@ -434,15 +438,14 @@ class Patches:
                 
                 # Check if neighbor coordinates are valid
                 if 0 <= neighbor_i < npatch_x and 0 <= neighbor_j < npatch_y:
-                    # Calculate neighbor index
-                    neighbor_index = neighbor_i + neighbor_j * npatch_x
+                    neighbor_index = patch_index_map[(neighbor_i, neighbor_j)]
                     p.set_neighbor_index(**{name: neighbor_index})
-                
-    def init_rect_neighbor_index_3d(self, npatch_x, npatch_y, npatch_z):
+    
+    def init_rect_neighbor_index_3d(self, npatch_x: int, npatch_y: int, npatch_z: int, patch_index_map: dict[tuple, int]={}):
         """ 
         Initialize the neighbor index for a rectangular grid of patches.
         
-        Called on global patches
+        Called on **global** patches, or provide a dict of (ipatch_x, ipatch_y, ipatch_z) to patch index
         """
         # Define all possible neighbor offsets and their corresponding names
         neighbor_offsets = [
@@ -465,8 +468,12 @@ class Patches:
             ((+1, -1, -1), 'xmaxyminzmin'), ((+1, -1, +1), 'xmaxyminzmax'),
             ((+1, +1, -1), 'xmaxymaxzmin'), ((+1, +1, +1), 'xmaxymaxzmax')
         ]
+        
+        if not patch_index_map:
+            patch_index_map = {(p.ipatch_x, p.ipatch_y, p.ipatch_z): p.index for p in self.patches}
 
         for p in self.patches:
+            p.neighbor_index.fill(-1)
             i, j, k = p.ipatch_x, p.ipatch_y, p.ipatch_z
             
             for (dx, dy, dz), name in neighbor_offsets:
@@ -474,31 +481,48 @@ class Patches:
                 
                 # Check if neighbor coordinates are valid
                 if 0 <= neighbor_i < npatch_x and 0 <= neighbor_j < npatch_y and 0 <= neighbor_k < npatch_z:
-                    # Calculate neighbor index
-                    neighbor_index = neighbor_i + neighbor_j * npatch_x + neighbor_k * npatch_x * npatch_y
+                    neighbor_index = patch_index_map[(neighbor_i, neighbor_j)]
                     p.set_neighbor_index(**{name: neighbor_index})
 
-    def init_neighbor_rank_2d(self):
+    def init_neighbor_rank_2d(self, patch_rank_map: dict[int, int]={}):
         """
         Initialize the neighbor rank for a rectangular grid of 2D patches.
         
-        Called on global patches
+        Called on **global** patches, or provide a dict of patch index to rank
         """
+
+        if not patch_rank_map:
+            patch_rank_map = {}
+
         for p in self.patches:
+            assert p.rank is not None, f"Patch {p.index} rank is None"
+            patch_rank_map[p.index] = p.rank
+            
+
+        for p in self.patches:
+            p.neighbor_rank.fill(-1)
             for bound in Boundary2D:
                 neighbor_index = p.neighbor_index[bound]
                 if neighbor_index >= 0:
-                    neighbor_rank = self.patches[neighbor_index].rank
+                    neighbor_rank = patch_rank_map[neighbor_index]
                     if neighbor_rank != p.rank:
                         p.set_neighbor_rank(**{bound.name.lower(): neighbor_rank})
 
-    def init_neighbor_rank_3d(self):
+    def init_neighbor_rank_3d(self, patch_rank_map: dict[int, int]={}):
         """
         Initialize the neighbor rank for a rectangular grid of 3D patches.
         
-        Called on global patches
+        Called on **global** patches, or provide a dict of patch index to rank
         """
+        if not patch_rank_map:
+            patch_rank_map = {}
+            
         for p in self.patches:
+            assert p.rank is not None, f"Patch {p.index} rank is None"
+            patch_rank_map[p.index] = p.rank
+
+        for p in self.patches:
+            p.neighbor_rank.fill(-1)
             for bound in Boundary3D:
                 neighbor_index = p.neighbor_index[bound]
                 if neighbor_index >= 0:
@@ -514,6 +538,7 @@ class Patches:
         Called on local patches
         """
         for p in self.patches:
+            p.neighbor_ipatch.fill(-1)
             for bound in Boundary2D:
                 neighbor_index = p.neighbor_index[bound]
                 if neighbor_index >= 0 and neighbor_index in self.indices:
@@ -527,6 +552,7 @@ class Patches:
         Called on local patches
         """
         for p in self.patches:
+            p.neighbor_ipatch.fill(-1)
             for bound in Boundary3D:
                 neighbor_index = p.neighbor_index[bound]
                 if neighbor_index >= 0 and neighbor_index in self.indices:
