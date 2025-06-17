@@ -129,16 +129,19 @@ class MovingWindow:
     """Callback to implement a moving simulation window"""
     stage = "start"  # Apply at start of each time step
     
-    def __init__(self, every: int, direction: str = 'x'):
+    def __init__(self, velocity: Union[float, Callable], every: int, direction: str = 'x'):
         """
         Initialize moving window callback
         
         Args:
-            every: Apply moving window every N time steps
+            velocity: Window velocity in m/s (can be constant or function of time)
+            every: Apply moving window every N time steps 
             direction: Direction of movement ('x', 'y', or 'z')
         """
+        self.velocity = velocity
         self.every = every
         self.direction = direction
+        self.total_shift = 0.0
         
     def __call__(self, sim: Simulation):
         """Apply moving window shift if needed"""
@@ -149,16 +152,36 @@ class MovingWindow:
         if self.direction != 'x':
             raise NotImplementedError("Only x-direction moving window is currently supported")
             
+        # Calculate current window velocity
+        if callable(self.velocity):
+            current_velocity = self.velocity(sim.time)
+        else:
+            current_velocity = self.velocity
+            
+        # Calculate shift amount based on velocity and time interval
+        shift_amount = current_velocity * self.every * sim.dt
+        
+        # Only shift by whole patches - calculate how many patches to shift
+        patch_shift = round(shift_amount / (sim.nx_per_patch * sim.dx))
+        
+        # If no whole patches to shift, skip this step
+        if patch_shift == 0:
+            return
+            
+        # Record total shift distance
+        self.total_shift += patch_shift * sim.nx_per_patch * sim.dx
+        
         # Shift patches
-        for p in sim.patches:
-            if p.ipatch_x == 0:
-                p.ipatch_x = sim.npatch_x - 1
-                p.x0 += sim.Lx
-                p.fields.xaxis += sim.Lx
-            else:
-                p.ipatch_x -= 1
-                p.x0 += sim.nx_per_patch * sim.dx
-                p.fields.xaxis += sim.nx_per_patch * sim.dx
+        for _ in range(int(patch_shift)):
+            for p in sim.patches:
+                if p.ipatch_x == 0:
+                    p.ipatch_x = sim.npatch_x - 1
+                    p.x0 += sim.Lx
+                    p.fields.xaxis += sim.Lx
+                else:
+                    p.ipatch_x -= 1
+                    p.x0 += sim.nx_per_patch * sim.dx
+                    p.fields.xaxis += sim.nx_per_patch * sim.dx
                 
             # Update global index
             p.index = p.ipatch_x + p.ipatch_y * sim.npatch_x
@@ -190,4 +213,8 @@ class MovingWindow:
         
         # Log the shift
         if rank == 0:
-            logger.info(f"Applied moving window shift at step {sim.itime}")
+            logger.info(
+                f"Applied moving window shift of {patch_shift} patch(es) "
+                f"({patch_shift * sim.nx_per_patch * sim.dx:.2e} m) at step {sim.itime} "
+                f"(velocity: {current_velocity/c:.4f}c, total shift: {self.total_shift:.2e} m)"
+            )
