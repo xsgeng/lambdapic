@@ -42,8 +42,8 @@ requires = [
     "scipy"
 ]
 
-[tool.setuptools]
-packages = {find = {where = ["lambdapic"]}}
-package-dir = {"" = "lambdapic"}
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lambdapic"]
 
 [tool.setuptools_scm]
