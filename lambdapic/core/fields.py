@@ -23,6 +23,10 @@ class Fields:
     jz: NDArray[np.float64]
     rho: NDArray[np.float64]
 
+    xaxis: NDArray[np.float64]
+    yaxis: NDArray[np.float64]
+    zaxis: NDArray[np.float64]
+
     attrs = ["ex", "ey", "ez", "bx", "by", "bz", "jx", "jy", "jz", "rho"]
 
     def _init_fields(self, attrs: list[str]|None):

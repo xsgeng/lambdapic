@@ -5,6 +5,7 @@ import numpy as np
 from typing import Callable, Union, List
 
 from ..core.species import Species
+from ..core.utils.logger import logger
 
 from pathlib import Path
 
@@ -122,3 +123,71 @@ class ExtractSpeciesDensity:
 def species_transfer(s1, s2):
     # if ..., s1 particles become s2
     pass
+
+
+class MovingWindow:
+    """Callback to implement a moving simulation window"""
+    stage = "start"  # Apply at start of each time step
+    
+    def __init__(self, every: int, direction: str = 'x'):
+        """
+        Initialize moving window callback
+        
+        Args:
+            every: Apply moving window every N time steps
+            direction: Direction of movement ('x', 'y', or 'z')
+        """
+        self.every = every
+        self.direction = direction
+        
+    def __call__(self, sim: Simulation):
+        """Apply moving window shift if needed"""
+        if sim.itime % self.every != 0:
+            return
+            
+        # Only x-direction is currently implemented
+        if self.direction != 'x':
+            raise NotImplementedError("Only x-direction moving window is currently supported")
+            
+        # Shift patches
+        for p in sim.patches:
+            if p.ipatch_x == 0:
+                p.ipatch_x = sim.npatch_x - 1
+                p.x0 += sim.Lx
+                p.fields.xaxis += sim.Lx
+            else:
+                p.ipatch_x -= 1
+                p.x0 += sim.nx_per_patch * sim.dx
+                p.fields.xaxis += sim.nx_per_patch * sim.dx
+                
+            # Update global index
+            p.index = p.ipatch_x + p.ipatch_y * sim.npatch_x
+
+        # Gather updated patch information from all ranks
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        
+        # Prepare local patch info
+        local_info = []
+        for p in sim.patches:
+            local_info.append((p.ipatch_x, p.ipatch_y, p.index, rank))
+            
+        # Gather all patch info
+        all_info = comm.allgather(local_info)
+        
+        # Build global mappings
+        patch_index_map = {}
+        patch_rank_map = {}
+        for rank_info in all_info:
+            for (ipx, ipy, idx, r) in rank_info:
+                patch_index_map[(ipx, ipy)] = idx
+                patch_rank_map[idx] = r
+                
+        # Reinitialize neighbor relationships
+        sim.patches.init_rect_neighbor_index_2d(sim.npatch_x, sim.npatch_y, patch_index_map)
+        sim.patches.init_neighbor_ipatch_2d()
+        sim.patches.init_neighbor_rank_2d(patch_rank_map)
+        
+        # Log the shift
+        if rank == 0:
+            logger.info(f"Applied moving window shift at step {sim.itime}")
