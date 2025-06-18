@@ -2,15 +2,19 @@ from ..simulation import Simulation
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 import numpy as np
 
-from typing import Callable, Union, List
+from typing import Callable, Sequence, Union, List
 
 from ..core.species import Species
 from ..core.utils.logger import logger
 
 from pathlib import Path
 
+from ..core.patch.cpu import fill_particles_2d, get_num_macro_particles_2d
+from ..core.patch.patch import Patch, Patch2D, Patch3D
+from numba import typed
 
-def get_fields(sim: Simulation, fields: List[str]) -> list[np.ndarray]:
+
+def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
     """
     Get fields from all patches.
     
@@ -18,10 +22,10 @@ def get_fields(sim: Simulation, fields: List[str]) -> list[np.ndarray]:
     
     Args:
         sim (Simulation): Simulation instance.
-        fields (List[str]): List of fields to get.
+        fields (Sequence[str]): List of fields to get.
         
     Returns:
-        list[np.ndarray]: List of fields named as field.
+        Sequence[np.ndarray]: List of fields named as field.
     """
     ret = []
     patches = sim.patches
@@ -133,7 +137,9 @@ class MovingWindow:
         self, 
         velocity: Union[float, Callable[[float], float]], 
         direction: str = 'x', 
-        start_time: float|None = None
+        start_time: float|None = None,
+        inject_particles: bool = True,
+        stop_inject_time: float|None = None,
     ):
         # numpy docstring
         """
@@ -144,10 +150,15 @@ class MovingWindow:
                 Window velocity in m/s, constant or function of time. When function of time, the time start after `start_time`.
             direction (str): Direction of movement ('x', 'y', or 'z')
             start_time (float): Time at which to start moving the window
+            inject_particles (bool): Whether to inject particles into the simulation.
+            stop_inject_time (float): Time at which to stop injecting particles. Useful when the window moves backwards.
         """
         self.velocity = velocity
         self.direction = direction
         self.start_time = start_time
+        self.inject_particles = inject_particles
+        self.stop_inject_time = stop_inject_time
+
         self.total_shift = 0.0
         self.patch_this_shift = 0.0
         self.num_shifts: int = 0
@@ -174,40 +185,71 @@ class MovingWindow:
         self.total_shift += shift_amount
         self.patch_this_shift += shift_amount
         
-        if -sim.nx_per_patch * sim.dx < self.patch_this_shift < sim.nx_per_patch * sim.dx:
+        patch_Lx = sim.nx_per_patch * sim.dx
+
+        if self.patch_this_shift >= patch_Lx:
+            new_patches = self._shift_right(sim)
+            self.patch_this_shift -= patch_Lx
+        elif self.patch_this_shift <= -patch_Lx:
+            new_patches = self._shift_left(sim)
+            self.patch_this_shift += patch_Lx
+        else:
             return
-        
-        if self.patch_this_shift > sim.nx_per_patch * sim.dx:
-            self._shift_right(sim)
-            self.patch_this_shift -= sim.nx_per_patch * sim.dx
-        elif self.patch_this_shift < -sim.nx_per_patch * sim.dx:
-            self._shift_left(sim)
-            self.patch_this_shift += sim.nx_per_patch * sim.dx
         self.num_shifts += 1
-        
         self._update_patch_info(sim)
 
-    def _shift_right(self, sim: Simulation):
+
+        if not self.inject_particles:
+            return
+        
+        if self.stop_inject_time is not None and sim.time >= self.stop_inject_time:
+            return
+        
+        if not new_patches:
+            return
+        
+        if sim.dimension == 2:
+            self._fill_particles_2d(sim, new_patches)
+        elif sim.dimension == 3:
+            self._fill_particles_3d(sim, new_patches)
+        else:
+            raise NotImplementedError("Only 2D and 3D simulations are supported")
+
+    def _shift_right(self, sim: Simulation) -> Sequence[Patch]:
+        new_patches = []
+        patch_Lx = sim.nx_per_patch * sim.dx
         for p in sim.patches:
             if p.ipatch_x == 0:
                 p.ipatch_x = sim.npatch_x - 1
                 p.x0 += sim.Lx
+                p.xaxis += sim.Lx
                 p.fields.xaxis += sim.Lx
+                new_patches.append(p)
             else:
                 p.ipatch_x -= 1
-                p.x0 += sim.nx_per_patch * sim.dx
-                p.fields.xaxis += sim.nx_per_patch * sim.dx
+                p.x0 += patch_Lx
+                p.xaxis += patch_Lx
+                p.fields.xaxis += patch_Lx
+
+        return new_patches
                 
-    def _shift_left(self, sim: Simulation):
+    def _shift_left(self, sim: Simulation) -> Sequence[Patch]:
+        new_patches = []
+        patch_Lx = sim.nx_per_patch * sim.dx
         for p in sim.patches:
             if p.ipatch_x == sim.npatch_x - 1:
                 p.ipatch_x = 0
                 p.x0 -= sim.Lx
+                p.xaxis -= sim.Lx
                 p.fields.xaxis -= sim.Lx
+                new_patches.append(p)
             else:
                 p.ipatch_x += 1
-                p.x0 -= sim.nx_per_patch * sim.dx
-                p.fields.xaxis -= sim.nx_per_patch * sim.dx
+                p.x0 -= patch_Lx
+                p.xaxis -= patch_Lx
+                p.fields.xaxis -= patch_Lx
+        
+        return new_patches
                 
     def _update_patch_info(self, sim: Simulation):
         # Gather updated patch information from all ranks
@@ -235,5 +277,42 @@ class MovingWindow:
         sim.patches.init_neighbor_ipatch_2d()
         sim.patches.init_neighbor_rank_2d(patch_rank_map)
         
-    def _fill_particles(self, sim: Simulation):
+    def _fill_particles_2d(self, sim: Simulation, patches: Sequence[Patch2D]):
+        for ispec, s in enumerate(sim.species):
+            if s.density is None:
+                continue
+                
+            xaxis = typed.List([p.xaxis for p in patches])
+            yaxis = typed.List([p.yaxis for p in patches])
+            x_list = typed.List([p.particles[ispec].x for p in patches])
+            y_list = typed.List([p.particles[ispec].y for p in patches])
+            w_list = typed.List([p.particles[ispec].w for p in patches])
+
+            num_macro_particles = get_num_macro_particles_2d(
+                s.density_jit,
+                xaxis, 
+                yaxis, 
+                len(patches), 
+                s.density_min, 
+                s.ppc,
+            )
+
+            for ipatch, p in enumerate(patches):
+                p.particles[ispec].initialize(num_macro_particles[ipatch])
+
+                x_list[ipatch] = p.particles[ispec].x
+                y_list[ipatch] = p.particles[ispec].y
+                w_list[ipatch] = p.particles[ispec].w
+            
+            fill_particles_2d(
+                s.density_jit,
+                xaxis, 
+                yaxis, 
+                len(patches), 
+                s.density_min, 
+                s.ppc,
+                x_list, y_list, w_list
+            )
+
+    def _fill_particles_3d(self, sim: Simulation, patches: Sequence[Patch3D]):
         pass
