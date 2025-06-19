@@ -155,7 +155,7 @@ class MovingWindow:
 
         Args:
             velocity (float or callable): 
-                Window velocity in m/s, constant or function of time. When function of time, the time start after `start_time`.
+                Window velocity in m/s, constant or function of time. When function of timevelocity=f(t), velocity=f(sim.time).
             start_time (float): Time at which to start moving the window. If None, equals to `sim.Lx/c`.
             inject_particles (bool): Whether to inject particles into the simulation.
             stop_inject_time (float): Time at which to stop injecting particles. Useful when the window moves backwards.
@@ -165,8 +165,8 @@ class MovingWindow:
         self.inject_particles = inject_particles
         self.stop_inject_time = stop_inject_time
 
-        self.total_shift = 0.0
-        self.patch_this_shift = 0.0
+        self.total_shift = None
+        self.patch_this_shift = None
         self.num_shifts: int = 0
 
     def __call__(self, sim: Simulation):
@@ -175,7 +175,13 @@ class MovingWindow:
         if self.start_time is None:
             self.start_time = sim.Lx/c
 
-        if sim.time <= self.start_time - patch_Lx/c:
+        if self.total_shift is None:
+            self.total_shift = patch_Lx
+
+        if self.patch_this_shift is None:
+            self.patch_this_shift = patch_Lx
+
+        if sim.time < self.start_time:
             return
         
         if self.num_shifts == 0:
@@ -187,7 +193,6 @@ class MovingWindow:
                 # clear PMLX
                 if p.pml_boundary:
                     p.pml_boundary = [pml for pml in p.pml_boundary if not issubclass(type(pml), PMLX)]
-
             sim.maxwell.generate_field_lists()
         
         # Calculate current window velocity
