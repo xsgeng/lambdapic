@@ -145,6 +145,9 @@ class SimpleLaser(Laser):
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
+        
+        if side not in ["xmin"]:
+            raise ValueError("Invalid side: only 'xmin' is supported.")
             
         self.a0 = a0
         self.l0 = l0
@@ -168,9 +171,8 @@ class SimpleLaser(Laser):
         if self.side == "xmin":
             ipatch_x = 0
             laserpos = sim.cpml_thickness + 2
-        if self.side == "xmax":
-            ipatch_x = sim.npatch_x - 1
-            laserpos = sim.nx_per_patch - sim.cpml_thickness
+        else:
+            raise ValueError("Invalid side: only 'xmin' is supported.")
 
         # Inject the laser from the left boundary
         for p in sim.patches:
@@ -224,6 +226,9 @@ class GaussianLaser(Laser):
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
+        
+        if side not in ["xmin"]:
+            raise ValueError("Invalid side: only 'xmin' is supported.")
             
         self.a0 = a0
         self.l0 = l0
@@ -275,9 +280,8 @@ class GaussianLaser(Laser):
         if self.side == "xmin":
             ipatch_x = 0
             laserpos = sim.cpml_thickness + 2
-        elif self.side == "xmax":
-            ipatch_x = sim.npatch_x - 1
-            laserpos = sim.nx_per_patch - sim.cpml_thickness
+        else:
+            raise ValueError("Invalid side: only 'xmin' is supported.")
 
         for p in sim.patches:
             if p.ipatch_x == ipatch_x:
