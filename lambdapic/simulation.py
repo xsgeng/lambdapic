@@ -183,8 +183,10 @@ class Simulation:
                 
             logger.info("Initializing neighbor ranks")
             if self.dimension == 2:
+                patches.init_neighbor_ipatch_2d()
                 patches.init_neighbor_rank_2d()
             elif self.dimension == 3:
+                patches.init_neighbor_ipatch_3d()
                 patches.init_neighbor_rank_3d()
             
             for p in patches:

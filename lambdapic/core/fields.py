@@ -12,6 +12,10 @@ class Fields:
     dz: float
     shape: tuple
 
+    x0: float
+    y0: float
+    z0: float
+
     ex: NDArray[np.float64]
     ey: NDArray[np.float64]
     ez: NDArray[np.float64]
@@ -22,6 +26,10 @@ class Fields:
     jy: NDArray[np.float64]
     jz: NDArray[np.float64]
     rho: NDArray[np.float64]
+
+    xaxis: NDArray[np.float64]
+    yaxis: NDArray[np.float64]
+    zaxis: NDArray[np.float64]
 
     attrs = ["ex", "ey", "ez", "bx", "by", "bz", "jx", "jy", "jz", "rho"]
 
