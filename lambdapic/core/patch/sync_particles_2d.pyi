@@ -33,7 +33,7 @@ def get_npart_to_extend_2d(
     """
     ...
     
-def fill_particles_from_boundary(
+def fill_particles_from_boundary_2d(
     particles_list: list[ParticlesBase],
     patches_list: list['Patch2D'],
     npart_incoming: ndarray,

@@ -108,20 +108,12 @@ class MPIManager2D(MPIManager):
     def sync_currents(self):
         if self.size == 1:
             return
-        if self.dimension == 2:
-            sync_fields2d.sync_currents_2d(
-                [p.fields for p in self.patches],
-                self.patches.patches,
-                self.comm,
-                self.npatches, self.nx_per_patch, self.ny_per_patch, self.n_guard,
-            )
-        if self.dimension == 3:
-            sync_fields3d.sync_currents_3d(
-                [p.fields for p in self.patches],
-                self.patches.patches,
-                self.comm,
-                self.npatches, self.nx_per_patch, self.ny_per_patch, self.nz_per_patch, self.n_guard,
-            )
+        sync_fields2d.sync_currents_2d(
+            [p.fields for p in self.patches],
+            self.patches.patches,
+            self.comm,
+            self.npatches, self.nx_per_patch, self.ny_per_patch, self.n_guard,
+        )
 
 class MPIManager3D(MPIManager):
     def __init__(self, patches: Patches):

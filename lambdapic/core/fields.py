@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.typing import NDArray
 
 
 class Fields:
@@ -11,9 +12,20 @@ class Fields:
     dz: float
     shape: tuple
 
+    ex: NDArray[np.float64]
+    ey: NDArray[np.float64]
+    ez: NDArray[np.float64]
+    bx: NDArray[np.float64]
+    by: NDArray[np.float64]
+    bz: NDArray[np.float64]
+    jx: NDArray[np.float64]
+    jy: NDArray[np.float64]
+    jz: NDArray[np.float64]
+    rho: NDArray[np.float64]
+
     attrs = ["ex", "ey", "ez", "bx", "by", "bz", "jx", "jy", "jz", "rho"]
 
-    def _init_fields(self, attrs: list[str]):
+    def _init_fields(self, attrs: list[str]|None):
         if attrs is not None:
             self.attrs = attrs
         for attr in self.attrs:
@@ -22,7 +34,7 @@ class Fields:
 
 class Fields2D(Fields):
 
-    def __init__(self, nx, ny, dx, dy, x0, y0, n_guard, attrs: list[str]=None) -> None:
+    def __init__(self, nx, ny, dx, dy, x0, y0, n_guard, attrs: list[str]|None=None) -> None:
         self.nx = nx
         self.ny = ny
         self.dx = dx
@@ -47,7 +59,7 @@ class Fields2D(Fields):
 
 class Fields3D(Fields):
 
-    def __init__(self, nx, ny, nz, dx, dy, dz, x0, y0, z0, n_guard, attrs: list[str]=None) -> None:
+    def __init__(self, nx, ny, nz, dx, dy, dz, x0, y0, z0, n_guard, attrs: list[str]|None=None) -> None:
         self.nx = nx
         self.ny = ny
         self.nz = nz

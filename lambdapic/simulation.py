@@ -1,20 +1,27 @@
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
+from numpy.typing import NDArray
 from pydantic import BaseModel, Field, model_validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 
 from .callback.callback import SimulationStage, callback
 from .core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
-from .core.current.deposition import CurrentDeposition2D, CurrentDeposition3D
+from .core.current.deposition import (
+    CurrentDeposition,
+    CurrentDeposition2D,
+    CurrentDeposition3D,
+)
 from .core.fields import Fields2D, Fields3D
 from .core.interpolation.field_interpolation import (
+    FieldInterpolation,
     FieldInterpolation2D,
     FieldInterpolation3D,
 )
-from .core.maxwell.solver import MaxwellSolver2D, MaxwellSolver3D
+from .core.maxwell.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
 from .core.mpi.mpi_manager import MPIManager
 from .core.patch.metis import compute_rank
 from .core.patch.patch import Patch2D, Patch3D, Patches
@@ -22,7 +29,8 @@ from .core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D
-from .core.species import Species
+from .core.species import Electron, Photon, Species
+from .core.utils.logger import logger, configure_logger
 from .core.utils.timer import Timer
 
 
@@ -36,8 +44,14 @@ class SimulationConfig(BaseModel):
     dt_cfl: float = Field(0.95, gt=0, le=1, description="CFL condition factor")
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
-    nprocx: int = Field(1, gt=0, description="Number of MPI processes in x direction")
-    nprocy: int = Field(1, gt=0, description="Number of MPI processes in y direction")
+    log_file: Optional[str] = Field(
+        None, 
+        description="Log file name (default: auto-generated based on timestamp)"
+    )
+    truncate_log: bool = Field(
+        True, 
+        description="Truncate existing log file"
+    )
 
     @model_validator(mode='after')
     def validate_nx_divisible(self):
@@ -75,6 +89,8 @@ class Simulation:
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         cpml_thickness: int = 6,
+        log_file: Optional[str] = None,
+        truncate_log: bool = True
     ) -> None:
         config = SimulationConfig(
             nx=nx,
@@ -86,6 +102,8 @@ class Simulation:
             dt_cfl=dt_cfl,
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
+            log_file=log_file,
+            truncate_log=truncate_log
         )
         self.dimension = 2
         
@@ -106,13 +124,17 @@ class Simulation:
         self.ny_per_patch = self.ny // self.npatch_y
 
         self.species: list[Species] = []
-
-        self.maxwell = None
-        self.interpolator = None
-        self.current_depositor = None
         
         self.itime = 0
         
+        log_file = config.log_file or MPIManager.get_comm().bcast(f"lambdapic_{datetime.now():%Y%m%d-%H:%M:%S}.log")
+        # Configure logger
+        configure_logger(
+            sink=log_file,
+            truncate_existing=config.truncate_log
+        )
+        
+        logger.info("Simulation instance created")
         self.initialized = False
         
     @property
@@ -120,61 +142,100 @@ class Simulation:
         return self.itime * self.dt
     
     def initialize(self):
-        patches_list = [Patches(self.dimension) for _ in range(MPIManager.get_size())]
-        if MPIManager.get_rank() == 0:
-            # patches are created, fields and particles are not.
+        comm = MPIManager.get_comm()
+        rank = MPIManager.get_rank()
+        comm_size = MPIManager.get_size()
+        
+        if rank == 0:
+            logger.info(f"Starting simulation initialization on {comm_size} MPI ranks")
+            logger.info(f"Domain size: {self.Lx:.2e} x {self.Ly:.2e} m")
+            logger.info(f"Grid: {self.nx} x {self.ny} cells")
+            logger.info(f"Patches: {self.npatch_x} x {self.npatch_y}")
+            logger.info(f"Patch size: {self.nx_per_patch} x {self.ny_per_patch} cells")
+            logger.info(f"Time step: {self.dt:.2e} s")
+        
+        patches_list = [Patches(self.dimension) for _ in range(comm_size)]
+        if rank == 0:
+            logger.info("Creating patches on rank 0")
             patches = self.create_patches()
 
-            patches_load = np.zeros(patches.npatches, dtype='int64')
+            logger.info("Calculating patch loads")
+            patches_npart: NDArray[np.int64] = np.zeros(patches.npatches, dtype='int64')
             for ispec, s in enumerate(self.species):
-                patches_load += patches.calculate_npart(s)
-            patches_load += int(self.nx_per_patch * self.ny_per_patch / 2)
+                npart_ = patches.calculate_npart(s)
+                logger.info(f"Species {s.name} has {npart_.sum():,} macro particles")
+                patches_npart += npart_
 
-            ranks, npatch_per_rank = compute_rank(patches, MPIManager.get_size(), patches_load)
-            for p, r in zip(patches, ranks):
+            logger.info("Computing rank assignments")
+            patches_load = patches_npart + self.nx_per_patch * self.ny_per_patch / 2
+            rank_load = np.zeros(comm_size)
+            ranks, npatch_per_rank = compute_rank(patches, comm_size, patches_load)
+
+            for ipatch, (p, r) in enumerate(zip(patches.patches, ranks)):
                 p.rank = r
+                rank_load[r] += patches_load[ipatch]
+
+            rank_load /= rank_load.sum()
+
+            message = ", ".join([f"Rank {r}: {load*100:.2f}%" for r, load in enumerate(rank_load)])
+            logger.info("Loads: " + message)
+            
                 
-            # # debug
-            # _rank_array = np.zeros((self.npatch_x, self.npatch_y), dtype='int64')
-            # _load_array = np.zeros((self.npatch_x, self.npatch_y), dtype='int64')
-            # for p in patches:
-            #     _rank_array[p.ipatch_x, p.ipatch_y] = p.rank
-            # for p in patches:
-            #     _load_array[p.ipatch_x, p.ipatch_y] = patches_load[p.index]
-            # print(f"Rank array:\n{_rank_array}")
-            # print(f"Load array:\n{_load_array}")
+            logger.info("Initializing neighbor ranks")
             if self.dimension == 2:
                 patches.init_neighbor_rank_2d()
             elif self.dimension == 3:
                 patches.init_neighbor_rank_3d()
             
             for p in patches:
+                assert p.rank is not None
                 patches_list[p.rank].append(p)
 
-        self.patches: Patches = MPIManager.get_comm().scatter(patches_list, root=0)
+        comm.Barrier()
+        logger.info(f"Rank {rank}: Receiving patch info")
+        self.patches: Patches = comm.scatter(patches_list, root=0)
+        
+        logger.info(f"Rank {rank}: Initializing neighbor indices")
         if self.dimension == 2:
             self.patches.init_neighbor_ipatch_2d()
         elif self.dimension == 3:
             self.patches.init_neighbor_ipatch_3d()
 
+        logger.info(f"Rank {rank}: Initializing fields")
         self._init_fields()
         
+        logger.info(f"Rank {rank}: Initializing MPI manager")
         self.mpi = MPIManager.create(self.patches)
 
+        logger.info(f"Rank {rank}: Adding PML boundaries")
         self._init_pml()
-        # Add species to patches
+        
         for s in self.species:
-            self.patches.add_species(s)
+            npart = self.patches.add_species(s)
+            logger.info(f"Rank {rank}: Adding {npart:,} macro particles to {s.name}")
+            
+        logger.info(f"Rank {rank}: Filling particles")
         self.patches.fill_particles()
 
+        logger.info(f"Rank {rank}: Initializing Maxwell solver")
         self._init_maxwell_solver()
+        
+        logger.info(f"Rank {rank}: Initializing field interpolator")
         self._init_interpolator()
+        
+        logger.info(f"Rank {rank}: Initializing current depositor")
         self._init_current_depositor()
+        
+        logger.info(f"Rank {rank}: Initializing pushers")
         self._init_pushers()
 
+        logger.info(f"Rank {rank}: Initializing QED modules")
         self._init_qed()
         
         self.initialized = True
+        logger.success(f"Rank {rank}: Initialization complete")
+
+        comm.Barrier()
 
     def _init_fields(self):
         for p in self.patches:
@@ -261,27 +322,32 @@ class Simulation:
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
             if s.pusher == "boris":
+                logger.info(f"Using Boris pusher for {s.name}")
                 self.pusher.append(BorisPusher(self.patches, ispec))
             elif s.pusher == "photon":
+                logger.info(f"Using Photon pusher for {s.name}")
                 self.pusher.append(PhotonPusher(self.patches, ispec))
 
     def _init_qed(self):
-        self.radiation: list[RadiationBase] = []
+        self.radiation: list[RadiationBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if not hasattr(s, "radiation"):
                 self.radiation.append(None)
                 continue
-            if s.radiation == "photons":
-                self.radiation.append(NonlinearComptonLCFA(self.patches, ispec))
-            elif s.radiation is None:
-                self.radiation.append(None)
-            else:
-                raise ValueError(f"Unknown radiation model: {s.radiation}")
+            if hasattr(s, "radiation"):
+                if s.radiation == "photons":
+                    logger.info(f"Using nonlinear Compton LCFA for {s.name}")
+                    self.radiation.append(NonlinearComptonLCFA(self.patches, ispec))
+                elif s.radiation is None:
+                    self.radiation.append(None)
+                else:
+                    raise ValueError(f"Unknown radiation model: {s.radiation}")
             
-        self.pairproduction: list[PairProductionBase] = []
+        self.pairproduction: list[PairProductionBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if hasattr(s, "electron") and hasattr(s, "positron"):
                 if s.electron is not None and s.positron is not None:
+                    logger.info(f"Using nonlinear pair production LCFA for {s.name}")
                     self.pairproduction.append(NonlinearPairProductionLCFA(self.patches, ispec))
                     continue
             self.pairproduction.append(None)
@@ -341,7 +407,7 @@ class Simulation:
                     
                     
 
-    def run(self, nsteps: int, callbacks: Sequence[Callable] = None):
+    def run(self, nsteps: int, callbacks: Sequence[Callable[['Simulation'], None]]|None = None):
         if not self.initialized:
             self.initialize()
             
@@ -361,13 +427,15 @@ class Simulation:
                 not self.pairproduction[ispec] and \
                 not stages_in_pusher.intersection([stage for stage, cb in stage_callbacks.stage_callbacks.items() if cb]):
                 use_unified_pusher[ispec] = True
+                logger.info(f"Rank {self.mpi.rank}: No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}")
 
-            
-
+        if self.mpi.rank == 0:
+            logger.info("Starting simulation")
         for self.istep in trange(nsteps, disable=self.mpi.rank>0):
             
             # start of simulation stages
-            stage_callbacks.run('start')
+            with Timer('callback start'):
+                stage_callbacks.run('start')
             
             # EM from t to t+0.5dt
             with Timer('update E field'):
@@ -380,7 +448,9 @@ class Simulation:
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
                 self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
-            stage_callbacks.run('maxwell first')
+                
+            with Timer("maxwell first"):
+                stage_callbacks.run('maxwell first')
                 
 
             if self.current_depositor:
@@ -389,53 +459,60 @@ class Simulation:
                 self.ispec = ispec
 
                 if use_unified_pusher[ispec]:
-                    ...
-                    with Timer(f"unified pusher for species {ispec}"):
+                    with Timer(f"unified pusher for {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt, unified=True)
                 else:
                     # position from t to t+0.5dt
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
-                    
-                    stage_callbacks.run('push position first')
+                        
+                    with Timer("callback push_position first"):
+                        stage_callbacks.run('push position first')
 
                     if self.interpolator:
-                        with Timer(f'Interpolation for {ispec} species'):
+                        with Timer(f'Interpolation for {self.species[ispec].name}'):
                             self.interpolator(ispec)
-                        stage_callbacks.run('interpolator')
+                            
+                        with Timer("callback interpolator"):
+                            stage_callbacks.run('interpolator')
 
-                    if self.radiation[ispec] is not None:
-                        with Timer(f'radiation for {self.species[ispec].name} species'):
+                    with Timer(f'radiation for {self.species[ispec].name}'):
+                        if self.radiation[ispec] is not None:
                             self.radiation[ispec].update_chi()
                             self.radiation[ispec].event(dt=self.dt)
                             
 
                     if self.pairproduction[ispec] is not None:
-                        with Timer(f'pairproduction for {self.species[ispec].name} species'):
+                        with Timer(f'pairproduction for {self.species[ispec].name}'):
                             self.pairproduction[ispec].update_chi()
                             self.pairproduction[ispec].event(dt=self.dt)
                             
                     stage_callbacks.run('qed')
                     
                     # momentum from t to t+dt
-                    with Timer(f"Pushing {ispec} species"):
+                    with Timer(f"Pushing {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt)
-                    stage_callbacks.run('push momentum')
+                        
+                    with Timer("callback push momentum"):
+                        stage_callbacks.run('push momentum')
                     
                     # position from t+0.5t to t+dt, using new momentum
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
-                    stage_callbacks.run('push position second')
+                        
+                    with Timer("callback push_position second"):
+                        stage_callbacks.run('push position second')
                         
                     if self.current_depositor:
-                        with Timer(f"Current deposition for {ispec} species"):
+                        with Timer(f"Current deposition for {self.species[ispec].name}"):
                             self.current_depositor(ispec, self.dt)
                         
                 with Timer("sync_currents"):
                     self.patches.sync_currents()
                     self.mpi.sync_currents()
                     
-                stage_callbacks.run('current deposition')
+                with Timer("callback current deposition"):
+                    stage_callbacks.run('current deposition')
 
             # set ispec to None out of species loop
             self.ispec = None
@@ -445,7 +522,7 @@ class Simulation:
             # before photons are created, so the photons are created
             # at t+dt. It will be fixed later.
             for ispec, s in enumerate(self.patches.species):
-                with Timer(f'create photons for {ispec} species'):
+                with Timer(f'create photons for {self.species[ispec].name}'):
                     if self.radiation[ispec] is not None:
                         # creating photons involves two species
                         # be careful updating the lists
@@ -466,12 +543,16 @@ class Simulation:
             with Timer("Updating lists"):
                 self.update_lists()
 
-            stage_callbacks.run("qed create particles")
+            with Timer("callback qed create particles"):
+                stage_callbacks.run("qed create particles")
 
             # EM from t to t+0.5dt
             with Timer('update B field'):
                 self.maxwell.update_bfield(0.5*self.dt)
-            stage_callbacks.run('_laser')
+                
+            with Timer("laser"):
+                stage_callbacks.run('_laser')
+                
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
                 self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
@@ -483,9 +564,12 @@ class Simulation:
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
                 self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
 
-            stage_callbacks.run('maxwell second')
+            with Timer("callback maxwell second"):
+                stage_callbacks.run('maxwell second')
         
             self.itime += 1
+        
+        self.mpi.comm.Barrier()
 
 
 class Simulation3D(Simulation):
@@ -604,7 +688,7 @@ class Simulation3D(Simulation):
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
     
-    def __init__(self, callbacks: list[Callable], simulation):
+    def __init__(self, callbacks: Sequence[Callable[[Simulation], None]]|None, simulation):
         """
         Initialize the callback manager.
         

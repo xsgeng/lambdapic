@@ -31,9 +31,11 @@ def get_fields(sim: Simulation, fields: List[str]) -> list[np.ndarray]:
     nx = sim.nx
     ny = sim.ny
     ng = sim.n_guard
+
+    assert sim.dimension == 2, "Only 2D simulation is supported"
     
     if not fields:
-        return
+        return ret
     
     for field in fields:
         if sim.mpi.rank == 0:
@@ -57,8 +59,13 @@ def get_fields(sim: Simulation, fields: List[str]) -> list[np.ndarray]:
                         
             ret.append(field_)
         else: # other ranks
+            req = []
             for p in patches:
-                sim.mpi.comm.Isend(getattr(p.fields, field), dest=0, tag=p.index)
+                req_ = sim.mpi.comm.Isend(getattr(p.fields, field), dest=0, tag=p.index)
+                req.append(req_)
+            for req_ in req:
+                req_.wait()
+
             ret.append(None)
         sim.mpi.comm.Barrier()
         

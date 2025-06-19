@@ -4,7 +4,7 @@ from typing import Any, Sequence
 from scipy.constants import c, epsilon_0, pi
 
 from ..patch.patch import Patches
-from ..sort.particle_sort import ParticleSort
+from ..sort.particle_sort import ParticleSort2D
 from ..species import Species
 
 
@@ -13,7 +13,7 @@ class Collission:
         self,
         patches: Patches,
         species: Sequence[Species],
-        sorter: Sequence[ParticleSort]
+        sorter: Sequence[ParticleSort2D]
     ):
         self.patches = patches
         self.ispec1 = patches.species.index(species[0])

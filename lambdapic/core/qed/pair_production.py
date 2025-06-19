@@ -107,13 +107,15 @@ class NonlinearPairProductionLCFA(PairProductionBase):
     def __init__(self, patches: Patches, ispec: int) -> None:
         super().__init__(patches, ispec)
 
-        species: Photon = patches.species[ispec]
-        assert isinstance(species, Photon)
-        assert isinstance(species.electron, Electron)
-        assert isinstance(species.positron, Positron)
+        species = patches.species[ispec]
+        assert isinstance(species, Photon), "Only support photon pair production. Please use `Photon` species."
+        assert isinstance(species.electron, Electron), "Please use `Electron` species for pair production."
+        assert isinstance(species.positron, Positron), "Please use `Positron` species for pair production."
 
-        self.electron_ispec = patches.species.index(species.electron)
-        self.positron_ispec = patches.species.index(species.positron)
+        assert species.electron.ispec is not None
+        assert species.positron.ispec is not None
+        self.electron_ispec = species.electron.ispec
+        self.positron_ispec = species.positron.ispec
 
         self.generate_particle_lists()
 

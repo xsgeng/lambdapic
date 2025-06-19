@@ -15,6 +15,11 @@ class PML(Boundary):
 
     """
 
+    efield_start: int
+    efield_end: int
+    bfield_start: int
+    bfield_end: int
+
     def __init__(
         self, 
         fields: Fields,
@@ -60,7 +65,7 @@ class PML(Boundary):
             shapex = fields.nx
             shapey = fields.ny
             shapez = 0
-        if isinstance(fields, Fields3D):
+        elif isinstance(fields, Fields3D):
             self.ny = fields.ny
             self.nz = fields.nz
             self.dy = fields.dy
@@ -69,6 +74,8 @@ class PML(Boundary):
             shapex = fields.nx
             shapey = fields.ny
             shapez = fields.nz
+        else:
+            raise NotImplementedError
 
         self.kappa_ex = np.ones(shapex)
         self.kappa_bx = np.ones(shapex)

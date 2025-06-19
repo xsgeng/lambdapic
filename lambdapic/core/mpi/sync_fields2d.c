@@ -40,7 +40,7 @@ static const enum Boundary2D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
     XMINYMIN
 };
 
-static void *fill_currents_buf(
+static void fill_currents_buf(
     int ix_src, int nx, int NX,
     int iy_src, int ny, int NY,
     double *jx, double *jy, double *jz, double *rho,
@@ -72,7 +72,7 @@ static void *fill_currents_buf(
     }
 }
 
-static void *sync_currents_buf(
+static void sync_currents_buf(
     int ix_dst, int nx, int NX,
     int iy_dst, int ny, int NY,
     double *buf,

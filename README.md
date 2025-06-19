@@ -28,17 +28,25 @@ The flexibility of λPIC makes it easy to implement plugins, allowing developers
 
 ## Installation
 
-via pip (not yet)
-```bash
-pip install lambdapic
-```
+1. install prebuilt packages from conda like mpi4py, h5py (which are not easy to build).
+    ```bash
+    conda create -n lambdapic mpi4py h5py numpy scipy
+    conda activate lambdapic
+    ```
+2. install lambdapic via pip
+    ```bash
+    pip install lambdapic
+    ```
 
-via github
-```bash
-git clone https://github.com/xsgeng/lambdapic.git
-cd lambdapic
-pip install .
-```
+    or from source
+    ```bash
+    git clone https://github.com/xsgeng/lambdapic.git
+    cd lambdapic
+    pip install .
+    ```
+
+    building from source requires GCC >= 9.3 (from numpy)
+
 
 ## Callback System
 

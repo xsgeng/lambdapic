@@ -42,4 +42,8 @@ requires = [
     "scipy"
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lambdapic"]
+
 [tool.setuptools_scm]

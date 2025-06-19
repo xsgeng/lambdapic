@@ -1,19 +1,8 @@
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-import mytools
-import numpy as np
-from loguru import logger
-from matplotlib.colors import LinearSegmentedColormap as _LinearSegmentedColormap
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
 from lambdapic import Electron, Proton, Species, Simulation3D, callback
-from lambdapic.callback.laser import SimpleLaser3D, GaussianLaser3D
-from lambdapic.callback.utils import ExtractSpeciesDensity, get_fields
-from lambdapic.callback.hdf5 import SaveFieldsToHDF5
-
-logger.remove()
-logger.add("log.txt", level='Timer', format="{level}: {message}")
+from lambdapic.callback.laser import  GaussianLaser3D
+from lambdapic.callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5
 
 um = 1e-6
 l0 = 0.8 * um
@@ -66,5 +55,6 @@ if __name__ == "__main__":
         callbacks=[
             laser,
             SaveFieldsToHDF5('laser-target-3d', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
+            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d/density', 100),
         ]
     )
