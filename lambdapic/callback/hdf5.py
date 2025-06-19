@@ -207,7 +207,7 @@ class SaveSpeciesDensityToHDF5:
     def _write_2d(self, sim: Simulation, density_per_patch: list):
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
+        filename = f"{self.prefix}{self.species.name}_t{sim.itime:06d}.h5"
         
         if rank == 0:
             with h5py.File(filename, 'w') as f:

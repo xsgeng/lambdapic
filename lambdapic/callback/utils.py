@@ -178,6 +178,18 @@ class MovingWindow:
         if sim.time <= self.start_time - patch_Lx/c:
             return
         
+        if self.num_shifts == 0:
+            if sim.mpi.rank == 0:
+                logger.info("MovingWindow starts.")
+            
+            logger.info(f"Rank {sim.mpi.rank}: removing PMLX")
+            for p in sim.patches:
+                # clear PMLX
+                if p.pml_boundary:
+                    p.pml_boundary = [pml for pml in p.pml_boundary if not issubclass(type(pml), PMLX)]
+
+            sim.maxwell.generate_field_lists()
+        
         # Calculate current window velocity
         if callable(self.velocity):
             current_velocity = self.velocity(sim.time)
@@ -188,7 +200,8 @@ class MovingWindow:
         shift_amount = current_velocity * sim.dt
         self.total_shift += shift_amount
         self.patch_this_shift += shift_amount
-        
+
+        self.num_shifts += 1
 
         if self.patch_this_shift >= patch_Lx:
             new_patches = self._shift_right(sim)
@@ -199,21 +212,12 @@ class MovingWindow:
         else:
             return
         
-        for p in sim.patches:
-            # clear PMLX
-            if p.pml_boundary:
-                p.pml_boundary = [pml for pml in p.pml_boundary if not issubclass(type(pml), PMLX)]
-        sim.maxwell.generate_field_lists()
-                
-        
         self._update_patch_info(sim)
         self._fill_particles(sim, new_patches)
 
         for p in new_patches:
             for attr in p.fields.attrs:
                 getattr(p.fields, attr).fill(0.0)
-
-        self.num_shifts += 1
 
 
     def _shift_right(self, sim: Simulation) -> Sequence[Patch3D|Patch2D]:
@@ -290,7 +294,6 @@ class MovingWindow:
             self._fill_particles_3d(sim, new_patches)
         else:
             raise NotImplementedError("Only 2D and 3D simulations are supported")
-        
         sim.update_lists()
 
         
