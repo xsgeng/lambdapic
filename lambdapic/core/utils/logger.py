@@ -16,7 +16,8 @@ def configure_logger(
     colorize: bool = True,
     serialize: bool = False,
     backtrace: bool = False,
-    diagnose: bool = False
+    diagnose: bool = False,
+    truncate_existing: bool = True
 ):
     """Configure the global logger instance
     
@@ -28,6 +29,7 @@ def configure_logger(
         serialize: Whether to output as JSON
         backtrace: Whether to show exception backtrace
         diagnose: Whether to show variable values in backtrace
+        truncate_existing: Whether to truncate existing log file
     """
     logger.remove()
     
@@ -45,12 +47,14 @@ def configure_logger(
     # Get TIMER level number for filtering
     timer_level = logger.level("TIMER").no
     
-    # Set up file sink
-    file_sink = sink if sink is not None else "lambdapic.log"
+    # Handle file sink configuration
+    if sink is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sink = f"logs/lambdapic_{timestamp}.log"
     
-    # truncate log file if it exists and is a file
-    if isinstance(file_sink, str) and os.path.exists(file_sink):
-        with open(file_sink, "w") as f:
+    # Only truncate if requested and file exists
+    if truncate_existing and isinstance(sink, str) and os.path.exists(sink):
+        with open(sink, "w") as f:
             f.truncate()
 
     # Set up console sink (stderr)
@@ -63,7 +67,7 @@ def configure_logger(
     
     # Add file sink (all levels including TIMER)
     logger.add(
-        file_sink,
+        sink,
         format=format_str,
         level=level,
         colorize=False,
@@ -84,5 +88,3 @@ def configure_logger(
         diagnose=diagnose
     )
 
-# Auto-configure when module is imported
-configure_logger()

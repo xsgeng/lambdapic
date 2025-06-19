@@ -1,5 +1,5 @@
 from collections.abc import Callable, Sequence
-from tkinter import NO
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -30,7 +30,7 @@ from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductio
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D
 from .core.species import Electron, Photon, Species
-from .core.utils.logger import logger
+from .core.utils.logger import logger, configure_logger
 from .core.utils.timer import Timer
 
 
@@ -44,6 +44,14 @@ class SimulationConfig(BaseModel):
     dt_cfl: float = Field(0.95, gt=0, le=1, description="CFL condition factor")
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
+    log_file: Optional[str] = Field(
+        None, 
+        description="Log file name (default: auto-generated based on timestamp)"
+    )
+    truncate_log: bool = Field(
+        True, 
+        description="Truncate existing log file"
+    )
 
     @model_validator(mode='after')
     def validate_nx_divisible(self):
@@ -81,6 +89,8 @@ class Simulation:
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         cpml_thickness: int = 6,
+        log_file: Optional[str] = None,
+        truncate_log: bool = True
     ) -> None:
         config = SimulationConfig(
             nx=nx,
@@ -92,6 +102,8 @@ class Simulation:
             dt_cfl=dt_cfl,
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
+            log_file=log_file,
+            truncate_log=truncate_log
         )
         self.dimension = 2
         
@@ -115,6 +127,14 @@ class Simulation:
         
         self.itime = 0
         
+        log_file = config.log_file or MPIManager.get_comm().bcast(f"lambdapic_{datetime.now():%Y%m%d-%H:%M:%S}.log")
+        # Configure logger
+        configure_logger(
+            sink=log_file,
+            truncate_existing=config.truncate_log
+        )
+        
+        logger.info("Simulation instance created")
         self.initialized = False
         
     @property
