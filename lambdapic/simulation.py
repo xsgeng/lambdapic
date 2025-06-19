@@ -124,31 +124,42 @@ class Simulation:
     def initialize(self):
         comm = MPIManager.get_comm()
         rank = MPIManager.get_rank()
-        size = MPIManager.get_size()
+        comm_size = MPIManager.get_size()
         
         if rank == 0:
-            logger.info(f"Starting simulation initialization on {size} MPI ranks")
+            logger.info(f"Starting simulation initialization on {comm_size} MPI ranks")
             logger.info(f"Domain size: {self.Lx:.2e} x {self.Ly:.2e} m")
             logger.info(f"Grid: {self.nx} x {self.ny} cells")
             logger.info(f"Patches: {self.npatch_x} x {self.npatch_y}")
             logger.info(f"Patch size: {self.nx_per_patch} x {self.ny_per_patch} cells")
             logger.info(f"Time step: {self.dt:.2e} s")
         
-        patches_list = [Patches(self.dimension) for _ in range(size)]
+        patches_list = [Patches(self.dimension) for _ in range(comm_size)]
         if rank == 0:
             logger.info("Creating patches on rank 0")
             patches = self.create_patches()
 
             logger.info("Calculating patch loads")
-            patches_load: NDArray[np.int64] = np.zeros(patches.npatches, dtype='int64')
+            patches_npart: NDArray[np.int64] = np.zeros(patches.npatches, dtype='int64')
             for ispec, s in enumerate(self.species):
-                patches_load += patches.calculate_npart(s)
-            patches_load += int(self.nx_per_patch * self.ny_per_patch / 2)
+                npart_ = patches.calculate_npart(s)
+                logger.info(f"Species {s.name} has {npart_.sum():,} macro particles")
+                patches_npart += npart_
 
             logger.info("Computing rank assignments")
-            ranks, npatch_per_rank = compute_rank(patches, size, patches_load)
-            for p, r in zip(patches.patches, ranks):
+            patches_load = patches_npart + self.nx_per_patch * self.ny_per_patch / 2
+            rank_load = np.zeros(comm_size)
+            ranks, npatch_per_rank = compute_rank(patches, comm_size, patches_load)
+
+            for ipatch, (p, r) in enumerate(zip(patches.patches, ranks)):
                 p.rank = r
+                rank_load[r] += patches_load[ipatch]
+
+            rank_load /= rank_load.sum()
+
+            message = ", ".join([f"Rank {r}: {load*100:.2f}%" for r, load in enumerate(rank_load)])
+            logger.info("Loads: " + message)
+            
                 
             logger.info("Initializing neighbor ranks")
             if self.dimension == 2:

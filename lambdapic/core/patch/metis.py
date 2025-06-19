@@ -12,7 +12,7 @@ def compute_rank(patches: Patches, nrank: int, weights: NDArray[np.int64], rank_
         # ufactor=1,
     )
 
-    ncut, ranks = pymetis.part_graph(nrank, adjacency=adjacency_list, vweights=weights, options=opt)
+    ncut, ranks = pymetis.part_graph(nrank, adjacency=adjacency_list, vweights=weights.astype(np.int64), options=opt)
 
     npatch = len(patches)
     if rank_prev is None:
