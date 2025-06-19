@@ -1,4 +1,7 @@
 import numpy as np
+
+from lambdapic.core.boundary.cpml import PMLXmin
+from lambdapic.core.utils.logger import logger
 from ..core.fields import Fields
 from ..core.patch.patch import Patch
 from numba import njit, prange, typed
@@ -66,6 +69,7 @@ def _update_laser_bfields_3d(
         
 class Laser:
     staget = "_laser"
+    disabled = False
     def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
         raise NotImplementedError
@@ -127,7 +131,7 @@ class SimpleLaser(Laser):
         For more accurate physics including proper beam evolution, wavefront curvature,
         and Gouy phase, use the GaussianLaser class instead.
     """
-    def __init__(self, a0: float, w0: float, ctau: float, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
+    def __init__(self, a0: float, w0: float, ctau: float, tstop: float|None=None, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
         """
         Initialize the SimpleLaser with given parameters.
         
@@ -154,15 +158,20 @@ class SimpleLaser(Laser):
         self.omega0 = 2 * pi * c / l0
         self.w0 = w0
         self.ctau = ctau
+        self.tstop = 2*self.ctau or tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
         self.side = side
 
 
     def __call__(self, sim: Simulation):
+        if self.disabled:
+            return
+        
         time = sim.itime * sim.dt
         # Stop injecting after twice the pulse duration for smooth falloff
-        if c*time >= 2*self.ctau:
+        if c*time >= self.tstop:
+            self.disabled = True
             return
 
         # Calculate temporal profile (sin² envelope for smooth turn-on/off)
@@ -171,6 +180,12 @@ class SimpleLaser(Laser):
         if self.side == "xmin":
             ipatch_x = 0
             laserpos = sim.cpml_thickness + 2
+            patches = list(filter(lambda p: p.ipatch_x == ipatch_x, sim.patches))
+            n_pmlxmin = sum(isinstance(pml, PMLXmin) for p in patches for pml in p.pml_boundary)
+            if n_pmlxmin < len(patches):
+                logger.info("Disabling laser for lacking of PML. Maybe due to MovingWindow starts.")
+                self.disabled = True
+                return
         else:
             raise ValueError("Invalid side: only 'xmin' is supported.")
 
@@ -280,6 +295,11 @@ class GaussianLaser(Laser):
         if self.side == "xmin":
             ipatch_x = 0
             laserpos = sim.cpml_thickness + 2
+            patches = list(filter(lambda p: p.ipatch_x == ipatch_x, sim.patches))
+            n_pmlxmin = sum(isinstance(pml, PMLXmin) for p in patches for pml in p.pml_boundary)
+            if n_pmlxmin < len(patches):
+                logger.info("Disabling laser for lacking of PML. Maybe due to MovingWindow starts.")
+                self.disabled = True
         else:
             raise ValueError("Invalid side: only 'xmin' is supported.")
 
