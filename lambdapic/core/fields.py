@@ -12,6 +12,10 @@ class Fields:
     dz: float
     shape: tuple
 
+    x0: float
+    y0: float
+    z0: float
+
     ex: NDArray[np.float64]
     ey: NDArray[np.float64]
     ez: NDArray[np.float64]

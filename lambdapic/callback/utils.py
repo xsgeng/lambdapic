@@ -1,3 +1,5 @@
+from ast import If
+from lambdapic.core.boundary.cpml import PMLX
 from ..simulation import Simulation
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 import numpy as np
@@ -42,9 +44,14 @@ def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
     if not fields:
         return ret
     
+    index_info = {(p.ipatch_x, p.ipatch_y): p.index for ipatch, p in enumerate(patches)}
+    index_info: list[dict[tuple[int, int], int]] = sim.mpi.comm.gather(index_info)
+    if sim.mpi.rank == 0:
+        patch_index_map = {k: v for d in index_info for k, v in d.items()}
+        local_patches = {p.index: ipatch for ipatch, p in enumerate(patches)}
+
     for field in fields:
         if sim.mpi.rank == 0:
-            local_patches = {p.index: ipatch for ipatch, p in enumerate(patches)}
             field_ = np.zeros((nx, ny))
             
             buf = np.zeros((nx_per_patch+2*ng, ny_per_patch+2*ng))
@@ -53,7 +60,7 @@ def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
                     s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
                               ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
                     # local
-                    index = ipatch_y*npatch_x + ipatch_x
+                    index = patch_index_map[(ipatch_x, ipatch_y)]
                     if index in local_patches:
                         p = patches[local_patches[index]]
                         field_[s] = getattr(p.fields, field)[:-2*ng, :-2*ng]
@@ -130,13 +137,14 @@ def species_transfer(s1, s2):
 
 
 class MovingWindow:
-    """Callback to implement a moving simulation window"""
+    """
+    Callback of moving window along x-direction.
+    """
     stage = "start"
     
     def __init__(
         self, 
         velocity: Union[float, Callable[[float], float]], 
-        direction: str = 'x', 
         start_time: float|None = None,
         inject_particles: bool = True,
         stop_inject_time: float|None = None,
@@ -148,13 +156,11 @@ class MovingWindow:
         Args:
             velocity (float or callable): 
                 Window velocity in m/s, constant or function of time. When function of time, the time start after `start_time`.
-            direction (str): Direction of movement ('x', 'y', or 'z')
-            start_time (float): Time at which to start moving the window
+            start_time (float): Time at which to start moving the window. If None, equals to `sim.Lx/c`.
             inject_particles (bool): Whether to inject particles into the simulation.
             stop_inject_time (float): Time at which to stop injecting particles. Useful when the window moves backwards.
         """
         self.velocity = velocity
-        self.direction = direction
         self.start_time = start_time
         self.inject_particles = inject_particles
         self.stop_inject_time = stop_inject_time
@@ -163,15 +169,13 @@ class MovingWindow:
         self.patch_this_shift = 0.0
         self.num_shifts: int = 0
 
-        # Only x-direction is currently implemented
-        if self.direction != 'x':
-            raise NotImplementedError("Only x-direction moving window is currently supported")
-        
     def __call__(self, sim: Simulation):
+        patch_Lx = sim.nx_per_patch * sim.dx
+
         if self.start_time is None:
             self.start_time = sim.Lx/c
 
-        if sim.time <= self.start_time:
+        if sim.time <= self.start_time - patch_Lx/c:
             return
         
         # Calculate current window velocity
@@ -185,7 +189,6 @@ class MovingWindow:
         self.total_shift += shift_amount
         self.patch_this_shift += shift_amount
         
-        patch_Lx = sim.nx_per_patch * sim.dx
 
         if self.patch_this_shift >= patch_Lx:
             new_patches = self._shift_right(sim)
@@ -195,59 +198,53 @@ class MovingWindow:
             self.patch_this_shift += patch_Lx
         else:
             return
-        self.num_shifts += 1
+        
+        for p in sim.patches:
+            # clear PMLX
+            if p.pml_boundary:
+                p.pml_boundary = [pml for pml in p.pml_boundary if not issubclass(type(pml), PMLX)]
+        sim.maxwell.generate_field_lists()
+                
+        
         self._update_patch_info(sim)
+        self._fill_particles(sim, new_patches)
+
+        for p in new_patches:
+            for attr in p.fields.attrs:
+                getattr(p.fields, attr).fill(0.0)
+
+        self.num_shifts += 1
 
 
-        if not self.inject_particles:
-            return
-        
-        if self.stop_inject_time is not None and sim.time >= self.stop_inject_time:
-            return
-        
-        if not new_patches:
-            return
-        
-        if sim.dimension == 2:
-            self._fill_particles_2d(sim, new_patches)
-        elif sim.dimension == 3:
-            self._fill_particles_3d(sim, new_patches)
-        else:
-            raise NotImplementedError("Only 2D and 3D simulations are supported")
-
-    def _shift_right(self, sim: Simulation) -> Sequence[Patch]:
+    def _shift_right(self, sim: Simulation) -> Sequence[Patch3D|Patch2D]:
         new_patches = []
-        patch_Lx = sim.nx_per_patch * sim.dx
         for p in sim.patches:
             if p.ipatch_x == 0:
                 p.ipatch_x = sim.npatch_x - 1
                 p.x0 += sim.Lx
                 p.xaxis += sim.Lx
+
+                p.fields.x0 += sim.Lx
                 p.fields.xaxis += sim.Lx
                 new_patches.append(p)
             else:
                 p.ipatch_x -= 1
-                p.x0 += patch_Lx
-                p.xaxis += patch_Lx
-                p.fields.xaxis += patch_Lx
 
         return new_patches
                 
-    def _shift_left(self, sim: Simulation) -> Sequence[Patch]:
+    def _shift_left(self, sim: Simulation) -> Sequence[Patch3D|Patch2D]:
         new_patches = []
-        patch_Lx = sim.nx_per_patch * sim.dx
         for p in sim.patches:
             if p.ipatch_x == sim.npatch_x - 1:
                 p.ipatch_x = 0
                 p.x0 -= sim.Lx
                 p.xaxis -= sim.Lx
+
+                p.fields.x0 -= sim.Lx
                 p.fields.xaxis -= sim.Lx
                 new_patches.append(p)
             else:
                 p.ipatch_x += 1
-                p.x0 -= patch_Lx
-                p.xaxis -= patch_Lx
-                p.fields.xaxis -= patch_Lx
         
         return new_patches
                 
@@ -259,7 +256,7 @@ class MovingWindow:
         # Prepare local patch info
         local_info = []
         for p in sim.patches:
-            local_info.append((p.ipatch_x, p.ipatch_y, p.index, rank))
+            local_info.append((p.ipatch_x, p.ipatch_y, p.index, p.rank))
             
         # Gather all patch info
         all_info = comm.allgather(local_info)
@@ -276,6 +273,26 @@ class MovingWindow:
         sim.patches.init_rect_neighbor_index_2d(sim.npatch_x, sim.npatch_y, patch_index_map)
         sim.patches.init_neighbor_ipatch_2d()
         sim.patches.init_neighbor_rank_2d(patch_rank_map)
+
+    def _fill_particles(self, sim: Simulation, new_patches: Sequence[Patch]):
+        if not new_patches:
+            return
+        
+        if not self.inject_particles:
+            return
+        
+        if self.stop_inject_time is not None and sim.time >= self.stop_inject_time:
+            return
+        
+        if sim.dimension == 2:
+            self._fill_particles_2d(sim, new_patches)
+        elif sim.dimension == 3:
+            self._fill_particles_3d(sim, new_patches)
+        else:
+            raise NotImplementedError("Only 2D and 3D simulations are supported")
+        
+        sim.update_lists()
+
         
     def _fill_particles_2d(self, sim: Simulation, patches: Sequence[Patch2D]):
         for ispec, s in enumerate(sim.species):
