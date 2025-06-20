@@ -26,10 +26,10 @@
      inkscape:zoom="1.5757985"
      inkscape:cx="-70.440478"
      inkscape:cy="134.85227"
-     inkscape:window-width="2560"
-     inkscape:window-height="1351"
-     inkscape:window-x="-9"
-     inkscape:window-y="-9"
+     inkscape:window-width="3072"
+     inkscape:window-height="1622"
+     inkscape:window-x="-11"
+     inkscape:window-y="-11"
      inkscape:window-maximized="1"
      inkscape:current-layer="layer1"
      showguides="true">
@@ -66,19 +66,21 @@
          x="102.17043"
          y="109.78561"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:12px;font-family:Calibri;-inkscape-font-specification:'Calibri, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal" /></text>
-    <text
-       xml:space="preserve"
-       style="font-size:192px;fill:#000000"
-       x="135.24429"
-       y="197.73198"
-       id="text2"><tspan
-         sodipodi:role="line"
-         id="tspan2"
-         x="135.24429"
-         y="197.73198"
-         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:192px;font-family:Calibri;-inkscape-font-specification:'Calibri, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal"><tspan
-           style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:192px;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal"
-           id="tspan6">PIC</tspan></tspan></text>
+    <path
+       d="m 150.24429,197.66061 h 20.24222 v -42.82007 h 20.43686 c 34.64533,0 52.74655,-17.03072 52.74655,-49.63237 0,-30.07137 -18.10122,-45.739625 -52.74655,-45.739625 h -40.67908 z m 20.24222,-61.31056 V 77.959033 h 20.43686 c 21.2154,0 32.30969,9.342562 32.30969,27.249137 0,20.43686 -11.09429,31.14188 -32.30969,31.14188 z"
+       id="text6"
+       style="font-size:199.308px;font-family:'CaskaydiaCove NF';-inkscape-font-specification:'CaskaydiaCove NF, Normal';stroke-width:1.03806"
+       aria-label="P" />
+    <path
+       d="m 267.80487,197.66061 h 84.08306 V 179.17013 H 319.87019 V 77.959033 h 32.01774 V 59.468545 h -84.08306 v 18.490488 h 31.8231 V 179.17013 h -31.8231 z"
+       id="text9"
+       style="font-size:199.308px;font-family:'CaskaydiaCove NF';-inkscape-font-specification:'CaskaydiaCove NF, Normal';stroke-width:1.03806"
+       aria-label="I" />
+    <path
+       d="m 441.03153,199.60698 c 12.26211,0 24.13495,-2.141 35.61852,-6.61765 L 472.1734,175.8613 c -9.14792,3.89274 -18.29585,5.8391 -27.83305,5.8391 -31.14187,0 -46.90745,-18.10121 -46.90745,-54.30364 0,-33.185561 16.34949,-51.968005 41.45762,-51.968005 10.51039,0 19.95027,5.060555 25.78937,13.819207 l 14.40312,-14.305798 c -6.52033,-11.094293 -21.31272,-17.419987 -40.38712,-17.419987 -39.51126,0 -62.08911,25.886684 -62.08911,70.847763 0,47.49136 21.60467,71.23704 64.42475,71.23704 z"
+       id="text4"
+       style="font-size:199.308px;font-family:'CaskaydiaCove NF';-inkscape-font-specification:'CaskaydiaCove NF, Normal';stroke-width:1.03806"
+       aria-label="C" />
     <text
        xml:space="preserve"
        style="fill:#000000"
@@ -88,17 +90,11 @@
          sodipodi:role="line"
          id="tspan3"
          x="123.11219"
-         y="65.363678"></tspan></text>
-    <text
-       xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:201.148px;font-family:Calibri;-inkscape-font-specification:'Calibri, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:#0d4ad9;fill-opacity:1;stroke:none;stroke-width:0.942885;stroke-opacity:1"
-       x="39.546398"
-       y="195.55763"
-       id="text7"><tspan
-         sodipodi:role="line"
-         id="tspan7"
-         x="39.546398"
-         y="195.55763"
-         style="stroke-width:0.942885">λ</tspan></text>
+         y="65.363678" /></text>
+    <path
+       d="m 131.87018,189.17354 q 0,1.37504 -0.0982,2.45542 -0.0982,0.98217 -0.29465,1.66969 -0.0982,0.68751 -0.29465,1.1786 -0.19644,0.49108 -0.5893,0.88395 -0.39287,0.39287 -1.37504,0.68752 -0.88395,0.39286 -2.06255,0.5893 -1.1786,0.29465 -2.45542,0.39286 -1.1786,0.19644 -2.45542,0.19644 -4.41976,0 -7.85734,-0.98217 -3.33938,-0.88395 -5.89301,-3.14294 -2.55364,-2.3572 -4.51797,-6.38409 -1.96434,-4.02689 -3.83046,-10.21455 L 83.842172,122.68077 59.680841,192.4147 q -0.392867,1.1786 -0.982168,1.96433 -0.491084,0.68752 -1.571469,1.08039 -1.080384,0.39286 -2.848287,0.49108 -1.767902,0.19643 -4.616189,0.19643 -2.946504,0 -4.812623,-0.29465 -1.767902,-0.19643 -2.553637,-0.88395 -0.785734,-0.68752 -0.687517,-1.86612 0.09822,-1.27682 0.883951,-3.24115 L 76.57413,100.87664 74.020493,93.215733 q -4.616189,-14.241436 -7.36626,-17.77724 -2.75007,-3.535805 -8.151994,-3.535805 -2.75007,0 -5.893007,0.883951 -3.142938,0.785735 -3.830455,0.785735 -0.491084,0 -0.883951,-0.196434 -0.294651,-0.196433 -0.589301,-0.785734 -0.196434,-0.687518 -0.29465,-1.669686 -0.09822,-1.080384 -0.09822,-2.75007 0,-2.946504 0.29465,-4.517972 0.294651,-1.669686 0.982168,-2.357204 0.785734,-0.785734 2.062553,-1.276818 1.375035,-0.491084 3.437588,-0.982168 2.160769,-0.491084 3.928671,-0.589301 1.767903,-0.196433 3.339371,-0.196433 5.303707,0 9.527029,1.178601 4.223323,1.178602 7.66091,4.517973 3.437588,3.339371 6.384092,9.330595 3.044721,5.991225 5.893008,15.616471 l 25.831012,83.582496 q 0.98217,3.43758 1.96434,5.50014 0.98217,2.06255 1.96434,3.24115 1.08038,1.1786 2.3572,1.66969 1.27682,0.39286 3.04472,0.39286 1.1786,0 2.16077,-0.0982 0.98217,-0.19644 1.66969,-0.19644 0.68751,0 1.1786,0.19644 0.49108,0.19643 0.68751,0.88395 0.29465,0.5893 0.39287,1.86612 0.19643,1.1786 0.19643,3.24115 z M 39.546398,102.15346 Z"
+       id="text8"
+       style="font-size:201.148px;font-family:Calibri;-inkscape-font-specification:'Calibri, Normal';fill:#0d4ad9;stroke-width:0.942885"
+       aria-label="λ" />
   </g>
 </svg>

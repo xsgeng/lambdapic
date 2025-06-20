@@ -137,8 +137,32 @@ def species_transfer(s1, s2):
 
 
 class MovingWindow:
-    """
-    Callback of moving window along x-direction.
+    """Callback implementing moving window technique along x-direction.
+
+    The moving window follows the laser or plasma flow by periodically shifting
+    the simulation domain while maintaining proper boundary conditions.
+
+    Args:
+        velocity (Union[float, Callable[[float], float]]): Window velocity in m/s. 
+            Can be constant or function of time (velocity=f(sim.time))
+        start_time (Optional[float]): Time at which to start moving window. 
+            Defaults to sim.Lx/c.
+        inject_particles (bool): Whether to inject particles in new regions. 
+            Defaults to True.
+        stop_inject_time (Optional[float]): Time to stop particle injection. 
+            Defaults to None.
+
+    Attributes:
+        stage (str): The simulation stage when this callback is executed.
+        total_shift (Optional[float]): Total accumulated shift distance.
+        patch_this_shift (Optional[float]): Shift amount within current patch.
+        num_shifts (int): Number of shifts performed.
+
+    Note:
+        - Handles both forward (positive) and backward (negative) moving windows
+        - Maintains proper particle distributions in new regions
+        - Updates patch neighbor relationships after shifts
+        - Removes PML boundaries when moving starts
     """
     stage = "start"
     
@@ -149,17 +173,6 @@ class MovingWindow:
         inject_particles: bool = True,
         stop_inject_time: float|None = None,
     ):
-        # numpy docstring
-        """
-        Initialize moving window callback
-
-        Args:
-            velocity (float or callable): 
-                Window velocity in m/s, constant or function of time. When function of timevelocity=f(t), velocity=f(sim.time).
-            start_time (float): Time at which to start moving the window. If None, equals to `sim.Lx/c`.
-            inject_particles (bool): Whether to inject particles into the simulation.
-            stop_inject_time (float): Time at which to stop injecting particles. Useful when the window moves backwards.
-        """
         self.velocity = velocity
         self.start_time = start_time
         self.inject_particles = inject_particles
@@ -170,6 +183,17 @@ class MovingWindow:
         self.num_shifts: int = 0
 
     def __call__(self, sim: Simulation):
+        """Execute moving window operation for current timestep.
+
+        Args:
+            sim (Simulation): The simulation object to operate on
+
+        Note:
+            - Calculates shift amount based on velocity and timestep
+            - Performs patch shifts when accumulated shift exceeds patch size
+            - Updates particle distributions in new regions
+            - Maintains proper boundary conditions
+        """
         patch_Lx = sim.nx_per_patch * sim.dx
 
         if self.start_time is None:
@@ -225,7 +249,19 @@ class MovingWindow:
                 getattr(p.fields, attr).fill(0.0)
 
 
-    def _shift_right(self, sim: Simulation) -> Sequence[Patch3D|Patch2D]:
+    def _shift_right(self, sim: Simulation) -> Sequence[Union[Patch3D, Patch2D]]:
+        """Shift simulation window right by one patch.
+
+        Args:
+            sim (Simulation): The simulation object
+
+        Returns:
+            Sequence[Union[Patch3D, Patch2D]]: List of patches shifted from left to right boundary
+
+        Note:
+            - Rightmost patches wrap around to left side
+            - Updates patch coordinates and field arrays
+        """
         new_patches = []
         for p in sim.patches:
             if p.ipatch_x == 0:
@@ -241,7 +277,19 @@ class MovingWindow:
 
         return new_patches
                 
-    def _shift_left(self, sim: Simulation) -> Sequence[Patch3D|Patch2D]:
+    def _shift_left(self, sim: Simulation) -> Sequence[Union[Patch3D, Patch2D]]:
+        """Shift simulation window left by one patch.
+
+        Args:
+            sim (Simulation): The simulation object
+
+        Returns:
+            Sequence[Union[Patch3D, Patch2D]]: List of patches shifted from right to left boundary
+
+        Note:
+            - Leftmost patches wrap around to right side
+            - Updates patch coordinates and field arrays
+        """
         new_patches = []
         for p in sim.patches:
             if p.ipatch_x == sim.npatch_x - 1:
@@ -258,6 +306,16 @@ class MovingWindow:
         return new_patches
                 
     def _update_patch_info(self, sim: Simulation):
+        """Update patch neighbor relationships after shift.
+
+        Args:
+            sim (Simulation): The simulation object
+
+        Note:
+            - Gathers patch information from all MPI ranks
+            - Rebuilds neighbor mappings
+            - Maintains proper patch connectivity
+        """
         # Gather updated patch information from all ranks
         comm = sim.mpi.comm
         rank = comm.Get_rank()
@@ -283,7 +341,18 @@ class MovingWindow:
         sim.patches.init_neighbor_ipatch_2d()
         sim.patches.init_neighbor_rank_2d(patch_rank_map)
 
-    def _fill_particles(self, sim: Simulation, new_patches: Sequence[Patch]):
+    def _fill_particles(self, sim: Simulation, new_patches: Sequence[Union[Patch2D, Patch3D]]):
+        """Fill particles in newly entered regions of moving window.
+
+        Args:
+            sim (Simulation): The simulation object
+            new_patches (Sequence[Union[Patch2D, Patch3D]]): Patches that entered the simulation domain
+
+        Note:
+            - Handles both 2D and 3D cases
+            - Respects particle injection settings
+            - Maintains proper density distributions
+        """
         if not new_patches:
             return
         
@@ -303,6 +372,17 @@ class MovingWindow:
 
         
     def _fill_particles_2d(self, sim: Simulation, patches: Sequence[Patch2D]):
+        """Fill particles in 2D patches for moving window.
+
+        Args:
+            sim (Simulation): The 2D simulation object
+            patches (Sequence[Patch2D]): 2D patches needing particle initialization
+
+        Note:
+            - Uses species density profiles
+            - Maintains proper particle weighting
+            - Handles MPI communication
+        """
         for ispec, s in enumerate(sim.species):
             if s.density is None:
                 continue
