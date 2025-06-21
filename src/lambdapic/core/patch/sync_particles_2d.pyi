@@ -1,5 +1,6 @@
 from ..particles import ParticlesBase
 from numpy import ndarray
+from .patch import Patch2D
 
 def get_npart_to_extend_2d(
     particles_list: list[ParticlesBase],
@@ -39,6 +40,7 @@ def fill_particles_from_boundary_2d(
     npart_incoming: ndarray,
     npart_outgoing: ndarray,
     npatches: int, dx: float, dy: float,
+    xmin_global: float, xmax_global: float, ymin_global: float, ymax_global: float,
     attrs: list[str]
 ) -> None:
     """
@@ -60,6 +62,14 @@ def fill_particles_from_boundary_2d(
         Cell size in x direction.
     dy : float
         Cell size in y direction.
+    xmin_global : float
+        Minimum x coordinate of the global domain.
+    xmax_global : float
+        Maximum x coordinate of the global domain.
+    ymin_global : float
+        Minimum y coordinate of the global domain.
+    ymax_global : float
+        Maximum y coordinate of the global domain.
     attrs : List[str]
         List of attributes to be synced of the particles.
     """

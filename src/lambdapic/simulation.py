@@ -1,4 +1,4 @@
-from typing import List, Optional, Callable, Sequence
+from typing import List, Optional, Callable, Sequence, Dict, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -50,6 +50,10 @@ class SimulationConfig(BaseModel):
         True, 
         description="Truncate existing log file"
     )
+    boundary_conditions: Dict[Literal['xmin', 'xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = Field(
+        {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'}, 
+        description="Boundary conditions for each side of the domain. Supported values: 'pml', 'periodic'"
+    )
 
     @model_validator(mode='after')
     def validate_nx_divisible(self):
@@ -63,10 +67,15 @@ class SimulationConfig(BaseModel):
             raise ValueError(f'ny ({self.ny}) must be divisible by npatch_y ({self.npatch_y})')
         return self
 
+
 class Simulation3DConfig(SimulationConfig):
     nz: int = Field(..., gt=0, description="Number of cells in z direction")
     dz: float = Field(..., gt=0, description="Cell size in z direction")
     npatch_z: int = Field(..., gt=0, description="Number of patches in z direction")
+    boundary_conditions: Dict[Literal['xmin', 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = Field(
+        {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml', 'zmin': 'pml', 'zmax': 'pml'}, 
+        description="Boundary conditions for each side of the domain. Supported values: 'pml', 'periodic'"
+    )
 
     @model_validator(mode='after')
     def validate_nz_divisible(self):
@@ -101,6 +110,12 @@ class Simulation:
         npatch_y: int,
         dt_cfl: float = 0.95,
         n_guard: int = 3,
+        boundary_conditions: Dict[Literal['xmin', 'xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = {
+            'xmin': 'pml',
+            'xmax': 'pml',
+            'ymin': 'pml',
+            'ymax': 'pml',
+        },
         cpml_thickness: int = 6,
         log_file: Optional[str] = None,
         truncate_log: bool = True
@@ -129,6 +144,7 @@ class Simulation:
             npatch_y=npatch_y,
             dt_cfl=dt_cfl,
             n_guard=n_guard,
+            boundary_conditions=boundary_conditions,
             cpml_thickness=cpml_thickness,
             log_file=log_file,
             truncate_log=truncate_log
@@ -143,6 +159,7 @@ class Simulation:
         self.npatch_y = config.npatch_y
         self.dt = config.dt_cfl * (dx**-2 + dy**-2)**-0.5 / c
         self.n_guard = config.n_guard
+        self.boundary_conditions = config.boundary_conditions
         self.cpml_thickness = config.cpml_thickness
 
         self.Lx = self.nx * self.dx
@@ -198,6 +215,9 @@ class Simulation:
             logger.info(f"Patches: {self.npatch_x} x {self.npatch_y}")
             logger.info(f"Patch size: {self.nx_per_patch} x {self.ny_per_patch} cells")
             logger.info(f"Time step: {self.dt:.2e} s")
+            logger.info(f"Guard cells: {self.n_guard}")
+            logger.info(f"Boundary conditions: {self.boundary_conditions}")
+            logger.info(f"CPML thickness: {self.cpml_thickness}")
         
         patches_list = [Patches(self.dimension) for _ in range(comm_size)]
         if rank == 0:
@@ -241,6 +261,8 @@ class Simulation:
         comm.Barrier()
         logger.info(f"Rank {rank}: Receiving patch info")
         self.patches: Patches = comm.scatter(patches_list, root=0)
+
+        self._set_global_domain_bounds()
         
         logger.info(f"Rank {rank}: Initializing neighbor indices")
         if self.dimension == 2:
@@ -283,6 +305,13 @@ class Simulation:
         logger.success(f"Rank {rank}: Initialization complete")
 
         comm.Barrier()
+
+    def _set_global_domain_bounds(self):
+        """Set global domain bounds on patches."""
+        self.patches.xmin_global = -self.dx/2
+        self.patches.xmax_global = self.Lx - self.dx/2  
+        self.patches.ymin_global = -self.dy/2
+        self.patches.ymax_global = self.Ly - self.dy/2
 
     def _init_fields(self):
         """Initialize field arrays for each patch.
@@ -351,7 +380,7 @@ class Simulation:
 
                 
                 patches.append(p)
-        patches.init_rect_neighbor_index_2d(npatch_x=self.npatch_x, npatch_y=self.npatch_y)
+        patches.init_rect_neighbor_index_2d(npatch_x=self.npatch_x, npatch_y=self.npatch_y, boundary_conditions=self.boundary_conditions)
         patches.update_lists()
 
         return patches
@@ -734,6 +763,14 @@ class Simulation3D(Simulation):
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         cpml_thickness: int = 6,
+        boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = {
+            'xmin': 'pml',
+            'xmax': 'pml',
+            'ymin': 'pml',
+            'ymax': 'pml',
+            'zmin': 'pml',
+            'zmax': 'pml',
+        },
         log_file: Optional[str] = None,
         truncate_log: bool = True
     ) -> None:
@@ -752,6 +789,7 @@ class Simulation3D(Simulation):
             dt_cfl: CFL condition factor (default: 0.95)
             n_guard: Number of guard cells (default: 3)
             cpml_thickness: CPML boundary thickness in cells (default: 6)
+            boundary_conditions: Boundary conditions for each side of the domain (default: all 'pml')
         """
         config = Simulation3DConfig(
             nx=nx, ny=ny, nz=nz,
@@ -760,8 +798,9 @@ class Simulation3D(Simulation):
             dt_cfl=dt_cfl,
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
+            boundary_conditions=boundary_conditions,
             log_file=log_file,
-            truncate_log=truncate_log
+            truncate_log=truncate_log,
         )
         self.dimension = 3
         
@@ -778,6 +817,7 @@ class Simulation3D(Simulation):
 
         self.dt = config.dt_cfl * (dx**-2 + dy**-2 + dz**-2)**-0.5 / c
         self.n_guard = config.n_guard
+        self.boundary_conditions = config.boundary_conditions
         self.cpml_thickness = config.cpml_thickness
 
         self.Lx = self.nx * self.dx
@@ -805,6 +845,15 @@ class Simulation3D(Simulation):
         logger.info("Simulation instance created")
 
         self.initialized = False
+
+    def _set_global_domain_bounds(self):
+        """Set global domain bounds on patches."""
+        self.patches.xmin_global = -self.dx/2
+        self.patches.xmax_global = self.Lx - self.dx/2
+        self.patches.ymin_global = -self.dy/2
+        self.patches.ymax_global = self.Ly - self.dy/2
+        self.patches.zmin_global = -self.dz/2
+        self.patches.zmax_global = self.Lz - self.dz/2
 
     def _init_fields(self):
         """Initialize 3D field arrays for each patch.
@@ -873,7 +922,7 @@ class Simulation3D(Simulation):
 
                     patches.append(p)
 
-        patches.init_rect_neighbor_index_3d(self.npatch_x, self.npatch_y, self.npatch_z)
+        patches.init_rect_neighbor_index_3d(self.npatch_x, self.npatch_y, self.npatch_z, boundary_conditions=self.boundary_conditions)
         patches.update_lists()
         return patches
 

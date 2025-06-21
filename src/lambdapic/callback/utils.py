@@ -337,7 +337,7 @@ class MovingWindow:
                 patch_rank_map[idx] = r
                 
         # Reinitialize neighbor relationships
-        sim.patches.init_rect_neighbor_index_2d(sim.npatch_x, sim.npatch_y, patch_index_map)
+        sim.patches.init_rect_neighbor_index_2d(sim.npatch_x, sim.npatch_y, boundary_conditions=sim.boundary_conditions, patch_index_map=patch_index_map)
         sim.patches.init_neighbor_ipatch_2d()
         sim.patches.init_neighbor_rank_2d(patch_rank_map)
 
