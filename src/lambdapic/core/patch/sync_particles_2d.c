@@ -164,7 +164,22 @@ static void fill_boundary_particles_to_buffer(
     }
 }
 
-
+// Apply periodic boundary conditions for a single coordinate
+static void handle_periodic(
+    double* buffer, npy_intp ibuff,
+    double min_global, double max_global, double L,
+    double min_patch, double max_patch,
+    double cell_size
+) {
+    double coord = buffer[ibuff];
+    
+    if (coord > max_global && fabs(min_patch - min_global) < cell_size) {
+        buffer[ibuff] -= L;
+    }
+    if (coord < min_global && fabs(max_patch - max_global) < cell_size) {
+        buffer[ibuff] += L;
+    }
+}
 
 // Mark out-of-bound particles as dead
 static void mark_out_of_bound_as_dead(
@@ -305,20 +320,26 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     PyObject *particles_list, *patch_list, *attrs;
     PyArrayObject *npart_incoming_array, *npart_outgoing_array;
     double dx, dy;
+    double xmin_global, xmax_global, ymin_global, ymax_global;
     npy_intp npatches;
 
     if (!PyArg_ParseTuple(
-            args, "OOOOnddO", 
+            args, "OOOOnddddddO", 
             &particles_list, 
             &patch_list,
             &npart_incoming_array,
             &npart_outgoing_array,
             &npatches,
-            &dx, &dy, &attrs
+            &dx, &dy,
+            &xmin_global, &xmax_global, &ymin_global, &ymax_global,
+            &attrs
         )
     ) {
         return NULL;
     }
+
+    double Lx = xmax_global - xmin_global;
+    double Ly = ymax_global - ymin_global;
 
     // Get attributes with cleanup attributes
     AUTOFREE double **x_list = get_attr_array_double(particles_list, npatches, "x");
@@ -345,11 +366,16 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
         ymin_list[ipatch] -= 0.5 * dy;
         ymax_list[ipatch] += 0.5 * dy;
     }
+
+    Py_ssize_t iattr_x = -1, iattr_y = -1;
     
     // Create array of attribute arrays
     AUTOFREE double **attrs_list = malloc(nattrs * npatches * sizeof(double*));
     for (Py_ssize_t iattr = 0; iattr < nattrs; iattr++) {
         PyObject *attr_name = PyList_GetItem(attrs, iattr);
+
+        if (PyUnicode_CompareWithASCIIString(attr_name, "x") == 0) iattr_x = iattr;
+        if (PyUnicode_CompareWithASCIIString(attr_name, "y") == 0) iattr_y = iattr;
         
         for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
             PyObject *particle = PyList_GetItem(particles_list, ipatch);
@@ -358,6 +384,13 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
             Py_DecRef(attr_array);
         }
     }
+
+    if (iattr_x < 0 || iattr_y < 0) {
+        PyErr_SetString(PyExc_ValueError, "attrs must contain 'x' and 'y'");
+        return NULL;
+    }
+
+
     // Number of particles coming from each boundary
     AUTOFREE npy_intp** npart_incoming_boundary_list = (npy_intp**)malloc(npatches * sizeof(npy_intp**));
     // Indices of particles coming from boundary
@@ -367,7 +400,6 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
         incoming_indices_list[ipatch] = (npy_intp**)malloc(NUM_BOUNDARIES * sizeof(npy_intp*));
         for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
             incoming_indices_list[ipatch][ibound] = NULL;
-            incoming_indices_list[ipatch][ibound] = 0;
         }
     }
 
@@ -436,6 +468,22 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
                 }
                 if (is_dead[ipart]) {
                     for (npy_intp iattr = 0; iattr < nattrs; iattr++) {
+                        if (iattr == iattr_x) {
+                            handle_periodic(
+                                buffer, ibuff*nattrs+iattr,
+                                xmin_global, xmax_global, Lx,
+                                xmin_list[ipatch], xmax_list[ipatch],
+                                dx
+                            );
+                        }
+                        if (iattr == iattr_y) {
+                            handle_periodic(
+                                buffer, ibuff*nattrs+iattr,
+                                ymin_global, ymax_global, Ly,
+                                ymin_list[ipatch], ymax_list[ipatch],
+                                dy
+                            );
+                        }
                         attrs_list[ipatch*nattrs + iattr][ipart] = buffer[ibuff*nattrs+iattr];
                     }
                     is_dead[ipart] = 0; // Mark as alive

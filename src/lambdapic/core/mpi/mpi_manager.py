@@ -91,6 +91,7 @@ class MPIManager2D(MPIManager):
             self.comm, 
             self.patches.npatches, 
             self.dx, self.dy,
+            self.patches.xmin_global, self.patches.xmax_global, self.patches.ymin_global, self.patches.ymax_global,
             self.patches[0].particles[ispec].attrs
         )
 

@@ -43,3 +43,4 @@ dist/
 
 *.h5
 .coverage*
+*.log

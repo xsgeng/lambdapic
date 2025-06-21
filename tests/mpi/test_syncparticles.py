@@ -47,7 +47,7 @@ def test_syncparticles():
             patches_list[irank_y*nrankx+irank_x].append(patch)
             patches.append(patch)
         
-        patches.init_rect_neighbor_index_2d(npatch_x=npatchx, npatch_y=npatchy)
+        patches.init_rect_neighbor_index_2d(npatch_x=npatchx, npatch_y=npatchy, boundary_conditions={'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'})
         patches.init_neighbor_ipatch_2d()
         patches.init_neighbor_rank_2d()
             
