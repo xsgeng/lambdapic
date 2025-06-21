@@ -46,16 +46,6 @@ def configure_logger(
     
     # Get TIMER level number for filtering
     timer_level = logger.level("TIMER").no
-    
-    # Handle file sink configuration
-    if sink is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        sink = f"logs/lambdapic_{timestamp}.log"
-    
-    # Only truncate if requested and file exists
-    if truncate_existing and isinstance(sink, str) and os.path.exists(sink):
-        with open(sink, "w") as f:
-            f.truncate()
 
     # Set up console sink (stderr)
     console_sink = sys.stderr
@@ -65,17 +55,22 @@ def configure_logger(
     if env_level in LOG_LEVELS:
         level = env_level
     
-    # Add file sink (all levels including TIMER)
-    logger.add(
-        sink,
-        format=format_str,
-        level=level,
-        colorize=False,
-        serialize=serialize,
-        backtrace=backtrace,
-        diagnose=diagnose
-    )
-    
+    # Add file sink only if provided
+    if sink is not None:
+        # Only truncate if requested and file exists
+        if truncate_existing and isinstance(sink, str) and os.path.exists(sink):
+            with open(sink, "w") as f:
+                f.truncate()
+        logger.add(
+            sink,
+            format=format_str,
+            level=level,
+            colorize=False,
+            serialize=serialize,
+            backtrace=backtrace,
+            diagnose=diagnose
+        )
+
     # Add console sink - exclude TIMER level
     logger.add(
         console_sink,
