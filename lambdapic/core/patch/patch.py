@@ -481,7 +481,7 @@ class Patches:
                 
                 # Check if neighbor coordinates are valid
                 if 0 <= neighbor_i < npatch_x and 0 <= neighbor_j < npatch_y and 0 <= neighbor_k < npatch_z:
-                    neighbor_index = patch_index_map[(neighbor_i, neighbor_j)]
+                    neighbor_index = patch_index_map[(neighbor_i, neighbor_j, neighbor_k)]
                     p.set_neighbor_index(**{name: neighbor_index})
 
     def init_neighbor_rank_2d(self, patch_rank_map: dict[int, int]={}):

@@ -734,6 +734,8 @@ class Simulation3D(Simulation):
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         cpml_thickness: int = 6,
+        log_file: Optional[str] = None,
+        truncate_log: bool = True
     ) -> None:
         """Initialize a 3D PIC simulation.
 
@@ -758,6 +760,8 @@ class Simulation3D(Simulation):
             dt_cfl=dt_cfl,
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
+            log_file=log_file,
+            truncate_log=truncate_log
         )
         self.dimension = 3
         
@@ -791,6 +795,14 @@ class Simulation3D(Simulation):
         self.current_depositor = None
         
         self.itime = 0
+        
+        # Configure logger
+        configure_logger(
+            sink=config.log_file,
+            truncate_existing=config.truncate_log
+        )
+        
+        logger.info("Simulation instance created")
 
         self.initialized = False
 
