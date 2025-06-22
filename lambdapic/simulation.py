@@ -127,10 +127,9 @@ class Simulation:
         
         self.itime = 0
         
-        log_file = config.log_file or MPIManager.get_comm().bcast(f"lambdapic_{datetime.now():%Y%m%d-%H:%M:%S}.log")
         # Configure logger
         configure_logger(
-            sink=log_file,
+            sink=config.log_file,
             truncate_existing=config.truncate_log
         )
         
