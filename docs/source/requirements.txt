@@ -1,0 +1,4 @@
+sphinx==8.2.3
+furo==2024.8.6
+autodoc_pydantic==2.2.0
+sphinxcontrib_mermaid==1.0.0
