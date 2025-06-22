@@ -22,7 +22,6 @@ extensions = [
     "sphinx.ext.autodoc",    # Auto-generate docs from docstrings
     "sphinx.ext.viewcode",   # Add links to source code
     "sphinx.ext.napoleon",   # Support Google-style/Numpy docstrings
-    "sphinx_rtd_theme",      # ReadTheDocs theme
     "sphinxcontrib.autodoc_pydantic",
     "sphinxcontrib.mermaid", # Mermaid diagram support
 ]
