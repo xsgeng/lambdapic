@@ -78,6 +78,21 @@ class Simulation3DConfig(SimulationConfig):
 
 
 class Simulation:
+    """Main simulation class for 2D Particle-In-Cell (PIC) simulations.
+
+    Attributes:
+        dimension (int): Simulation dimensionality (2 for 2D)
+        nx (int): Number of cells in x direction
+        ny (int): Number of cells in y direction
+        dx (float): Cell size in x direction [m]
+        dy (float): Cell size in y direction [m]
+        dt (float): Time step [s]
+        n_guard (int): Number of guard cells
+        cpml_thickness (int): CPML boundary thickness in cells
+        species (list[Species]): List of particle species
+        patches (Patches): Collection of simulation patches
+        mpi (MPIManager): MPI communication handler
+    """
     def __init__(
         self,
         nx: int,
@@ -92,6 +107,21 @@ class Simulation:
         log_file: Optional[str] = None,
         truncate_log: bool = True
     ) -> None:
+        """Initialize a 2D PIC simulation.
+
+        Args:
+            nx: Number of cells in x direction
+            ny: Number of cells in y direction
+            dx: Cell size in x direction (meters)
+            dy: Cell size in y direction (meters)
+            npatch_x: Number of patches in x direction
+            npatch_y: Number of patches in y direction
+            dt_cfl: CFL condition factor (default: 0.95)
+            n_guard: Number of guard cells (default: 3)
+            cpml_thickness: CPML boundary thickness in cells (default: 6)
+            log_file: Log file name (default: auto-generated based on timestamp)
+            truncate_log: Whether to truncate existing log file (default: True)
+        """
         config = SimulationConfig(
             nx=nx,
             ny=ny,
@@ -138,9 +168,27 @@ class Simulation:
         
     @property
     def time(self) -> float:
+        """Get the current simulation time in seconds.
+        
+        Returns:
+            Current simulation time (itime * dt)
+        """
         return self.itime * self.dt
     
     def initialize(self):
+        """Initialize the simulation components.
+        
+        This method:
+        1. Creates and distributes patches across MPI ranks
+        2. Initializes fields, boundaries, and MPI communication
+        3. Adds species and particles
+        4. Sets up solvers, interpolators, and pushers
+        5. Configures QED modules if needed
+        
+        Note:
+            Must be called before running the simulation. Performs collective
+            MPI operations and should be called on all ranks.
+        """
         comm = MPIManager.get_comm()
         rank = MPIManager.get_rank()
         comm_size = MPIManager.get_size()
@@ -239,6 +287,11 @@ class Simulation:
         comm.Barrier()
 
     def _init_fields(self):
+        """Initialize field arrays for each patch.
+        
+        Creates a Fields2D object for each patch with the correct dimensions
+        and guard cells, then assigns it to the patch.
+        """
         for p in self.patches:
             f = Fields2D(
                 nx=self.nx_per_patch, 
@@ -252,6 +305,11 @@ class Simulation:
             p.set_fields(f)
     
     def _init_pml(self):
+        """Initialize CPML boundary conditions for patches at domain edges.
+        
+        Adds PML boundaries to patches that are located at the simulation domain
+        edges (xmin, xmax, ymin, ymax). The thickness is determined by cpml_thickness.
+        """
         for p in self.patches:
             if p.ipatch_x == 0:
                 p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
@@ -264,6 +322,16 @@ class Simulation:
 
         
     def create_patches(self) -> Patches:
+        """Create and initialize all patches for the simulation domain.
+        
+        Returns:
+            Collection of all patches with initialized neighbor relationships
+            
+        Note:
+            - Creates a 2D grid of patches based on npatch_x and npatch_y
+            - Initializes neighbor indices for patch communication
+            - Only called on rank 0 during initialization
+        """
         patches = Patches(dimension=2)
         for j in range(self.npatch_y):
             for i in range(self.npatch_x):
@@ -291,15 +359,41 @@ class Simulation:
         return patches
     
     def _init_maxwell_solver(self):
+        """Initialize the Maxwell field solver.
+        
+        Creates a MaxwellSolver2D instance configured for the current patches.
+        The solver handles electromagnetic field updates using the FDTD method.
+        """
         self.maxwell = MaxwellSolver2D(self.patches)
 
     def _init_interpolator(self):
+        """Initialize the field interpolator.
+        
+        Creates a FieldInterpolation2D instance configured for the current patches.
+        The interpolator handles field interpolation from grid to particle positions.
+        """
         self.interpolator = FieldInterpolation2D(self.patches)
 
     def _init_current_depositor(self):
+        """Initialize the current deposition module.
+        
+        Creates a CurrentDeposition2D instance configured for the current patches.
+        Handles deposition of particle currents onto the grid.
+        """
         self.current_depositor = CurrentDeposition2D(self.patches)
 
     def add_species(self, species: Sequence[Species]):
+        """Add particle species to the simulation.
+        
+        Args:
+            species: One or more species to add to the simulation
+            
+        Note:
+            - Automatically ensures unique species names by renaming: 
+              `electron` -> `electron.1`
+            - Assigns ispec indices to each species
+            - Species must be added before initialization
+        """
         from .utils import uniquify_species_names
         
         # Convert to list for modification
@@ -320,6 +414,15 @@ class Simulation:
             s.ispec = ispec
     
     def _init_pushers(self):
+        """Initialize particle pushers for each species.
+        
+        Creates pusher instances based on each species' configuration:
+        - "boris": Boris pusher for charged particles
+        - "photon": Photon pusher for massless particles
+        
+        Note:
+            The pushers handle particle position and momentum updates.
+        """
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
             if s.pusher == "boris":
@@ -330,6 +433,15 @@ class Simulation:
                 self.pusher.append(PhotonPusher(self.patches, ispec))
 
     def _init_qed(self):
+        """Initialize Quantum Electrodynamics (QED) modules.
+        
+        Sets up radiation and pair production modules based on species configuration:
+        - Nonlinear Compton radiation for high-energy particles
+        - Nonlinear pair production for strong fields
+        
+        Note:
+            Only initializes modules for species that have QED effects enabled.
+        """
         self.radiation: list[RadiationBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if not hasattr(s, "radiation"):
@@ -354,6 +466,14 @@ class Simulation:
             self.pairproduction.append(None)
 
     def maxwell_stage(self):
+        """Perform a single Maxwell solver stage (half time step).
+        
+        Updates electromagnetic fields using the FDTD method:
+        1. Updates E field by 0.5*dt
+        2. Synchronizes E field across patches
+        3. Updates B field by 0.5*dt
+        4. Synchronizes B field across patches
+        """
         with Timer('update E field'):
             self.maxwell.update_efield(0.5*self.dt)
         with Timer('sync E field'):
@@ -366,6 +486,14 @@ class Simulation:
             self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
 
     def generate_lists(self):
+        """Generate particle lists for all modules.
+        
+        Creates particle lists needed by:
+        - Pushers
+        - Radiation modules
+        - Field interpolator
+        - Current depositor
+        """
         self.patches.update_lists()
         for p in self.pusher:
             p.generate_particle_lists()
@@ -376,6 +504,15 @@ class Simulation:
         self.current_depositor.generate_particle_lists()
 
     def update_lists(self):
+        """Update particle lists after particle creation/destruction.
+        
+        Updates particle lists for all modules when particles have been:
+        - Created (e.g., through QED processes)
+        - Destroyed
+        - Moved between patches
+        
+        Also resets the 'extended' flag for all particles.
+        """
         for ispec, s in enumerate(self.patches.species):
             for ipatch, p in enumerate(self.patches):
                 if p.particles[ispec].extended:
@@ -409,6 +546,21 @@ class Simulation:
                     
 
     def run(self, nsteps: int, callbacks: Sequence[Callable[['Simulation'], None]]|None = None):
+        """Run the simulation for a specified number of steps.
+        
+        Args:
+            nsteps: Number of time steps to run
+            callbacks: Callbacks to execute at different simulation stages
+            
+        Note:
+            The main simulation loop performs:
+            1. Field updates (Maxwell solver)
+            2. Particle pushing (position and momentum)
+            3. Current deposition
+            4. QED processes (radiation and pair production)
+            5. Particle synchronization between patches
+            6. Callback execution at defined stages
+        """
         if not self.initialized:
             self.initialize()
             
@@ -583,6 +735,22 @@ class Simulation3D(Simulation):
         n_guard: int = 3,
         cpml_thickness: int = 6,
     ) -> None:
+        """Initialize a 3D PIC simulation.
+
+        Args:
+            nx: Number of cells in x direction
+            ny: Number of cells in y direction
+            nz: Number of cells in z direction
+            dx: Cell size in x direction (meters)
+            dy: Cell size in y direction (meters)
+            dz: Cell size in z direction (meters)
+            npatch_x: Number of patches in x direction
+            npatch_y: Number of patches in y direction
+            npatch_z: Number of patches in z direction
+            dt_cfl: CFL condition factor (default: 0.95)
+            n_guard: Number of guard cells (default: 3)
+            cpml_thickness: CPML boundary thickness in cells (default: 6)
+        """
         config = Simulation3DConfig(
             nx=nx, ny=ny, nz=nz,
             dx=dx, dy=dy, dz=dz,
@@ -627,6 +795,11 @@ class Simulation3D(Simulation):
         self.initialized = False
 
     def _init_fields(self):
+        """Initialize 3D field arrays for each patch.
+        
+        Creates a Fields3D object for each patch with the correct dimensions
+        and guard cells, then assigns it to the patch.
+        """
         for p in self.patches:
             f = Fields3D(
                 nx=self.nx_per_patch,
@@ -643,6 +816,11 @@ class Simulation3D(Simulation):
             p.set_fields(f)
     
     def _init_pml(self):
+        """Initialize 3D CPML boundary conditions.
+        
+        Adds PML boundaries to patches at all domain edges (xmin, xmax, ymin, ymax, zmin, zmax).
+        The thickness is determined by cpml_thickness.
+        """
         for p in self.patches:
             if p.ipatch_x == 0:
                 p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
@@ -658,6 +836,16 @@ class Simulation3D(Simulation):
                 p.add_pml_boundary(PMLZmax(p.fields, thickness=self.cpml_thickness))
 
     def create_patches(self):
+        """Create and initialize all 3D patches for the simulation domain.
+        
+        Returns:
+            Collection of all 3D patches with initialized neighbor relationships
+            
+        Note:
+            - Creates a 3D grid of patches based on npatch_x, npatch_y, and npatch_z
+            - Initializes neighbor indices for patch communication
+            - Only called on rank 0 during initialization
+        """
         patches = Patches(dimension=3)
         for k in range(self.npatch_z):
             for j in range(self.npatch_y):
@@ -678,20 +866,34 @@ class Simulation3D(Simulation):
         return patches
 
     def _init_maxwell_solver(self):
+        """Initialize the 3D Maxwell field solver.
+        
+        Creates a MaxwellSolver3D instance configured for the current patches.
+        The solver handles electromagnetic field updates using the FDTD method.
+        """
         self.maxwell = MaxwellSolver3D(self.patches)
 
     def _init_interpolator(self):
+        """Initialize the 3D field interpolator.
+        
+        Creates a FieldInterpolation3D instance configured for the current patches.
+        The interpolator handles field interpolation from grid to particle positions.
+        """
         self.interpolator = FieldInterpolation3D(self.patches)
 
     def _init_current_depositor(self):
+        """Initialize the 3D current deposition module.
+        
+        Creates a CurrentDeposition3D instance configured for the current patches.
+        Handles deposition of particle currents onto the grid.
+        """
         self.current_depositor = CurrentDeposition3D(self.patches)
         
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
     
     def __init__(self, callbacks: Sequence[Callable[[Simulation], None]]|None, simulation):
-        """
-        Initialize the callback manager.
+        """Initialize the callback manager.
         
         Args:
             callbacks: List of callback objects
@@ -712,20 +914,24 @@ class SimulationCallbacks:
         self.stage_callbacks = stage_callbacks
 
     def run(self, stage: str):
-        """
-        Execute all callbacks registered for a given stage.
+        """Execute all callbacks registered for a given simulation stage.
         
         Args:
-            stage: The simulation stage to run callbacks for
+            stage: The simulation stage to run callbacks for (e.g., 'start', 'maxwell first')
+            
+        Note:
+            Calls each callback function in sequence, passing the simulation instance.
         """
         for cb in self.stage_callbacks[stage]:
             cb(self.simulation)
 
     def non_empty_stages(self):
-        """
-        Return a list of stages that have at least one callback registered.
+        """Get stages that have registered callbacks.
         
         Returns:
-            List of stages with callbacks
+            List of simulation stages that have at least one callback registered
+            
+        Note:
+            Useful for checking which stages will trigger callback execution.
         """
         return [stage for stage, callbacks in self.stage_callbacks.items() if callbacks]

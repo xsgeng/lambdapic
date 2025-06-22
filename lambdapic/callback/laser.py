@@ -212,31 +212,51 @@ class SimpleLaser3D(Laser3D, SimpleLaser):
 
 class GaussianLaser(Laser):
     """
-    Implementation of a proper Gaussian laser beam with:
+    Implementation of a proper Gaussian laser beam with full physics including:
+    
     - Gaussian temporal and spatial profiles
-    - Proper beam waist evolution
-    - Gouy phase
-    - Wavefront curvature
+    - Proper beam waist evolution (:math:`w(z) = w_0\sqrt{1 + (z/z_R)^2}`)
+    - Gouy phase (:math:`tan^{-1}(z/z_R)`)
+    - Wavefront curvature (:math:`R(z) = z(1 + (z_R/z)^2)`)
+    - Correct phase evolution including propagation and curvature terms
+    
+    Attributes:
+        a0 (float): Normalized vector potential amplitude
+        l0 (float): Laser wavelength
+        omega0 (float): Laser angular frequency (2πc/λ)
+        w0 (float): Laser waist size at focus
+        ctau (float): Pulse duration (c*tau)
+        x0 (float): Pulse center position (default: 3*ctau)
+        tstop (float): Time to stop injection (default: 6*ctau)
+        E0 (float): Peak electric field amplitude, derived from a0
+        pol_angle (float): Polarization angle in radians, 0 for z-polarization, π/2 for y-polarization
+        focus_position (float): Position of laser focus relative to boundary
+        zR (float): Rayleigh length (πw₀²/λ)
+        side (str): Injection boundary ('xmin' or 'xmax')
+    
+    Note:
+        This implementation provides more accurate physics than SimpleLaser,
+        including proper beam evolution and phase effects. Use this for
+        realistic simulations where these effects matter.
     """
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
                  x0: float=None, tstop: float=None, pol_angle: float = 0.0, focus_position: float = 0.0, side: str = "xmin"):
         """
-        Parameters:
-        -----------
-        a0 : float
-            Normalized vector potential amplitude
-        l0 : float
-            Laser wavelength
-        w0 : float
-            Waist size at focus
-        ctau : float
-            Pulse duration (c*tau)
-        pol_angle : float
-            Polarization angle in radians (default: 0.0 for z-polarization)
-        focus_position : float
-            Position of the laser focus relative to the left boundary
-        side : str
-            Injection boundary ('xmin' or 'xmax')
+        Initialize the GaussianLaser with given parameters.
+        
+        Args:
+            a0: Normalized vector potential amplitude
+            l0: Laser wavelength
+            w0: Waist size at focus
+            ctau: Pulse duration (c*tau)
+            x0: Pulse center position (default: 3*ctau)
+            tstop: Time to stop injection (default: 6*ctau)
+            pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            focus_position: Position of laser focus relative to boundary (default: 0.0)
+            side: Injection boundary ('xmin' or 'xmax') (default: 'xmin')
+        
+        Raises:
+            ValueError: If parameters are invalid (negative or zero values)
         """
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
@@ -261,7 +281,7 @@ class GaussianLaser(Laser):
         # Derived parameters
         self.zR = pi * w0**2 / l0  # Rayleigh length
         
-    def gaussian_beam_params(self, z):
+    def _gaussian_beam_params(self, z):
         """Calculate Gaussian beam parameters at position z"""
         # Normalized distance from focus
         z = z - self.focus_position
@@ -290,7 +310,7 @@ class GaussianLaser(Laser):
         
         # Calculate boundary parameters
         x_rel = sim.cpml_thickness * sim.dx
-        boundary_w, boundary_R, boundary_psi = self.gaussian_beam_params(x_rel)
+        boundary_w, boundary_R, boundary_psi = self._gaussian_beam_params(x_rel)
         
         if self.side == "xmin":
             ipatch_x = 0

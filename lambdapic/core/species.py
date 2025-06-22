@@ -12,34 +12,46 @@ from .particles import (ParticlesBase, QEDParticles, SpinParticles,
 
 
 class Species(BaseModel):
-    name: str
-    charge: int
-    mass: float
+    name: str = Field(..., description="Name of the particle species")
+    charge: int = Field(..., description="Charge number (e.g. -1 for electron, +1 for proton)")
+    mass: float = Field(..., description="Mass in units of electron mass")
 
-    density: Callable|None = None
-    density_min: float = 0
-    ppc: int = 0
+    density: Callable|None = Field(None, description="Function defining particle density distribution")
+    density_min: float = Field(0, description="Minimum density threshold")
+    ppc: int = Field(0, description="Particles per cell")
 
-    momentum: tuple[Callable|None, Callable|None, Callable|None] = (None, None, None)
-    polarization: tuple[float, float, float]|None = None
+    momentum: tuple[Callable|None, Callable|None, Callable|None] = Field(
+        (None, None, None), 
+        description="Tuple of functions defining momentum distribution in x,y,z directions"
+    )
+    polarization: tuple[float, float, float]|None = Field(
+        None, 
+        description="Polarization vector (x,y,z components) for spin particles"
+    )
 
-    pusher: Literal["boris", "photon", "boris+tbmt"] = "boris"
+    pusher: Literal["boris", "photon", "boris+tbmt"] = Field(
+        "boris", 
+        description="Particle pusher algorithm to use"
+    )
 
-    ispec: int|None = None
+    ispec: int|None = Field(None, description="Internal species index")
 
     @computed_field
     @cached_property
     def q(self) -> float:
+        """charge in SI units"""
         return self.charge * e
 
     @computed_field
     @cached_property
     def m(self) -> float:
+        """mass in SI units"""
         return self.mass * m_e
 
     @computed_field
     @cached_property
     def density_jit(self) -> Callable | None:
+        """density function in JIT compiled form"""
         if is_jitted(self.density):
             self.density.enable_caching()
             return self.density
@@ -62,11 +74,14 @@ class Species(BaseModel):
         return ParticlesBase(ipatch, rank)
 
 class Electron(Species):
-    name: str = 'electron'
-    charge: int = -1
-    mass: float = 1
-    radiation: Literal["ll", "photons"]|None = None
-    photon: Species|None = None
+    name: str = Field('electron', description="Electron particle species")
+    charge: int = Field(-1, description="Electron charge (-1)")
+    mass: float = Field(1, description="Electron mass (1 in units of electron mass)")
+    radiation: Literal["ll", "photons"]|None = Field(
+        None, 
+        description="Radiation model ('ll' for Landau-Lifshitz, 'photons' for QED)"
+    )
+    photon: Species|None = Field(None, description="Photon species for QED radiation")
 
     def set_photon(self, photon: Species):
         assert self.radiation == "photons"
@@ -86,25 +101,28 @@ class Electron(Species):
 
 
 class Positron(Electron):
-    name: str = 'positron'
-    charge: int = 1
+    name: str = Field('positron', description="Positron particle species")
+    charge: int = Field(1, description="Positron charge (+1)")
 
 
 class Proton(Species):
-    name: str = 'proton'
-    charge: int = 1
-    mass: float = m_p/m_e
+    name: str = Field('proton', description="Proton particle species")
+    charge: int = Field(1, description="Proton charge (+1)")
+    mass: float = Field(m_p/m_e, description="Proton mass in units of electron mass")
 
 
 class Photon(Species):
-    name: str = 'photon'
-    charge: int = 0
-    mass: float = 0
+    name: str = Field('photon', description="Photon particle species")
+    charge: int = Field(0, description="Photon charge (0)")
+    mass: float = Field(0, description="Photon mass (0)")
 
-    pusher: Literal["boris", "photon", "boris+tbmt"] = "photon"
+    pusher: Literal["boris", "photon", "boris+tbmt"] = Field(
+        "photon", 
+        description="Photon pusher algorithm (must be 'photon')"
+    )
 
-    electron: Species|None = None
-    positron: Species|None = None
+    electron: Species|None = Field(None, description="Electron species for Breit-Wheeler pair production")
+    positron: Species|None = Field(None, description="Positron species for Breit-Wheeler pair production")
 
     def set_bw_pair(self, *, electron: Species, positron: Species):
         assert isinstance(electron, Species)
