@@ -3,7 +3,7 @@ from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from lambdapic import Electron, Proton, Species, Simulation3D, callback
 from lambdapic.callback.laser import  GaussianLaser3D
 
-from lambdapic.callback.hdf5 import SaveFieldsToHDF5
+from lambdapic.callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5
 
 um = 1e-6
 l0 = 0.8 * um
