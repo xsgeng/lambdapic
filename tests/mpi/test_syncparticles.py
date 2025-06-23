@@ -1,17 +1,7 @@
 import pytest
-from pathlib import Path
-from time import perf_counter_ns
 
-import matplotlib.pyplot as plt
-import mytools
-import numpy as np
-from loguru import logger
-from matplotlib.colors import LinearSegmentedColormap as _LinearSegmentedColormap
 from mpi4py.MPI import COMM_WORLD as comm
-from objprint import op
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
-from lambdapic.core.particles import ParticlesBase
 from lambdapic import Electron
 from lambdapic.core.patch.patch import Patch2D, Patches
 
@@ -22,11 +12,12 @@ from lambdapic.core.mpi.sync_particles_2d import (
 
 from lambdapic.core.patch.patch import Boundary2D
 
+@pytest.mark.mpi
 def test_syncparticles():
     rank = comm.Get_rank()
     comm_size = comm.Get_size()
     if comm_size != 9:
-        pytest.skip('must have 9 ranks')    
+        pytest.skip('must have 9 ranks')
 
     patches = Patches(2)
 
@@ -53,36 +44,12 @@ def test_syncparticles():
                 nx=5, ny=5, x0=9*ipatch_x, y0=9*ipatch_y, dx=1.0, dy=1.0
             )
             
-            # xmin
-            if irank_x > 0 and ipatch_x % nrankx == 0:
-                patch.set_neighbor_rank(xmin=irank_y*nrankx+irank_x-1)
-            # xmax
-            if irank_x < nrankx-1 and ipatch_x % nrankx == nrankx-1:
-                patch.set_neighbor_rank(xmax=irank_y*nrankx+irank_x+1)
-            # ymin
-            if irank_y > 0 and ipatch_y % nranky == 0:
-                patch.set_neighbor_rank(ymin=(irank_y-1)*nrankx+irank_x)
-            # ymax
-            if irank_y < nranky-1 and ipatch_y % nranky == nranky-1:
-                patch.set_neighbor_rank(ymax=(irank_y+1)*nrankx+irank_x)
-            
-            # xminymin
-            if irank_x > 0 and irank_y > 0 and ipatch_x % nrankx == 0 and ipatch_y % nranky == 0:
-                patch.set_neighbor_rank(xminymin=(irank_y-1)*nrankx+irank_x-1)
-            # xminymax
-            if irank_x > 0 and irank_y < nranky-1 and ipatch_x % nrankx == 0 and ipatch_y % nranky == nranky-1:
-                patch.set_neighbor_rank(xminymax=(irank_y+1)*nrankx+irank_x-1)
-            # xmaxymin
-            if irank_x < nrankx-1 and irank_y > 0 and ipatch_x % nrankx == nrankx-1 and ipatch_y % nranky == 0:
-                patch.set_neighbor_rank(xmaxymin=(irank_y-1)*nrankx+irank_x+1)
-            # xmaxymax
-            if irank_x < nrankx-1 and irank_y < nranky-1 and ipatch_x % nrankx == nrankx-1 and ipatch_y % nranky == nranky-1:
-                patch.set_neighbor_rank(xmaxymax=(irank_y+1)*nrankx+irank_x+1)
-            
             patches_list[irank_y*nrankx+irank_x].append(patch)
+            patches.append(patch)
         
-        for p in patches_list:
-            p.init_rect_neighbor_index_2d(npatch_x=npatchx, npatch_y=npatchy)
+        patches.init_rect_neighbor_index_2d(npatch_x=npatchx, npatch_y=npatchy)
+        patches.init_neighbor_ipatch_2d()
+        patches.init_neighbor_rank_2d()
             
     patches: Patches = comm.scatter(patches_list, root=0)
 
@@ -144,5 +111,3 @@ def test_syncparticles():
     for ipatch, p in enumerate(patches):
         assert p.particles[0].is_alive.sum() == p.nx*p.ny*s.ppc + npart_incoming[ipatch].sum() - npart_outgoing[ipatch].sum()
         
-if __name__ == '__main__':
-    test_syncparticles()

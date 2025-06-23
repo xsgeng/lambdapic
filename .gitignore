@@ -40,3 +40,6 @@ dist/
 .*/**
 .aider*
 .env
+
+*.h5
+.coverage*
