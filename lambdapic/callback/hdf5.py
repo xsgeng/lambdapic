@@ -4,9 +4,11 @@ from typing import Callable, List, Optional, Set, Union
 import h5py
 import numpy as np
 
+from ..core.species import Species
+from ..core.utils.logger import logger
 from ..simulation import Simulation, Simulation3D
 from .utils import get_fields
-from ..core.species import Species
+
 
 class SaveFieldsToHDF5:
     """Callback to save field data to HDF5 files.
@@ -415,8 +417,11 @@ class SaveParticlesToHDF5:
         self.interval = interval
         self.attrs = attrs
         self.species = species
-
-        self.attrs.remove('id')
+        
+        if self.attrs is None:
+            logger.warning("No attributes specified, saving all attributes.")
+        elif 'id' in self.attrs:
+            self.attrs.remove('id')
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
@@ -440,6 +445,11 @@ class SaveParticlesToHDF5:
         elif sim.itime % self.interval != 0:
             return
         
+        if self.attrs is None:
+            self.attrs = sim.patches[0].particles[self.species.ispec].attrs
+            if 'id' in self.attrs:
+                self.attrs.remove('id')
+        
         comm = sim.mpi.comm
         rank = comm.Get_rank()
         # gather number of particles in each patch
@@ -448,11 +458,10 @@ class SaveParticlesToHDF5:
 
         # Create new file for this timestep
         filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
-        attrs = sim.patches[0].particles[self.species.ispec].attrs if self.attrs is None else self.attrs
         if rank == 0:
             npart_total = sum([sum(n) for n in npart_allpatches])
             with h5py.File(filename, 'w') as f:
-                for attr in attrs:
+                for attr in self.attrs:
                     f.create_dataset(attr, data=np.zeros((npart_total,)), dtype='f8')
                 f.create_dataset('id', data=np.zeros((npart_total,)), dtype='u8')
         
@@ -463,7 +472,7 @@ class SaveParticlesToHDF5:
             start = sum([sum(n) for n in npart_allpatches[:rank]])
             for ipatch, p in enumerate(sim.patches):
                 is_alive = p.particles[self.species.ispec].is_alive
-                for attr in attrs:
+                for attr in self.attrs:
                     dset = f[attr]
                     data = getattr(p.particles[self.species.ispec], attr)
                     dset[start:start+npart_patches[ipatch]] = data[is_alive]
