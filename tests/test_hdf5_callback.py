@@ -2,7 +2,6 @@ import pytest
 import h5py
 import os
 import numpy as np
-from unittest.mock import MagicMock
 from lambdapic.simulation import Simulation
 from lambdapic.core.species import Electron
 from lambdapic.callback.hdf5 import (
@@ -23,14 +22,6 @@ def test_hdf5_field_callback_2d(tmp_path):
         npatch_y=2,
         dt_cfl=0.95
     )
-    
-    # Add dummy field data
-    if hasattr(sim, 'patches'):
-        for p in sim.patches:
-            p.fields = MagicMock()
-            p.fields.ex = np.random.rand(sim.nx_per_patch, sim.ny_per_patch)
-            p.fields.ey = np.random.rand(sim.nx_per_patch, sim.ny_per_patch)
-            p.fields.ez = np.random.rand(sim.nx_per_patch, sim.ny_per_patch)
     
     # Create and run with field callback
     output_dir = tmp_path / "field_output"
