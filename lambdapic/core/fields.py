@@ -1,3 +1,4 @@
+from typing import List, Optional
 import numpy as np
 from numpy.typing import NDArray
 
@@ -33,7 +34,7 @@ class Fields:
 
     attrs = ["ex", "ey", "ez", "bx", "by", "bz", "jx", "jy", "jz", "rho"]
 
-    def _init_fields(self, attrs: list[str]|None):
+    def _init_fields(self, attrs: Optional[List[str]]):
         if attrs is not None:
             self.attrs = attrs
         for attr in self.attrs:
@@ -42,7 +43,7 @@ class Fields:
 
 class Fields2D(Fields):
 
-    def __init__(self, nx, ny, dx, dy, x0, y0, n_guard, attrs: list[str]|None=None) -> None:
+    def __init__(self, nx, ny, dx, dy, x0, y0, n_guard, attrs: Optional[List[str]]=None) -> None:
         self.nx = nx
         self.ny = ny
         self.dx = dx
@@ -67,7 +68,7 @@ class Fields2D(Fields):
 
 class Fields3D(Fields):
 
-    def __init__(self, nx, ny, nz, dx, dy, dz, x0, y0, z0, n_guard, attrs: list[str]|None=None) -> None:
+    def __init__(self, nx, ny, nz, dx, dy, dz, x0, y0, z0, n_guard, attrs: Optional[List[str]]=None) -> None:
         self.nx = nx
         self.ny = ny
         self.nz = nz

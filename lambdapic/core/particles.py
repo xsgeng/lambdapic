@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 from scipy.constants import e, m_e
 from numpy.typing import NDArray
@@ -29,7 +30,7 @@ class ParticlesBase:
     npart: int # length of the particles, including dead
     _npart_created: int  # counter for generating sequential local IDs
 
-    def __init__(self, ipatch: int|None=None, rank: int|None=None) -> None:
+    def __init__(self, ipatch: Optional[int]=None, rank: Optional[int]=None) -> None:
         """
         Initialize the particle class.
 
@@ -152,7 +153,7 @@ class QEDParticles(ParticlesBase):
     tau: NDArray[float64]
     delta: NDArray[float64]
     event: NDArray[bool_]
-    def __init__(self, ipatch: int|None, rank: int|None = 0) -> None:
+    def __init__(self, ipatch: Optional[int], rank: Optional[int] = 0) -> None:
         super().__init__(ipatch=ipatch, rank=rank)
         self.attrs += ["chi", "tau", "delta"]
 
@@ -175,11 +176,11 @@ class SpinParticles(ParticlesBase):
     sx: NDArray[float64]
     sy: NDArray[float64]
     sz: NDArray[float64]
-    def __init__(self, ipatch: int|None, rank: int|None = 0) -> None:
+    def __init__(self, ipatch: Optional[int], rank: Optional[int] = 0) -> None:
         super().__init__(ipatch=ipatch, rank=rank)
         self.attrs += ["sx", "sy", "sz"]
 
 
 class SpinQEDParticles(SpinParticles, QEDParticles):
-    def __init__(self, ipatch: int|None, rank: int|None = 0) -> None:
+    def __init__(self, ipatch: Optional[int], rank: Optional[int] = 0) -> None:
         super().__init__(ipatch=ipatch, rank=rank)

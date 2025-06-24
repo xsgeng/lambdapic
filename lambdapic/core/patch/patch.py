@@ -1,4 +1,5 @@
 from time import perf_counter_ns
+from typing import List, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -99,9 +100,9 @@ class Patch:
     fields: Fields
     def __init__(self) -> None:
         # PML boundaries
-        self.pml_boundary: list[PML] = []
+        self.pml_boundary: List[PML] = []
 
-        self.particles : list[ParticlesBase] = []
+        self.particles : List[ParticlesBase] = []
 
     @property
     def xmin(self):
@@ -341,9 +342,9 @@ class Patches:
         self.dimension: int = dimension
 
         self.npatches: int = 0
-        self.indices : list[int] = []
-        self.patches : list[Patch] = []
-        self.species : list[Species|Electron|Photon] = []
+        self.indices : List[int] = []
+        self.patches : List[Patch] = []
+        self.species : List[Species|Electron|Photon] = []
     
     def __getitem__(self, i: int) -> Patch:
         return self.patches[i]
@@ -717,7 +718,7 @@ class Patches:
         return num_macro_particles
 
         
-    def add_species(self, species : Species, aux_attrs: list[str]|None=None) -> int:
+    def add_species(self, species : Species, aux_attrs: Optional[List[str]]=None) -> int:
         if aux_attrs is None:
             aux_attrs = []
 

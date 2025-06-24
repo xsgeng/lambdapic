@@ -1,6 +1,4 @@
-from collections.abc import Callable, Sequence
-from datetime import datetime
-from typing import Optional
+from typing import List, Optional, Callable, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -442,7 +440,7 @@ class Simulation:
         Note:
             Only initializes modules for species that have QED effects enabled.
         """
-        self.radiation: list[RadiationBase|None] = []
+        self.radiation: List[RadiationBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if not hasattr(s, "radiation"):
                 self.radiation.append(None)
@@ -456,7 +454,7 @@ class Simulation:
                 else:
                     raise ValueError(f"Unknown radiation model: {s.radiation}")
             
-        self.pairproduction: list[PairProductionBase|None] = []
+        self.pairproduction: List[PairProductionBase|None] = []
         for ispec, s in enumerate(self.patches.species):
             if hasattr(s, "electron") and hasattr(s, "positron"):
                 if s.electron is not None and s.positron is not None:
@@ -545,7 +543,7 @@ class Simulation:
                     
                     
 
-    def run(self, nsteps: int, callbacks: Sequence[Callable[['Simulation'], None]]|None = None):
+    def run(self, nsteps: int, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None):
         """Run the simulation for a specified number of steps.
         
         Args:
@@ -563,7 +561,9 @@ class Simulation:
         """
         if not self.initialized:
             self.initialize()
-            
+        
+        if callbacks is None:
+            callbacks = []
         stage_callbacks = SimulationCallbacks(callbacks, self)
         # check unified pusher
         stages_in_pusher = {
@@ -904,7 +904,7 @@ class Simulation3D(Simulation):
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
     
-    def __init__(self, callbacks: Sequence[Callable[[Simulation], None]]|None, simulation):
+    def __init__(self, callbacks: Sequence[Callable[[Simulation], None]], simulation):
         """Initialize the callback manager.
         
         Args:
