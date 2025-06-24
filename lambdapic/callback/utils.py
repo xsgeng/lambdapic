@@ -4,7 +4,7 @@ from ..simulation import Simulation
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 import numpy as np
 
-from typing import Callable, Sequence, Union, List
+from typing import Callable, Optional, Sequence, Union, List
 
 from ..core.species import Species
 from ..core.utils.logger import logger
@@ -169,9 +169,9 @@ class MovingWindow:
     def __init__(
         self, 
         velocity: Union[float, Callable[[float], float]], 
-        start_time: float|None = None,
+        start_time: Optional[float] = None,
         inject_particles: bool = True,
-        stop_inject_time: float|None = None,
+        stop_inject_time: Optional[float] = None,
     ):
         self.velocity = velocity
         self.start_time = start_time

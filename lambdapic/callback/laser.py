@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 
 from lambdapic.core.boundary.cpml import PMLXmin
@@ -131,7 +132,7 @@ class SimpleLaser(Laser):
         For more accurate physics including proper beam evolution, wavefront curvature,
         and Gouy phase, use the GaussianLaser class instead.
     """
-    def __init__(self, a0: float, w0: float, ctau: float, tstop: float|None=None, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
+    def __init__(self, a0: float, w0: float, ctau: float, tstop: Optional[float]=None, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
         """
         Initialize the SimpleLaser with given parameters.
         
