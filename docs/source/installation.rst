@@ -3,7 +3,7 @@ Installation Guide
 
 System Requirements
 -------------------
-- Python 3.8+
+- Python with headers, tested on 3.12
 - GCC >= 9.3 (for building from source)
 - Conda (recommended for dependency management)
 
@@ -16,7 +16,7 @@ First install prebuilt packages from conda like mpi4py and h5py which can be dif
 
 .. code-block:: bash
 
-   conda create -n lambdapic mpi4py h5py numpy scipy
+   conda create -n lambdapic python==3.12 mpi4py h5py numpy scipy
    conda activate lambdapic
 
 2. Install λPIC

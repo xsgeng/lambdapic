@@ -11,16 +11,24 @@ The callback-centric design enables unprecedented runtime customization of physi
 Features
 ------------
 
-**Simulation Control**:
+**Callback system**:
 
-- Modify physics during runtime via callbacks
+λPIC is a powerful and flexible framework that empowers users perform any kind of diagnostics/modifications to the simulation without the constraints of interface provided by PIC frameworks.
+
+Callback is a function that is called at specific stage during the simulation, with the :code:`Simulation` itself as argument.
+It allows reading/writing simulation data during runtime. You can:
+
+- Perform arbitrary diagnostics/outputs
 - Adjust simulation data at runtime
-- Runs in notebook, visualization on the fly
+- Visualize on the fly
+- Drive other physics processeses by simulation data
+
+The package provides built-in callbacks for common diagnostics, such as saving to :ref:`hdf5 <hdf5>`, :ref:`laser <laser>`, plotting, etc.
 
 **Performance & Scaling**:
 
 - Optimized PIC kernels (C/`Numba <https://github.com/numba/numba>`_ accelerated)
-- `METIS <https://github.com/KarypisLab/METIS>`_-based load balancing
+- Load balancing via graph partitioning with `METIS <https://github.com/KarypisLab/METIS>`_
 - Efficient particle memory management via :code:`is_dead` flag
 
 **Physics**:
