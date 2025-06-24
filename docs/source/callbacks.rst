@@ -1,6 +1,8 @@
 Callbacks
 ==========
 
+.. _hdf5:
+
 HDF5
 ----
 
@@ -36,6 +38,8 @@ computational cost by dropping trailing cells.
 
 .. autoclass:: lambdapic.callback.utils.MovingWindow
     :special-members: __call__
+
+.. _laser:
 
 Lasers
 ------
