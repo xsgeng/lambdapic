@@ -1,0 +1,8 @@
+name: lambdapic
+dependencies:
+  - python=3.12
+  - mpi4py
+  - h5py
+  - numpy
+  - numba
+  - scipy
