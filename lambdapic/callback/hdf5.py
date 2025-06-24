@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Callable, List, Optional, Set, Union
 
 import h5py
@@ -23,7 +24,7 @@ class SaveFieldsToHDF5:
     - /rho (charge density)
 
     Args:
-        prefix (str): Prefix for output filenames
+        prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/t000100.h5', 'output/t000200.h5', etc.
         interval (Union[int, Callable], optional): Number of timesteps between saves, or a 
             function(sim) -> bool that determines when to save. Defaults to 100.
         components (Optional[List[str]], optional): List of field components to save. 
@@ -37,11 +38,13 @@ class SaveFieldsToHDF5:
     """
     stage="maxwell second"
     def __init__(self, 
-                 prefix: str, 
+                 prefix: Union[str, Path]='', 
                  interval: Union[int, Callable] = 100,
                  components: Optional[List[str]] = None) -> None:
-        self.prefix = prefix
+        self.prefix = Path(prefix)
         self.interval = interval
+
+        self.prefix.mkdir(parents=True, exist_ok=True)
         
         # Available field components
         self.all_components = {'ex','ey','ez','bx','by','bz','jx','jy','jz','rho'}
@@ -73,7 +76,7 @@ class SaveFieldsToHDF5:
         elif sim.itime % self.interval != 0:
             return
         
-        filename = f"{self.prefix}_t{sim.itime:06d}.h5"
+        filename = self.prefix / f"{sim.itime:06d}.h5"
         if sim.dimension == 2:
             if not isinstance(sim, Simulation):
                 raise TypeError("Expected Simulation for 2D case")
@@ -83,7 +86,7 @@ class SaveFieldsToHDF5:
                 raise TypeError("Expected Simulation3D for 3D case")
             self._write_3d(sim, filename)
     
-    def _write_2d(self, sim: Simulation, filename: str):
+    def _write_2d(self, sim: Simulation, filename: Path):
         """Write 2D field data to HDF5 file in parallel.
 
         Args:
@@ -136,7 +139,7 @@ class SaveFieldsToHDF5:
                 f.attrs['time'] = sim.time
                 f.attrs['itime'] = sim.itime
                 
-    def _write_3d(self, sim: Simulation3D, filename: str):
+    def _write_3d(self, sim: Simulation3D, filename: Path):
         """Write 3D field data to HDF5 file in parallel.
 
         Args:
@@ -202,7 +205,7 @@ class SaveSpeciesDensityToHDF5:
 
     Args:
         species (Species): The species whose density will be saved
-        prefix (str): Prefix for output filenames
+        prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/{species.name}_t000100.h5', 'output/{species.name}_t000200.h5', etc.
         interval (Union[int, Callable], optional): Number of timesteps between saves, or a 
             function(sim) -> bool that determines when to save. Defaults to 100.
 
@@ -212,9 +215,11 @@ class SaveSpeciesDensityToHDF5:
         prev_rho (Optional[List[np.ndarray]]): Previous charge density values for computation.
     """
     stage = "current deposition"
-    def __init__(self, species: Species, prefix: str, interval: Union[int, Callable] = 100):
+    def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, Callable] = 100):
         self.species = species
-        self.prefix = prefix
+        self.prefix = Path(prefix)
+        self.prefix.mkdir(parents=True, exist_ok=True)
+
         self.interval = interval
         self.prev_rho = None
         self.species = species
@@ -250,14 +255,16 @@ class SaveSpeciesDensityToHDF5:
                 return
         elif sim.itime % self.interval != 0:
             return
+        
+        filename = self.prefix / f"{self.species.name}_{sim.itime:06d}.h5"
             
         if self.ispec_target == 0:
             if sim.ispec == 0:
                 density = self._compute_density(sim)
                 if sim.dimension == 2:
-                    self._write_2d(sim, density)
+                    self._write_2d(sim, density, filename)
                 elif sim.dimension == 3:
-                    self._write_3d(sim, density)
+                    self._write_3d(sim, density, filename)
         else:
             if sim.ispec == self.ispec_target - 1:
                 self.prev_rho = []
@@ -266,9 +273,9 @@ class SaveSpeciesDensityToHDF5:
             elif sim.ispec == self.ispec_target:
                 density = self._compute_density(sim)
                 if sim.dimension == 2:
-                    self._write_2d(sim, density)
+                    self._write_2d(sim, density, filename)
                 elif sim.dimension == 3:
-                    self._write_3d(sim, density)
+                    self._write_3d(sim, density, filename)
                 self.prev_rho = None
 
     def _compute_density(self, sim: Union[Simulation, Simulation3D]) -> List[np.ndarray]:
@@ -289,7 +296,7 @@ class SaveSpeciesDensityToHDF5:
             density.append(d)
         return density
 
-    def _write_2d(self, sim: Simulation, density_per_patch: List[np.ndarray]):
+    def _write_2d(self, sim: Simulation, density_per_patch: List[np.ndarray], filename: Path):
         """Write 2D density data to HDF5 file in parallel.
 
         Args:
@@ -303,7 +310,6 @@ class SaveSpeciesDensityToHDF5:
         """
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        filename = f"{self.prefix}{self.species.name}_t{sim.itime:06d}.h5"
         
         if rank == 0:
             with h5py.File(filename, 'w') as f:
@@ -334,7 +340,7 @@ class SaveSpeciesDensityToHDF5:
                 f.attrs['Lx'] = sim.Lx
                 f.attrs['Ly'] = sim.Ly
 
-    def _write_3d(self, sim: Simulation3D, density_per_patch: List[np.ndarray]):
+    def _write_3d(self, sim: Simulation3D, density_per_patch: List[np.ndarray], filename: Path):
         """Write 3D density data to HDF5 file in parallel.
 
         Args:
@@ -348,7 +354,6 @@ class SaveSpeciesDensityToHDF5:
         """
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
         
         if rank == 0:
             with h5py.File(filename, 'w') as f:
@@ -386,9 +391,6 @@ class SaveSpeciesDensityToHDF5:
 class SaveParticlesToHDF5:
     """Callback to save particle data to HDF5 files.
 
-    Creates a new HDF5 file for each save with name pattern:
-    'prefix_t000100.h5', 'prefix_t000200.h5', etc.
-
     The data structure in each file:
     - /id
     - /x, y (positions)
@@ -397,11 +399,11 @@ class SaveParticlesToHDF5:
 
     Args:
         species (Species): The particle species to save
-        prefix (str, optional): Prefix for output filenames. Defaults to ''.
+        prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/{species.name}_particles_0000100.h5'.
         interval (Union[int, Callable], optional): Number of timesteps between saves, or a
             function(sim) -> bool that determines when to save. Defaults to 100.
         attrs (Optional[List[str]], optional): List of particle attributes to save.
-            If None, saves all attributes except 'id'.
+            If None, saves all attributes.
 
     Attributes:
         stage (str): The simulation stage when this callback is executed.
@@ -410,10 +412,12 @@ class SaveParticlesToHDF5:
     stage="maxwell second"
     def __init__(self,
                  species: Species,
-                 prefix: str='',
+                 prefix: Union[str, Path]='',
                  interval: Union[int, Callable] = 100,
                  attrs: Optional[List[str]] = None) -> None:
-        self.prefix = prefix
+        self.prefix = Path(prefix)
+        self.prefix.mkdir(parents=True, exist_ok=True)
+
         self.interval = interval
         self.attrs = attrs
         self.species = species
@@ -457,7 +461,7 @@ class SaveParticlesToHDF5:
         npart_allpatches = comm.allgather(npart_patches)
 
         # Create new file for this timestep
-        filename = f"{self.prefix}_t{sim.itime:06d}_{self.species.name}.h5"
+        filename = self.prefix / f"{self.species.name}_particles_{sim.itime:06d}.h5"
         if rank == 0:
             npart_total = sum([sum(n) for n in npart_allpatches])
             with h5py.File(filename, 'w') as f:
