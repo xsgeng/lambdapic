@@ -7,9 +7,12 @@ HDF5
 ----
 
 Callbacks for saving simulation data to HDF5 format. These allow saving:
+
 - Electromagnetic fields
-- Particle species densities
+- Species densities
 - Individual particle data
+
+These callbacks perform parallel writes without need for parallel-hdf5, by initializing chunked dataset on rank 0 then performing parallel writes of patches sequentially on each rank. 
 
 SaveFieldsToHDF5
 ~~~~~~~~~~~~~~~~~
