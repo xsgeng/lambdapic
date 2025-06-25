@@ -1,6 +1,7 @@
-
 Welcome to λpic's documentation!
 =====================================
+
+Porject repository: https://github.com/xsgeng/lambdapic
 
 .. toctree::
    :maxdepth: 3
@@ -9,6 +10,8 @@ Welcome to λpic's documentation!
    installation
    example
    api
+   extension
+   write_callbacks
 
 
 .. Indices and tables

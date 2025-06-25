@@ -3,10 +3,10 @@ Introduction to λPIC
 
 The λPIC Framework
 ------------------
-λPIC is a Particle-In-Cell (PIC) framework with special focus on **laser-plasma interaction**. 
+`λPIC <https://github.com/xsgeng/lambdapic>`_ is a Particle-In-Cell (PIC) framework with special focus on **laser-plasma interaction**. 
 The name reflects the laser wavelength and the callback-centric architecture.
 
-The callback-centric design enables unprecedented runtime customization of physics models, numerical methods, and diagnostics without modifying core logic - a paradigm shift from traditional PIC frameworks.
+The callback-centric design enables unprecedented runtime customization of physics models, numerical methods, and diagnostics without modifying core logic - a paradigm shift from traditional PIC frameworks. It can be used as a **powerful analysis tool** and enables **rapid physics prototyping** through its flexible callback system.
 
 Features
 ------------
@@ -15,7 +15,7 @@ Features
 
 λPIC is a powerful and flexible framework that empowers users perform any kind of diagnostics/modifications to the simulation without the constraints of interface provided by PIC frameworks.
 
-Callback is a function that is called at specific stage during the simulation, with the :code:`Simulation` itself as argument.
+Callback is a function that is called at specific stage during the simulation, with the :any:`Simulation` itself as argument.
 It allows reading/writing simulation data during runtime. You can:
 
 - Perform arbitrary diagnostics/outputs
@@ -35,7 +35,8 @@ The package provides built-in callbacks for common diagnostics, such as saving t
 
 - Built-in support for intense laser interactions
 - QED processes (photon emission, pair production)
-- Efficient profile evaluation via Numba jit
+- Efficient user-defined profile evaluation via Numba jit
+- [WIP] Collision & Nuclear physics
 
 **Architecture & Extensibility**:
 
@@ -57,4 +58,3 @@ This separation allows:
 - Core algorithms to be optimized independently
 - Simulation logic to focus on composition and coordination
 - Callbacks to modify behavior without touching core code
-

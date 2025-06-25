@@ -1,4 +1,4 @@
-Callbacks
+Built-in Callbacks
 ==========
 
 .. _hdf5:
