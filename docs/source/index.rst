@@ -10,8 +10,8 @@ Porject repository: https://github.com/xsgeng/lambdapic
    installation
    example
    api
-   extension
    write_callbacks
+   extension
 
 
 .. Indices and tables
