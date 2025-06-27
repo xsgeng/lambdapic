@@ -4,6 +4,27 @@ from numpy.typing import NDArray
 
 
 class Fields:
+    """Base class for electromagnetic field data in particle-in-cell simulations.
+
+    Attributes:
+        nx,ny,nz (int): Grid dimensions in x, y, z directions
+        n_guard (int): Number of guard cells
+        dx,dy,dz (float): Grid spacings
+        shape (tuple): Full array shape including guard cells
+        x0,y0,z0 (float): Grid origin coordinates
+        
+        ex,ey,ez (NDArray[float64]): Electric field components
+        bx,by,bz (NDArray[float64]): Magnetic field components  
+        jx,jy,jz (NDArray[float64]): Current density components
+        rho (NDArray[float64]): Charge density
+        
+        xaxis,yaxis,zaxis (NDArray[float64]): Coordinate axes including guard cells
+        attrs (list[str]): List of field attribute names
+
+    Note:
+        Fields data are stored in [:nx, :ny, :nz] range, and the guard cells are in the [nx:, ny:, nz:] range.
+        The guard cells are therefore accessed using [-n_guard:, -n_guard:, -n_guard:] and [nx:nx+n_guard, ny:ny+n_guard, nz:nz+n_guard].
+    """
     nx: int
     ny: int
     nz: int
@@ -35,6 +56,12 @@ class Fields:
     attrs = ["ex", "ey", "ez", "bx", "by", "bz", "jx", "jy", "jz", "rho"]
 
     def _init_fields(self, attrs: Optional[List[str]]):
+        """Initialize field arrays with zeros.
+        
+        Args:
+            attrs (Optional[List[str]]): Optional list of field attributes to initialize.
+                  If None, uses default attrs list.
+        """
         if attrs is not None:
             self.attrs = attrs
         for attr in self.attrs:
@@ -42,8 +69,27 @@ class Fields:
 
 
 class Fields2D(Fields):
+    """2D electromagnetic field data for particle-in-cell simulations.
 
-    def __init__(self, nx, ny, dx, dy, x0, y0, n_guard, attrs: Optional[List[str]]=None) -> None:
+    Attributes:
+        Inherits all attributes from Fields class.
+    """
+
+    def __init__(self, nx: int, ny: int, dx: float, dy: float, 
+                 x0: float, y0: float, n_guard: int, 
+                 attrs: Optional[List[str]]=None) -> None:
+        """Initialize 2D field data.
+        
+        Args:
+            nx (int): Number of grid cells in x direction
+            ny (int): Number of grid cells in y direction
+            dx (float): Grid spacing in x direction
+            dy (float): Grid spacing in y direction
+            x0 (float): x-coordinate origin
+            y0 (float): y-coordinate origin
+            n_guard (int): Number of guard cells
+            attrs (Optional[List[str]]): Optional list of field attributes to initialize
+        """
         self.nx = nx
         self.ny = ny
         self.dx = dx
@@ -67,8 +113,30 @@ class Fields2D(Fields):
 
 
 class Fields3D(Fields):
+    """3D electromagnetic field data for particle-in-cell simulations.
 
-    def __init__(self, nx, ny, nz, dx, dy, dz, x0, y0, z0, n_guard, attrs: Optional[List[str]]=None) -> None:
+    Attributes:
+        Inherits all attributes from Fields class.
+    """
+
+    def __init__(self, nx: int, ny: int, nz: int, dx: float, dy: float, dz: float,
+                 x0: float, y0: float, z0: float, n_guard: int,
+                 attrs: Optional[List[str]]=None) -> None:
+        """Initialize 3D field data.
+        
+        Args:
+            nx (int): Number of grid cells in x direction
+            ny (int): Number of grid cells in y direction
+            nz (int): Number of grid cells in z direction
+            dx (float): Grid spacing in x direction
+            dy (float): Grid spacing in y direction
+            dz (float): Grid spacing in z direction
+            x0 (float): x-coordinate origin
+            y0 (float): y-coordinate origin
+            z0 (float): z-coordinate origin
+            n_guard (int): Number of guard cells
+            attrs (Optional[List[str]]): Optional list of field attributes to initialize
+        """
         self.nx = nx
         self.ny = ny
         self.nz = nz

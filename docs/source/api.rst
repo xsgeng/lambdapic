@@ -7,3 +7,4 @@ API Reference
    simulation
    species
    callbacks
+   core
