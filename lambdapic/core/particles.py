@@ -6,6 +6,28 @@ from numpy import bool_, float64, uint64, bool_
 from loguru import logger
 
 class ParticlesBase:
+    """
+    The dataclass of particle data.
+
+    This class stores and manages particle attributes including position, momentum,
+    electromagnetic fields at particle positions, and particle status (alive/dead).
+
+    Attributes:
+        x,y,z (NDArray[float64]): Particle positions in x, y, z coordinates
+        w (NDArray[float64]): Particle weights
+        ux,uy,uz (NDArray[float64]): Normalized momentum :math:`u_i = \\gamma\\beta_i`
+        inv_gamma (NDArray[float64]): Inverse relativistic gamma factor
+        ex_part,ey_part,ez_part (NDArray[float64]): Electric fields interpolated at particle positions
+        bx_part,by_part,bz_part (NDArray[float64]): Magnetic fields interpolated at particle positions
+        is_dead (NDArray[bool_]): Boolean array indicating dead particles
+        _id (NDArray[float64]): Unique particle IDs stored as float64
+        npart (int): Total number of particles (including dead)
+        _npart_created (int): Counter for generating sequential local IDs
+
+    Note:
+        You can extend/modify the particle attributes manually before calling :any:`ParticlesBase.initialize`.
+
+    """
     x: NDArray[float64]
     y: NDArray[float64]
     z: NDArray[float64]
@@ -31,15 +53,11 @@ class ParticlesBase:
     _npart_created: int  # counter for generating sequential local IDs
 
     def __init__(self, ipatch: Optional[int]=None, rank: Optional[int]=None) -> None:
-        """
-        Initialize the particle class.
-
-        Parameters
-        ----------
-        ipatch : int
-            The index of the patch the particle class is attached to.
-        rank : int, optional
-            The rank the particle class is created. default 0
+        """Initialize particle class.
+        
+        Args:
+            ipatch (Optional[int]): Patch index the particles belong to
+            rank (Optional[int]): MPI rank (default: 0)
         """
         self.attrs: list[str] = [
             "x", "y", "z", "w", "ux", "uy", "uz", "inv_gamma",
@@ -69,7 +87,18 @@ class ParticlesBase:
         self._rank_bits = np.uint64(rank << 32+18)
 
     def _generate_ids(self, start: int, count: int) -> NDArray[float64]:
-        """Generate particle IDs with proper bit structure"""
+        """Generate particle IDs with proper bit structure.
+
+        Args:
+            start (int): Starting index for local particle IDs
+            count (int): Number of IDs to generate
+
+        Returns:
+            NDArray[float64]: Array of particle IDs encoded as float64
+
+        Raises:
+            AssertionError: If start + count exceeds 32-bit limit
+        """
         # Generate local indices (32 bits)
         assert start + count <= 2**32, f"too many particles created in this patch {self.ipatch=} of {self.rank=}, \
                                          local indices must be less than 2^32 = 4294967296"
@@ -84,10 +113,16 @@ class ParticlesBase:
         # Convert to float64 while preserving bit pattern
         return id_int.view(np.float64)
 
-    def initialize(
-        self,
-        npart: int,
-    ) -> None:
+    def initialize(self, npart: int) -> None:
+        """Initialize particle arrays with given size.
+        You can extend the particle attributes before calling initialize.
+
+        Args:
+            npart (int): Number of particles to initialize
+
+        Raises:
+            AssertionError: If npart is negative
+        """
         assert npart >= 0
         self.npart = npart
 
@@ -102,6 +137,14 @@ class ParticlesBase:
         self._npart_created += npart
 
     def extend(self, n: int):
+        """Extend particle arrays by n elements.
+
+        Be careful when using this method, as it changes the address of particle data arrays.
+        Update any typed.List storing particle data arrays accordingly.
+
+        Args:
+            n (int): Number of elements to add (must be positive)
+        """
         if n <= 0:
             return
         for attr in self.attrs:
@@ -122,7 +165,15 @@ class ParticlesBase:
         self.npart += n
         self.extended = True
 
-    def prune(self, extra_buff=0.1):
+    def prune(self, extra_buff: float = 0.1) -> Optional[np.ndarray]:
+        """Remove dead particles and shrink arrays.
+
+        Args:
+            extra_buff (float): Buffer size multiplier (default: 0.1)
+
+        Returns:
+            Optional[np.ndarray]: Sorting indices used if pruning occurred
+        """
         n_alive = self.is_alive.sum()
         npart = int(n_alive * (1 + extra_buff))
         if npart >= self.npart:
@@ -141,32 +192,72 @@ class ParticlesBase:
 
     @property
     def id(self) -> NDArray[uint64]:
+        """Get particle IDs as uint64 array.
+
+        Returns:
+            NDArray[uint64]: Particle IDs
+        """
         return self._id.view(np.uint64)
     
     @property
     def is_alive(self) -> np.ndarray:
+        """Get boolean mask of alive particles.
+
+        Returns:
+            np.ndarray: Boolean array where True indicates alive particles
+        """
         return np.logical_not(self.is_dead)
 
 
 class QEDParticles(ParticlesBase):
+    """Particle class used for QED processes. With additional attributes below:
+    
+    Attributes:
+        chi (NDArray[float64]): Quantum parameter for radiation
+        tau (NDArray[float64]): Optical depth for pair production
+        delta (NDArray[float64]): Energy loss fraction
+        event (NDArray[bool_]): Flags for QED events
+    """
     chi: NDArray[float64]
     tau: NDArray[float64]
     delta: NDArray[float64]
     event: NDArray[bool_]
+    
     def __init__(self, ipatch: Optional[int], rank: Optional[int] = 0) -> None:
+        """Initialize QED particle class.
+        
+        Args:
+            ipatch (Optional[int]): Patch index the particles belong to
+            rank (Optional[int]): MPI rank (default: 0)
+        """
         super().__init__(ipatch=ipatch, rank=rank)
         self.attrs += ["chi", "tau", "delta"]
 
     def initialize(self, npart: int) -> None:
+        """Initialize QED particle arrays.
+        
+        Args:
+            npart (int): Number of particles to initialize
+        """
         super().initialize(npart)
         self.event = np.full(npart, False)
 
     def extend(self, n: int):
+        """Extend QED particle arrays.
+        
+        Args:
+            n (int): Number of elements to add
+        """
         self.event.resize(n + self.npart, refcheck=False)
         self.event[-n:] = False
         super().extend(n)
 
-    def prune(self, extra_buff=0.1):
+    def prune(self, extra_buff: float = 0.1) -> None:
+        """Prune dead QED particles.
+        
+        Args:
+            extra_buff (float): Buffer size multiplier (default: 0.1)
+        """
         sorted_idx = super().prune(extra_buff=extra_buff)
         self.event[:] = self.event[sorted_idx]
         self.event.resize(self.npart, refcheck=False)
