@@ -1,7 +1,8 @@
 Writing your own callbacks
 ===========================
 
-Hello world.
+Hello world
+~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -14,6 +15,9 @@ Hello world.
 
     sim.run(100, callbacks=[hello])
 
+External fields
+~~~~~~~~~~~~~~~
+
 Set static external fields by adding fields to particles's local fields.
 
 .. code-block:: python
@@ -25,6 +29,28 @@ Set static external fields by adding fields to particles's local fields.
                 part.bz_part[:] += 10 # 10T static
                 part.ex_part[:] += np.sin(sim.t) # time dependent
                 part.ey_part[:] += np.sin(part.x/1e-6) # space dependent
+
+Or faster with numba
+
+.. code-block:: python
+
+    @njit(parallel=True)
+    def set_static_fields(x, is_dead, t, ex_part):
+        for ipart in prange(ex_part.size):
+            if is_dead[ipart]:
+                continue
+            ex_part[ipart] += 10 # 10T static
+            ex_part[ipart] += np.sin(t) # time dependent
+            ex_part[ipart] += np.sin(x[ipart]/1e-6) # space dependent
+
+    @callback('interpolator')
+    def set_static_fields(sim: Simulation):
+        for p in sim.patches:
+            part = p.particles[ele.ispec]
+            set_static_fields(part.x, part.is_dead, sim.t, part.ex_part)
+
+Reduction/Summation
+~~~~~~~~~~~~~~~~~~~
 
 Calculate total EM energy,
 
