@@ -1,4 +1,7 @@
+from typing import List
 import numpy as np
+
+from lambdapic.core.species import Species
 from ..patch import Patches
 
 from .cpu2d import sort_particles_patches_2d
@@ -8,7 +11,16 @@ class ParticleSort2D:
     """
     sort after particle sync: no particles in guard cells
     """
-    def __init__(self, patches: Patches, ispec: int) -> None:
+    def __init__(
+            self, 
+            patches: Patches, 
+            species: Species,
+            nx_buckets: int|None=None,
+            ny_buckets: int|None=None,
+            dx_buckets: float|None=None,
+            dy_buckets: float|None=None,
+            attrs: List[str]|None=None,
+        ) -> None:
         """
         Construct from patches.
 
@@ -22,16 +34,15 @@ class ParticleSort2D:
         self.dimension = patches.dimension
         self.patches = patches
         self.npatches: int = patches.npatches
-        self.ispec = ispec
-        self.attrs = patches[0].particles[ispec].attrs
+        self.ispec = species.ispec
+
+        self.attrs = attrs or patches[0].particles[self.ispec].attrs
         self.nattrs = len(self.attrs)
         
-        self.dx: float = patches.dx
-        self.dy: float = patches.dy
-        self.nx: int = patches.nx
-        self.ny: int = patches.ny
-
-        self.n_guard: int = patches.n_guard
+        self.dx_buckets = dx_buckets or patches.dx
+        self.dy_buckets = dy_buckets or patches.dy
+        self.nx_buckets = nx_buckets or patches.nx
+        self.ny_buckets = ny_buckets or patches.ny
 
         self.generate_particle_lists()
         self.generate_field_lists()
@@ -58,8 +69,10 @@ class ParticleSort2D:
 
         self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
         
-        self.particle_cell_indices_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
-        self.sorted_indices_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.bucket_index_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.bucket_index_ref_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.bucket_index_target_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.buf_list = [np.full(p.particles[ispec].is_dead.size, 0, dtype=float) for p in self.patches]
 
     def update_particle_lists(self, ipatch: int) -> None:
         """
@@ -86,8 +99,41 @@ class ParticleSort2D:
                 
         self.is_dead_list[ipatch] = particles.is_dead
         
-        self.particle_cell_indices_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
-        self.sorted_indices_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.bucket_index_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.bucket_index_ref_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.bucket_index_target_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.buf_list[ipatch] = np.full(particles.is_dead.size, 0, dtype=float)
+
+    def _update_particle_lists(self) -> None:
+        """
+        Update particle lists of a species in a patch.
+
+        Parameters
+        ----------
+        ipatch : int
+            Patch index.
+        ispec : int
+            Species index.
+        """
+
+        ispec = self.ispec
+        
+        self.x_list = [p.particles[ispec].x for p in self.patches]
+        if self.dimension >= 2:
+            self.y_list = [p.particles[ispec].y for p in self.patches]
+        if self.dimension == 3:
+            self.z_list = [p.particles[ispec].z for p in self.patches]
+
+        self.attrs_list = [getattr(p.particles[ispec], attr) for p in self.patches for attr in self.attrs ]
+
+        self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
+        
+        for ipatch, p in enumerate(self.patches):
+            if self.bucket_index_list[ipatch].size < p.particles[ispec].npart:
+                self.bucket_index_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
+                self.bucket_index_ref_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
+                self.bucket_index_target_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
+                self.buf_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
         
     def generate_field_lists(self) -> None:
         """
@@ -98,28 +144,42 @@ class ParticleSort2D:
         fields : list of Fields2D
             List of fields of all patches.
         """
-        self.grid_cell_count_list = [np.full((self.nx, self.ny), 0, dtype=int) for _ in range(self.npatches)]
-        self.cell_bound_min_list = [np.full((self.nx, self.ny), -1, dtype=int) for _ in range(self.npatches)]
-        self.cell_bound_max_list = [np.full((self.nx, self.ny), -1, dtype=int) for _ in range(self.npatches)]
+        self.bin_count_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bin_count_not_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bin_start_counter_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
 
-        self.x0s = [p.x0 - self.dx/2 for p in self.patches]
-        self.y0s = [p.y0 - self.dy/2 for p in self.patches]
+        self.x0s = [p.x0 - p.dx/2 for p in self.patches]
+        self.y0s = [p.y0 - p.dy/2 for p in self.patches]
         
     def __call__(self) -> None:
+        self._update_particle_lists()
         sort_particles_patches_2d(
-            self.grid_cell_count_list, self.cell_bound_min_list, self.cell_bound_max_list, self.x0s, self.y0s,
-            self.nx, self.ny, self.dx, self.dy, 
+            self.x_list, self.y_list, self.is_dead_list, self.attrs_list,
+            self.x0s, self.y0s, 
+            self.nx_buckets, self.ny_buckets, self.dx_buckets, self.dy_buckets, 
             self.npatches, 
-            self.particle_cell_indices_list, self.sorted_indices_list, self.x_list, self.y_list, self.is_dead_list,
-            self.attrs_list
+            self.bin_count_list, self.bin_count_not_list, self.bin_start_counter_list, 
+            self.bucket_index_list, self.bucket_index_ref_list, 
+            self.bucket_index_target_list, self.buf_list
         )
 
 
-class ParticleSort3D:
+class ParticleSort3D(ParticleSort2D):
     """
     Sort particles in 3D after particle sync: no particles in guard cells
     """
-    def __init__(self, patches: Patches, ispec: int) -> None:
+    def __init__(
+            self, 
+            patches: Patches, 
+            species: Species,
+            nx_buckets: int|None=None,
+            ny_buckets: int|None=None,
+            nz_buckets: int|None=None,
+            dx_buckets: float|None=None,
+            dy_buckets: float|None=None,
+            dz_buckets: float|None=None,
+            attrs: List[str]|None=None,
+        ) -> None:
         """
         Construct from patches.
 
@@ -133,18 +193,17 @@ class ParticleSort3D:
         self.dimension = patches.dimension
         self.patches = patches
         self.npatches: int = patches.npatches
-        self.ispec = ispec
-        self.attrs = patches[0].particles[ispec].attrs
+        self.ispec = species.ispec
+
+        self.attrs = attrs or patches[0].particles[self.ispec].attrs
         self.nattrs = len(self.attrs)
         
-        self.dx: float = patches.dx
-        self.dy: float = patches.dy
-        self.dz: float = patches.dz
-        self.nx: int = patches.nx
-        self.ny: int = patches.ny
-        self.nz: int = patches.nz
-
-        self.n_guard: int = patches.n_guard
+        self.dx_buckets = dx_buckets or patches.dx
+        self.dy_buckets = dy_buckets or patches.dy
+        self.dz_buckets = dz_buckets or patches.dz
+        self.nx_buckets = nx_buckets or patches.nx
+        self.ny_buckets = ny_buckets or patches.ny
+        self.nz_buckets = nz_buckets or patches.nz
 
         self.generate_particle_lists()
         self.generate_field_lists()
@@ -168,8 +227,10 @@ class ParticleSort3D:
 
         self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
         
-        self.particle_cell_indices_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
-        self.sorted_indices_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.bucket_index_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.bucket_index_ref_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.bucket_index_target_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.buf_list = [np.full(p.particles[ispec].is_dead.size, 0, dtype=float) for p in self.patches]
 
     def update_particle_lists(self, ipatch: int) -> None:
         """
@@ -191,8 +252,10 @@ class ParticleSort3D:
                 
         self.is_dead_list[ipatch] = particles.is_dead
         
-        self.particle_cell_indices_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
-        self.sorted_indices_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.bucket_index_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.bucket_index_ref_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.bucket_index_target_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.buf_list[ipatch] = np.full(particles.is_dead.size, 0, dtype=float)
         
     def generate_field_lists(self) -> None:
         """
@@ -203,21 +266,22 @@ class ParticleSort3D:
         fields : list of Fields3D
             List of fields of all patches.
         """
-        self.grid_cell_count_list = [np.full((self.nx, self.ny, self.nz), 0, dtype=int) for _ in range(self.npatches)]
-        self.cell_bound_min_list = [np.full((self.nx, self.ny, self.nz), -1, dtype=int) for _ in range(self.npatches)]
-        self.cell_bound_max_list = [np.full((self.nx, self.ny, self.nz), -1, dtype=int) for _ in range(self.npatches)]
+        self.bin_count_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bin_count_not_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bin_start_counter_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
 
-        self.x0s = [p.x0 - self.dx/2 for p in self.patches]
-        self.y0s = [p.y0 - self.dy/2 for p in self.patches]
-        self.z0s = [p.z0 - self.dz/2 for p in self.patches]
+        self.x0s = [p.x0 - p.dx/2 for p in self.patches]
+        self.y0s = [p.y0 - p.dy/2 for p in self.patches]
+        self.z0s = [p.z0 - p.dz/2 for p in self.patches]
         
     def __call__(self) -> None:
+        self._update_particle_lists()
         sort_particles_patches_3d(
-            self.grid_cell_count_list, self.cell_bound_min_list, self.cell_bound_max_list, 
-            self.x0s, self.y0s, self.z0s,
-            self.nx, self.ny, self.nz, self.dx, self.dy, self.dz, 
+            self.x_list, self.y_list, self.z_list, self.is_dead_list, self.attrs_list,
+            self.x0s, self.y0s, self.z0s, 
+            self.nx_buckets, self.ny_buckets, self.nz_buckets, self.dx_buckets, self.dy_buckets, self.dz_buckets, 
             self.npatches, 
-            self.particle_cell_indices_list, self.sorted_indices_list, 
-            self.x_list, self.y_list, self.z_list, self.is_dead_list,
-            self.attrs_list
+            self.bin_count_list, self.bin_count_not_list, self.bin_start_counter_list, 
+            self.bucket_index_list, self.bucket_index_ref_list, 
+            self.bucket_index_target_list, self.buf_list
         )
