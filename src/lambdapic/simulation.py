@@ -27,7 +27,7 @@ from .core.patch.patch import Patch2D, Patch3D, Patches
 from .core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
-from .core.sort.particle_sort import ParticleSort2D
+from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
 from .core.species import Electron, Photon, Species
 from .core.utils.logger import logger, configure_logger
 from .core.utils.timer import Timer
@@ -302,6 +302,9 @@ class Simulation:
 
         logger.info(f"Rank {rank}: Initializing QED modules")
         self._init_qed()
+
+        logger.info(f"Rank {rank}: Initializing particle sorter")
+        self._init_sorter()
         
         self.initialized = True
         logger.success(f"Rank {rank}: Initialization complete")
@@ -494,6 +497,16 @@ class Simulation:
                     continue
             self.pairproduction.append(None)
 
+    def _init_sorter(self):
+        """Initialize particle sorter for each species.
+        
+        Creates a ParticleSort2D instance for each species, which handles particle
+        sorting and synchronization across patches.
+        """
+        self.sorter: list[ParticleSort2D] = []
+        for s in self.patches.species:
+            self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
+
     def maxwell_stage(self):
         """Perform a single Maxwell solver stage (half time step).
         
@@ -647,6 +660,9 @@ class Simulation:
                 self.current_depositor.reset()
             for ispec, s in enumerate(self.patches.species):
                 self.ispec = ispec
+
+                with Timer(f"Sorting {self.species[ispec].name}"):
+                    self.sorter[ispec]()
 
                 if use_unified_pusher[ispec]:
                     with Timer(f"unified pusher for {self.species[ispec].name}"):
@@ -907,6 +923,16 @@ class Simulation3D(Simulation):
                 p.add_pml_boundary(PMLZmin(p.fields, thickness=self.cpml_thickness))
             if p.ipatch_z == self.npatch_z - 1 and self.boundary_conditions['zmax'] == 'pml':
                 p.add_pml_boundary(PMLZmax(p.fields, thickness=self.cpml_thickness))
+
+    def _init_sorter(self):
+        """Initialize particle sorter for each species.
+        
+        Creates a ParticleSort2D instance for each species, which handles particle
+        sorting and synchronization across patches.
+        """
+        self.sorter: list[ParticleSort3D] = []
+        for s in self.patches.species:
+            self.sorter.append(ParticleSort3D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly, nz_buckets=1, dz_buckets=self.Lz))
 
     def create_patches(self):
         """Create and initialize all 3D patches for the simulation domain.
