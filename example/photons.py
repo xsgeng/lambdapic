@@ -1,15 +1,23 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
-from lambdapic import Electron, Photon, Proton, Simulation, Species, callback
-from lambdapic.callback.laser import SimpleLaser2D
-from lambdapic.callback.utils import get_fields
+from lambdapic import (
+    Electron,
+    Photon,
+    Proton,
+    SimpleLaser2D,
+    Simulation,
+    c,
+    callback,
+    e,
+    epsilon_0,
+    get_fields,
+    m_e,
+    pi,
+)
 from lambdapic.core.utils.logger import logger
-
 
 um = 1e-6
 l0 = 0.8 * um

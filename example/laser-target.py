@@ -2,12 +2,23 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
-from lambdapic import Electron, Proton, Simulation, Species, callback
-from lambdapic.callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5
-from lambdapic.callback.laser import GaussianLaser2D
-from lambdapic.callback.utils import get_fields
+from lambdapic import (
+    Electron,
+    GaussianLaser2D,
+    Proton,
+    SaveFieldsToHDF5,
+    SaveSpeciesDensityToHDF5,
+    Simulation,
+    Species,
+    c,
+    callback,
+    e,
+    epsilon_0,
+    get_fields,
+    m_e,
+    pi,
+)
 
 um = 1e-6
 l0 = 0.8 * um
