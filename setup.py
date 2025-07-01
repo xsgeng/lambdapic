@@ -7,7 +7,7 @@ from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
 include_dirs = [np.get_include()]
-extra_compile_args = ['-Xpreprocessor', '-fopenmp', '-O3', '-march=native', '-ftree-vectorize']
+extra_compile_args = ['-Xpreprocessor', '-fopenmp', '-O3', '-march=native', '-ftree-vectorize', '-Werror=incompatible-pointer-types']
 extra_link_args = ['-fopenmp']
 
 extensions = [
