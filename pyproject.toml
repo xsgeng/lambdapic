@@ -46,7 +46,9 @@ requires = [
     "setuptools_scm",
     "numpy",
     "numba",
-    "scipy"
+    "scipy",
+    "mpi4py",
+    "mpich",
 ]
 
 [tool.setuptools.packages.find]
