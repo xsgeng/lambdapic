@@ -1,9 +1,16 @@
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
-
-from lambdapic import Electron, Proton, Species, Simulation3D, callback
-from lambdapic.callback.laser import  GaussianLaser3D
-
-from lambdapic.callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5
+from lambdapic import (
+    Electron,
+    GaussianLaser3D,
+    Proton,
+    SaveFieldsToHDF5,
+    SaveSpeciesDensityToHDF5,
+    Simulation3D,
+    c,
+    e,
+    epsilon_0,
+    m_e,
+    pi,
+)
 
 um = 1e-6
 l0 = 0.8 * um
