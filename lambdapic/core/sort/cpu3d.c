@@ -100,7 +100,7 @@ static void sorted_cell_bound(
 
 // Python wrappers
 static PyObject* _calculate_cell_index(PyObject* self, PyObject* args) {
-    PyObject *x, *y, *z, *is_dead, *particle_cell_indices, *grid_cell_count;
+    PyArrayObject *x, *y, *z, *is_dead, *particle_cell_indices, *grid_cell_count;
     npy_intp nx, ny, nz, npart;
     double dx, dy, dz, x0, y0, z0;
 
@@ -200,7 +200,7 @@ static PyObject* sort_particles_patches_3d(PyObject* self, PyObject* args) {
         double* y = (double*)GetPatchArrayData(y_list, ipatch);
         double* z = (double*)GetPatchArrayData(z_list, ipatch);
         npy_bool* is_dead = (npy_bool*)GetPatchArrayData(is_dead_list, ipatch);
-        npy_intp npart = PyArray_DIM(PyList_GetItem(x_list, ipatch), 0);
+        npy_intp npart = PyArray_DIM((PyArrayObject*) PyList_GetItem(x_list, ipatch), 0);
 
         // Reset counts
         for (npy_intp icell = 0; icell < nx * ny * nz; icell++) {

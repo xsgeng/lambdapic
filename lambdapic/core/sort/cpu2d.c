@@ -55,7 +55,7 @@ static void calculate_bucket_index(
 }
 
 static PyObject* _calculate_bucket_index(PyObject* self, PyObject* args) {
-    PyObject *x, *y, *is_dead, *particle_bucket_indices, *bucket_count;
+    PyArrayObject *x, *y, *is_dead, *particle_bucket_indices, *bucket_count;
     npy_intp nx, ny, npart, nx_bucket, ny_bucket;
     double dx, dy, x0, y0;
 
@@ -108,7 +108,7 @@ static void calculate_cell_index(
  * @return None.
  */
 static PyObject* _calculate_cell_index(PyObject* self, PyObject* args) {
-    PyObject *x, *y, *is_dead, *particle_cell_indices, *grid_cell_count;
+    PyArrayObject *x, *y, *is_dead, *particle_cell_indices, *grid_cell_count;
     npy_intp nx, ny, npart;
     double dx, dy, x0, y0;
     if (!PyArg_ParseTuple(args, "OOOnnnddddOO", 
@@ -304,7 +304,7 @@ static PyObject* sort_particles_patches_2d(PyObject* self, PyObject* args) {
         double* y = (double*) GetPatchArrayData(y_list, ipatch);  
         npy_bool* is_dead = (npy_bool*) GetPatchArrayData(is_dead_list, ipatch);  
 
-        npy_intp npart = PyArray_DIM(PyList_GetItem(x_list, ipatch), 0);  
+        npy_intp npart = PyArray_DIM((PyArrayObject*) PyList_GetItem(x_list, ipatch), 0);  
 
         for (npy_intp icell = 0; icell < nx * ny; icell++) {
             grid_cell_count[icell] = 0;  // Initialize grid cell count for the current patch
