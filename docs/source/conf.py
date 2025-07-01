@@ -20,6 +20,7 @@ extensions = [
     "sphinx.ext.napoleon",   # Support Google-style/Numpy docstrings
     "sphinxcontrib.autodoc_pydantic",
     "sphinxcontrib.mermaid", # Mermaid diagram support
+    "sphinx_copybutton"
 ]
 
 
