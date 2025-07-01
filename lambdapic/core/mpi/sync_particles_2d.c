@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <math.h>
 #include <mpi.h>
+#include <mpi4py/mpi4py.h>
 
 #include "../utils/cutils.h"
 
@@ -170,14 +171,10 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
         return NULL;
     }
     // Get MPI communicator from Python object
-    PyObject *comm_handle = PyObject_GetAttrString(comm_py, "handle");
-    if (!PyLong_Check(comm_handle)) {
-        PyErr_SetString(PyExc_TypeError, "comm_py must be a long integer");
-        return NULL;
-    }
-    MPI_Comm comm = PyLong_AsLong(comm_handle);
-    Py_DecRef(comm_handle);
-    
+    MPI_Comm *comm_p = NULL;
+    comm_p = PyMPIComm_Get(comm_py);
+    MPI_Comm comm = *comm_p;
+
     // Get MPI rank and size
     int rank, size;
     MPI_Comm_rank(comm, &rank);
@@ -374,13 +371,9 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         return NULL;
     }
     // Get MPI communicator from Python object
-    PyObject *comm_handle = PyObject_GetAttrString(comm_py, "handle");
-    if (!PyLong_Check(comm_handle)) {
-        PyErr_SetString(PyExc_TypeError, "comm_py must be a long integer");
-        return NULL;
-    }
-    MPI_Comm comm = PyLong_AsLong(comm_handle);
-    Py_DecRef(comm_handle);
+    MPI_Comm *comm_p = NULL;
+    comm_p = PyMPIComm_Get(comm_py);
+    MPI_Comm comm = *comm_p;
     
     // Get MPI rank and size
     int rank, size;
@@ -548,5 +541,8 @@ static struct PyModuleDef syncparticlesmodule = {
 // Module initialization function
 PyMODINIT_FUNC PyInit_sync_particles_2d(void) {
     import_array();
+    if (import_mpi4py() < 0) {
+        return NULL;
+    }
     return PyModule_Create(&syncparticlesmodule);
 }
