@@ -14,91 +14,91 @@ extra_link_args = ['-fopenmp']
 extensions = [
     Extension(
         name="lambdapic.core.current.cpu2d",
-        sources=["lambdapic/core/current/cpu2d.c"],
+        sources=["src/lambdapic/core/current/cpu2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.current.cpu3d",
-        sources=["lambdapic/core/current/cpu3d.c"],
+        sources=["src/lambdapic/core/current/cpu3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.interpolation.cpu2d",
-        sources=["lambdapic/core/interpolation/cpu2d.c"],
+        sources=["src/lambdapic/core/interpolation/cpu2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.interpolation.cpu3d",
-        sources=["lambdapic/core/interpolation/cpu3d.c"],
+        sources=["src/lambdapic/core/interpolation/cpu3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.sort.cpu2d", 
-        sources=["lambdapic/core/sort/cpu2d.c"],
+        sources=["src/lambdapic/core/sort/cpu2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.sort.cpu3d", 
-        sources=["lambdapic/core/sort/cpu3d.c"],
+        sources=["src/lambdapic/core/sort/cpu3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.pusher.unified.unified_pusher_2d", 
-        sources=["lambdapic/core/pusher/unified/unified_pusher_2d.c"],
+        sources=["src/lambdapic/core/pusher/unified/unified_pusher_2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.pusher.unified.unified_pusher_3d", 
-        sources=["lambdapic/core/pusher/unified/unified_pusher_3d.c"],
+        sources=["src/lambdapic/core/pusher/unified/unified_pusher_3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.patch.sync_fields2d", 
-        sources=["lambdapic/core/patch/sync_fields2d.c"],
+        sources=["src/lambdapic/core/patch/sync_fields2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.patch.sync_fields3d", 
-        sources=["lambdapic/core/patch/sync_fields3d.c"],
+        sources=["src/lambdapic/core/patch/sync_fields3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.patch.sync_particles_2d", 
-        sources=["lambdapic/core/patch/sync_particles_2d.c"],
+        sources=["src/lambdapic/core/patch/sync_particles_2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.patch.sync_particles_3d", 
-        sources=["lambdapic/core/patch/sync_particles_3d.c"],
+        sources=["src/lambdapic/core/patch/sync_particles_3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     ),
     Extension(
         name="lambdapic.core.mpi.sync_particles_2d", 
-        sources=["lambdapic/core/mpi/sync_particles_2d.c"],
+        sources=["src/lambdapic/core/mpi/sync_particles_2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
@@ -106,7 +106,7 @@ extensions = [
     ),
     Extension(
         name="lambdapic.core.mpi.sync_particles_3d", 
-        sources=["lambdapic/core/mpi/sync_particles_3d.c"],
+        sources=["src/lambdapic/core/mpi/sync_particles_3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
@@ -114,7 +114,7 @@ extensions = [
     ),
     Extension(
         name="lambdapic.core.mpi.sync_fields2d", 
-        sources=["lambdapic/core/mpi/sync_fields2d.c"],
+        sources=["src/lambdapic/core/mpi/sync_fields2d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
@@ -122,7 +122,7 @@ extensions = [
     ),
     Extension(
         name="lambdapic.core.mpi.sync_fields3d", 
-        sources=["lambdapic/core/mpi/sync_fields3d.c"],
+        sources=["src/lambdapic/core/mpi/sync_fields3d.c"],
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
@@ -132,11 +132,11 @@ extensions = [
 
 def _generate_qed_tables():
     for table in ["optical_depth_tables_sigmoid", "optical_depth_tables"]:
-        if os.path.exists(f"lambdapic/core/qed/{table}.npz"):
+        if os.path.exists(f"src/lambdapic/core/qed/{table}.npz"):
             continue
         gen_script = os.path.join(
             os.path.dirname(__file__),
-            f"lambdapic/core/qed/{table}.py"
+            f"src/lambdapic/core/qed/{table}.py"
         )
     
         cmd = [
