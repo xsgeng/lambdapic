@@ -4,6 +4,7 @@ from typing import Callable, List, Optional, Set, Union
 
 import h5py
 import numpy as np
+from yaspin import yaspin
 
 from ..core.species import Species
 from ..core.utils.logger import logger
@@ -76,6 +77,10 @@ class SaveFieldsToHDF5:
         elif sim.itime % self.interval != 0:
             return
         
+        with yaspin(text="Saving fields to HDF5") as sp:
+            self._call(sim)
+        
+    def _call(self, sim: Union[Simulation, Simulation3D]):
         filename = self.prefix / f"{sim.itime:06d}.h5"
         if sim.dimension == 2:
             if not isinstance(sim, Simulation):
@@ -85,7 +90,7 @@ class SaveFieldsToHDF5:
             if not isinstance(sim, Simulation3D):
                 raise TypeError("Expected Simulation3D for 3D case")
             self._write_3d(sim, filename)
-    
+        
     def _write_2d(self, sim: Simulation, filename: Path):
         """Write 2D field data to HDF5 file in parallel.
 
@@ -256,6 +261,10 @@ class SaveSpeciesDensityToHDF5:
         elif sim.itime % self.interval != 0:
             return
         
+        with yaspin(text=f"Saving {self.species.name} density to HDF5") as sp:
+            self._call(sim)
+        
+    def _call(self, sim: Union[Simulation, Simulation3D]):
         filename = self.prefix / f"{self.species.name}_{sim.itime:06d}.h5"
             
         if self.ispec_target == 0:
@@ -453,7 +462,11 @@ class SaveParticlesToHDF5:
             self.attrs = sim.patches[0].particles[self.species.ispec].attrs
             if 'id' in self.attrs:
                 self.attrs.remove('id')
-        
+
+        with yaspin(text="Saving particles to HDF5") as spinner:
+            self._call_(sim)
+    
+    def _call__(self, sim: Union[Simulation, Simulation3D]):
         comm = sim.mpi.comm
         rank = comm.Get_rank()
         # gather number of particles in each patch

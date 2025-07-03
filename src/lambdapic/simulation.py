@@ -584,7 +584,7 @@ class Simulation:
 
         if self.mpi.rank == 0:
             logger.info("Starting simulation")
-        for self.istep in trange(nsteps, disable=self.mpi.rank>0):
+        for self.istep in trange(nsteps, disable=self.mpi.rank>0, position=1):
             
             # start of simulation stages
             with Timer('callback start'):
