@@ -4,15 +4,15 @@ from typing import Callable, List, Optional, Set, Union
 
 import h5py
 import numpy as np
-from yaspin import yaspin
 
 from ..core.species import Species
 from ..core.utils.logger import logger
 from ..simulation import Simulation, Simulation3D
 from .utils import get_fields
+from .callback import Callback
 
 
-class SaveFieldsToHDF5:
+class SaveFieldsToHDF5(Callback):
     """Callback to save field data to HDF5 files.
 
     Creates a new HDF5 file for each save with name pattern:
@@ -60,25 +60,6 @@ class SaveFieldsToHDF5:
             
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
-    
-    def __call__(self, sim: Union[Simulation, Simulation3D]):
-        """Save field data to HDF5 file if current timestep matches save interval.
-
-        Args:
-            sim (Union[Simulation, Simulation3D]): The simulation object containing field data to save
-
-        Note:
-            - Checks if current timestep matches save interval (either by modulo or callback function)
-            - Calls appropriate _write_2d or _write_3d method based on simulation dimension
-        """
-        if callable(self.interval):
-            if not self.interval(sim):
-                return
-        elif sim.itime % self.interval != 0:
-            return
-        
-        with yaspin(text="Saving fields to HDF5") as sp:
-            self._call(sim)
         
     def _call(self, sim: Union[Simulation, Simulation3D]):
         filename = self.prefix / f"{sim.itime:06d}.h5"
@@ -197,9 +178,10 @@ class SaveFieldsToHDF5:
                 f.attrs['Lz'] = sim.Lz
                 f.attrs['time'] = sim.time
                 f.attrs['itime'] = sim.itime
+        comm.Barrier()
 
 
-class SaveSpeciesDensityToHDF5:
+class SaveSpeciesDensityToHDF5(Callback):
     """Callback to save species density data to HDF5 files.
 
     Creates a new HDF5 file for each save with name pattern:
@@ -243,26 +225,6 @@ class SaveSpeciesDensityToHDF5:
         if self.species.ispec is None:
             raise ValueError(f"Species {self.species.name} has not been initialized.")
         return self.species.ispec
-    
-    def __call__(self, sim: Union[Simulation, Simulation3D]):
-        """Save species density data if current timestep matches save interval.
-
-        Args:
-            sim (Union[Simulation, Simulation3D]): The simulation object containing particle data
-
-        Note:
-            - Checks if current timestep matches save interval
-            - Computes density from charge density and species charge
-            - Calls appropriate _write_2d or _write_3d method based on simulation dimension
-        """
-        if callable(self.interval):
-            if not self.interval(sim):
-                return
-        elif sim.itime % self.interval != 0:
-            return
-        
-        with yaspin(text=f"Saving {self.species.name} density to HDF5") as sp:
-            self._call(sim)
         
     def _call(self, sim: Union[Simulation, Simulation3D]):
         filename = self.prefix / f"{self.species.name}_{sim.itime:06d}.h5"
@@ -368,7 +330,7 @@ class SaveSpeciesDensityToHDF5:
             with h5py.File(filename, 'w') as f:
                 dset = f.create_dataset(
                     'density', 
-                    (sim.nx, sim.ny, sim.nz),
+                    data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
                     dtype='f8',
                     chunks=(sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
                 )
@@ -397,7 +359,9 @@ class SaveSpeciesDensityToHDF5:
                 f.attrs['Ly'] = sim.Ly
                 f.attrs['Lz'] = sim.Lz
 
-class SaveParticlesToHDF5:
+        comm.Barrier()
+
+class SaveParticlesToHDF5(Callback):
     """Callback to save particle data to HDF5 files.
 
     The data structure in each file:
@@ -438,35 +402,13 @@ class SaveParticlesToHDF5:
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
-            
-    def __call__(self, sim: Union[Simulation, Simulation3D]):
-        """Save particle data to HDF5 file if current timestep matches save interval.
-
-        Args:
-            sim (Union[Simulation, Simulation3D]): The simulation object containing particle data
-
-        Note:
-            - Checks if current timestep matches save interval
-            - Gathers particle counts across all MPI ranks
-            - Creates HDF5 file with datasets for each particle attribute
-            - Uses MPI parallel I/O to write particle data
-            - Includes simulation metadata as file attributes
-        """
-        if callable(self.interval):
-            if not self.interval(sim):
-                return
-        elif sim.itime % self.interval != 0:
-            return
-        
+    
+    def _call(self, sim: Union[Simulation, Simulation3D]):
         if self.attrs is None:
             self.attrs = sim.patches[0].particles[self.species.ispec].attrs
             if 'id' in self.attrs:
                 self.attrs.remove('id')
 
-        with yaspin(text="Saving particles to HDF5") as spinner:
-            self._call_(sim)
-    
-    def _call__(self, sim: Union[Simulation, Simulation3D]):
         comm = sim.mpi.comm
         rank = comm.Get_rank()
         # gather number of particles in each patch
@@ -496,9 +438,11 @@ class SaveParticlesToHDF5:
                 f['id'][start:start+npart_patches[ipatch]] = p.particles[self.species.ispec].id[is_alive]
                 start += npart_patches[ipatch]
 
-        comm.Barrier()    
+        comm.Barrier()
         # Only rank 0 writes metadata
         if rank == 0:
             with h5py.File(filename, 'a') as f:
                 f.attrs['time'] = sim.time
                 f.attrs['itime'] = sim.itime
+        comm.Barrier()
+        
