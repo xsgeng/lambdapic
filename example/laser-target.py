@@ -1,11 +1,7 @@
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-
 from lambdapic import (
     Electron,
     GaussianLaser2D,
+    PlotFields,
     Proton,
     SaveFieldsToHDF5,
     SaveSpeciesDensityToHDF5,
@@ -66,58 +62,16 @@ if __name__ == "__main__":
     carbon = Species(name="C", charge=6, mass=12*1800, density=density(10*nc/8), ppc=10)
 
     sim.add_species([ele, carbon, proton])
-
-    @callback()
-    def plot_results(sim: Simulation):
-        it = sim.itime
-        if it % 100 == 0:
-            ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
-            
-            if sim.mpi.rank > 0:
-                return
-            ey *= e / (m_e * c * omega0)
-
-            bwr_alpha = LinearSegmentedColormap(
-                'bwr_alpha', 
-                dict( 
-                    red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-                    green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-                    blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-                    alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-                )
-            )
-            fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
-
-            h1 = ax.imshow(
-                -rho.T/e/nc, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap='Grays',
-                vmax=20,
-                vmin=0,
-            )
-            h2 = ax.imshow(
-                ey.T, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap=bwr_alpha,
-                vmax=laser.a0,
-                vmin=-laser.a0,
-            )
-            fig.colorbar(h1)
-            fig.colorbar(h2)
-
-            figdir = Path('laser-target')
-            if not figdir.exists():
-                figdir.mkdir()
-
-            fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-            plt.close()
-
     
     sim.run(2001, callbacks=[
             laser, 
-            plot_results,
+            PlotFields(
+                [
+                    dict(field='rho', scale=-1.0/e/nc, cmap='Grays', vmin=0, vmax=20), 
+                    dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
+                ],
+                prefix='laser-target'
+            ),
             SaveFieldsToHDF5('laser-target/fields', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
             SaveSpeciesDensityToHDF5(carbon, 'laser-target/density', 100),
             SaveSpeciesDensityToHDF5(ele, 'laser-target/density', 100),
