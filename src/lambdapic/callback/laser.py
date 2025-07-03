@@ -69,7 +69,7 @@ def _update_laser_bfields_3d(
 
         
 class Laser:
-    staget = "_laser"
+    stage = "_laser"
     disabled = False
     def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
