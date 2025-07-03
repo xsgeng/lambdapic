@@ -1,6 +1,10 @@
+import h5py
+import numpy as np
+
 from lambdapic import (
     Electron,
     GaussianLaser3D,
+    PlotFields,
     Proton,
     SaveFieldsToHDF5,
     SaveSpeciesDensityToHDF5,
@@ -43,26 +47,50 @@ laser = GaussianLaser3D(
     ctau=5e-6,
     focus_position=Lx/2,
 )
+sim = Simulation3D(
+    nx=nx, ny=ny, nz=nz,
+    dx=dx, dy=dy, dz=dz,
+    npatch_x=16,
+    npatch_y=8,
+    npatch_z=8,
+    cpml_thickness=6,
+)
+
+ele = Electron(density=density(1*nc), ppc=2)
+proton = Proton(density=density(1*nc), ppc=2)
+
+sim.add_species([ele, proton])
+
+ne_data = np.zeros((nx, ny))
+ey_data = np.zeros((nx, ny))
+
+def read_density(sim: Simulation3D):
+    if sim.itime % 100 != 0:
+        return
+    if sim.mpi.rank > 0:
+        return
+    
+    with h5py.File(f'laser-target-3d/{sim.itime:06d}.h5', 'r', locking=False) as f:
+        ey_data[:, :] = f['ey'][..., nz//2]
+
+    with h5py.File(f'laser-target-3d/{ele.name}_{sim.itime:06d}.h5', 'r', locking=False) as f:
+        ne_data[:, :] = f['density'][..., nz//2]
+
+diag_interval = 100
 if __name__ == "__main__":
-    sim = Simulation3D(
-        nx=nx, ny=ny, nz=nz,
-        dx=dx, dy=dy, dz=dz,
-        npatch_x=16,
-        npatch_y=8,
-        npatch_z=8,
-        cpml_thickness=6,
-    )
-
-    ele = Electron(density=density(1*nc), ppc=10)
-    proton = Proton(density=density(1*nc), ppc=10)
-
-    sim.add_species([ele, proton])
-
     sim.run(
         1001, 
         callbacks=[
             laser,
-            SaveFieldsToHDF5('laser-target-3d', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
-            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d/density', 100),
+            SaveFieldsToHDF5('laser-target-3d', diag_interval, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
+            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d', diag_interval),
+            read_density,
+            PlotFields(
+                [
+                    dict(field=ne_data, scale=1.0/nc, cmap='Grays', vmin=0, vmax=2), 
+                    dict(field=ey_data,  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
+                ],
+                'laser-target-3d', diag_interval
+            ),
         ]
     )

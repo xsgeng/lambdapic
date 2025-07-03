@@ -99,12 +99,14 @@ class Callback:
         if sim.mpi.rank == 0:
             with yaspin(text=f"Running callback: {self.__class__.__name__}") as sp:
                 with Timer(f"Running callback: {self.__class__.__name__}"):
-                    self._call(sim)
+                    ret = self._call(sim)
                 sim.mpi.comm.Barrier()
         else:
             with Timer(f"Running callback: {self.__class__.__name__}"):
-                self._call(sim)
+                ret = self._call(sim)
             sim.mpi.comm.Barrier()
+
+        return ret
 
     def _call(self, sim: 'Simulation') -> None:
         raise NotImplementedError
