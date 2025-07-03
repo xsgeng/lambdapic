@@ -8,7 +8,6 @@ import numpy as np
 from ..core.species import Species
 from ..core.utils.logger import logger
 from ..simulation import Simulation, Simulation3D
-from .utils import get_fields
 from .callback import Callback
 
 
