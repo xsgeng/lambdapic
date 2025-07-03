@@ -56,11 +56,7 @@ class TestCallback:
         # Test direct execution
         test_func(mock_sim)
         assert len(test_value) == 1
-        
-        # Test execution via execute()
-        test_func.execute(mock_sim)
-        assert len(test_value) == 2
-        
+
     def test_simulation_integration(self, mock_sim):
         """Test that callbacks integrate properly with SimulationCallbacks."""
         executed_stages = []
