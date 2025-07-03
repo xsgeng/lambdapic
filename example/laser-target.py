@@ -1,5 +1,6 @@
 from lambdapic import (
     Electron,
+    ExtractSpeciesDensity,
     GaussianLaser2D,
     PlotFields,
     Proton,
@@ -65,9 +66,10 @@ if __name__ == "__main__":
     
     sim.run(2001, callbacks=[
             laser, 
+            n_ele := ExtractSpeciesDensity(sim, ele, 100),
             PlotFields(
                 [
-                    dict(field='rho', scale=-1.0/e/nc, cmap='Grays', vmin=0, vmax=20), 
+                    dict(field=n_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
                     dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
                 ],
                 prefix='laser-target'

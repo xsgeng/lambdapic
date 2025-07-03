@@ -1,19 +1,20 @@
-from ast import If
-from lambdapic.core.boundary.cpml import PMLX
-from ..simulation import Simulation
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
-import numpy as np
-
-from typing import Callable, Optional, Sequence, Union, List
-
-from ..core.species import Species
-from ..core.utils.logger import logger
-
 from pathlib import Path
+from typing import Callable, List, Optional, Sequence, Union
+
+import numpy as np
+from numba import typed
+from numpy.typing import NDArray
+from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
+
+from lambdapic.callback.hdf5 import SaveSpeciesDensityToHDF5
+from lambdapic.core.boundary.cpml import PMLX
 
 from ..core.patch.cpu import fill_particles_2d, get_num_macro_particles_2d
 from ..core.patch.patch import Patch, Patch2D, Patch3D
-from numba import typed
+from ..core.species import Species
+from ..core.utils.logger import logger
+from ..simulation import Simulation, Simulation3D
+from .callback import Callback
 
 
 def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
@@ -83,53 +84,141 @@ def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
         
     return ret
 
-class ExtractSpeciesDensity:
+class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
+    """Callback to extract species density from all patches.
+    
+    Only rank 0 will gather the data, other ranks will get zeros.
+    
+    Args:
+        sim (Simulation): Simulation instance.
+        species (Species): Species instance to extract density from.
+        interval (Union[int, Callable], optional): Number of timesteps between saves, or a function(sim) -> bool that determines when to save. Defaults to 100.
+
+    Example:
+
+        >>> ne_ele = ExtractSpeciesDensity(sim, ele, interval=100)
+        use in PlotFields:
+        >>> sim.run(1000, callbacks[
+                ne_ele,
+                PlotFields(
+                    [dict(field=ne_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
+                    dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0) ],
+                    prefix='laser-target'),
+            ])
+    """
+
     stage = "current deposition"
-    def __init__(self, sim: Simulation, species: Species, every: Union[int, Callable]):
-        self.sim = sim
+    def __init__(self, sim: Simulation, species: Species, interval: Union[int, Callable] = 100) -> None:
         self.species = species
-        self.every = every
-        self.ispec_target = sim.species.index(species)
-        
-        self.patches = sim.patches
-        self.nx_per_patch = sim.nx_per_patch
-        self.ny_per_patch = sim.ny_per_patch
-        self.n_guard = sim.n_guard
-
-        self.density = np.zeros((self.nx_per_rank, self.ny_per_rank))
-
-    def _get_patch_slice(self, patch):
-        return np.s_[
-            patch.ipatch_x*self.nx_per_patch:(patch.ipatch_x+1)*self.nx_per_patch,
-            patch.ipatch_y*self.ny_per_patch:(patch.ipatch_y+1)*self.ny_per_patch
-        ]
-
-    def __call__(self, sim: Simulation):
-        if callable(self.every):
-            if not self.every(sim):
-                return
-        elif sim.itime % self.every != 0:
-            return
-
-        ispec = sim.ispec
-        if self.ispec_target == 0:
-            if ispec == 0:
-                for p in self.patches:
-                    s = self._get_patch_slice(p)
-                    self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard] / self.sim.species[ispec].q
+        self.interval = interval
+        self.prev_rho = None
+        self.species = species
+        if sim.dimension == 2:
+            self.density: NDArray[np.float64] = np.zeros((sim.nx, sim.ny))
         else:
-            if ispec == self.ispec_target - 1:
-                for p in self.patches:
-                    s = self._get_patch_slice(p)
-                    # store previous rho
-                    self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard]
-            if ispec == self.ispec_target:
-                for p in self.patches:
-                    s = self._get_patch_slice(p)
-                    # subtract previous rho
-                    self.density[s] = p.fields.rho[:-2*self.n_guard, :-2*self.n_guard] - self.density[s]
-                    self.density[s] /= self.sim.species[ispec].q
+            self.density: NDArray[np.float64] = np.zeros((sim.nx, sim.ny, sim.nz))
+        
 
+        self.prefix = Path('') # for compatibility
+
+    def _write_2d(self, sim, density_per_patch, filename):
+        comm = sim.mpi.comm
+        rank = sim.mpi.rank
+        
+        nx_per_patch = sim.nx_per_patch
+        ny_per_patch = sim.ny_per_patch
+        ng = sim.n_guard
+        npatch_x = sim.npatch_x
+        npatch_y = sim.npatch_y
+
+        index_info = {(p.ipatch_x, p.ipatch_y): p.index for ipatch, p in enumerate(sim.patches)}
+        index_info: list[dict[tuple[int, int], int]] = sim.mpi.comm.gather(index_info)
+        if rank == 0:
+            patch_index_map = {k: v for d in index_info for k, v in d.items()}
+            local_patches = {p.index: ipatch for ipatch, p in enumerate(sim.patches)}
+            
+        if rank == 0:
+            # local
+            for ip, p in enumerate(sim.patches):
+                s = np.s_[p.ipatch_x*nx_per_patch:p.ipatch_x*nx_per_patch+nx_per_patch,\
+                          p.ipatch_y*ny_per_patch:p.ipatch_y*ny_per_patch+ny_per_patch]
+                self.density[s] = density_per_patch[ip][:-2*ng, :-2*ng]
+
+            buf = np.zeros((nx_per_patch+2*ng, ny_per_patch+2*ng))
+            for ipatch_x in range(npatch_x):
+                for ipatch_y in range(npatch_y):
+                    s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
+                              ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
+                    # local
+                    index = patch_index_map[(ipatch_x, ipatch_y)]
+                    if index in local_patches:
+                        continue
+                    #remote
+                    else:
+                        sim.mpi.comm.Recv(buf, tag=index)
+                        self.density[s] = buf[:-2*ng, :-2*ng]
+        
+        else:
+            req = []
+            for ip, p in enumerate(sim.patches):
+                req_ = sim.mpi.comm.Isend(density_per_patch[ip], dest=0, tag=p.index)
+                req.append(req_)
+            for req_ in req:
+                req_.wait()
+
+        comm.Barrier()
+
+    def _write_3d(self, sim, density_per_patch, filename):
+        comm = sim.mpi.comm
+        rank = sim.mpi.rank
+        
+        nx_per_patch = sim.nx_per_patch
+        ny_per_patch = sim.ny_per_patch
+        nz_per_patch = sim.nz_per_patch
+        ng = sim.n_guard
+        npatch_x = sim.npatch_x
+        npatch_y = sim.npatch_y
+        npatch_z = sim.npatch_z
+
+        index_info = {(p.ipatch_x, p.ipatch_y, p.ipatch_z): p.index for ipatch, p in enumerate(sim.patches)}
+        index_info: list[dict[tuple[int, int, int], int]] = sim.mpi.comm.gather(index_info)
+        if rank == 0:
+            patch_index_map = {k: v for d in index_info for k, v in d.items()}
+            local_patches = {p.index: ipatch for ipatch, p in enumerate(sim.patches)}
+            
+        if rank == 0:
+            # local
+            for ip, p in enumerate(sim.patches):
+                s = np.s_[p.ipatch_x*nx_per_patch:p.ipatch_x*nx_per_patch+nx_per_patch,\
+                          p.ipatch_y*ny_per_patch:p.ipatch_y*ny_per_patch+ny_per_patch,\
+                          p.ipatch_z*nz_per_patch:p.ipatch_z*nz_per_patch+nz_per_patch]
+                self.density[s] = density_per_patch[ip][:-2*ng, :-2*ng, :-2*ng]
+
+            buf = np.zeros((nx_per_patch+2*ng, ny_per_patch+2*ng, nz_per_patch+2*ng))
+            for ipatch_x in range(npatch_x):
+                for ipatch_y in range(npatch_y):
+                    for ipatch_z in range(npatch_z):
+                        s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
+                                  ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch,\
+                                  ipatch_z*nz_per_patch:ipatch_z*nz_per_patch+nz_per_patch]
+                        # local
+                        index = patch_index_map[(ipatch_x, ipatch_y, ipatch_z)]
+                        if index in local_patches:
+                            continue
+                        #remote
+                        else:
+                            sim.mpi.comm.Recv(buf, tag=index)
+                            self.density[s] = buf[:-2*ng, :-2*ng, :-2*ng]
+        
+        else:
+            req = []
+            for ip, p in enumerate(sim.patches):
+                req_ = sim.mpi.comm.Isend(density_per_patch[ip], dest=0, tag=p.index)
+                req.append(req_)
+            for req_ in req:
+                req_.wait()
+
+        comm.Barrier()
 
 def species_transfer(s1, s2):
     # if ..., s1 particles become s2
