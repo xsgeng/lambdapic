@@ -8,9 +8,11 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
 from ..simulation import Simulation, Simulation3D
+from .callback import Callback
 from .utils import get_fields
 
-class PlotFields:
+
+class PlotFields(Callback):
     """Callback to plot and overlay multiple fields with flexible configuration.
 
     Creates plots with specified fields overlaid using transparency cmaps: `bwr_alpha`, `gold_alpha`, `grey_alpha`, `red_alpha`, `blue_alpha`, `gwb_alpha`.
@@ -68,26 +70,10 @@ class PlotFields:
         # Create output directory
         self.prefix.mkdir(parents=True, exist_ok=True)
 
-    def __call__(self, sim: Union[Simulation, Simulation3D]):
-        """Create plot if current timestep matches save interval.
-
-        Args:
-            sim: Simulation object containing field data
-        """
-        assert sim.dimension == 2, "PlotFields callback only supports 2D simulations. 3D is comming soon"
-
-        if callable(self.interval):
-            if not self.interval(sim):
-                return
-        elif sim.itime % self.interval != 0:
-            return
-
-        if self.figsize is None:
-            self.figsize = (10, 10*sim.Ly/sim.Lx)
-
-        self._call(sim)
 
     def _call(self, sim: Union[Simulation, Simulation3D]):
+        if self.figsize is None:
+            self.figsize = (10, 10*sim.Ly/sim.Lx)
 
         field_data = []
         field_names = []

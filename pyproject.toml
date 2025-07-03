@@ -11,7 +11,8 @@ dependencies = [
     "deprecated",
     "mpi4py",
     "pymetis",
-    "h5py"
+    "h5py",
+    "yaspin",
 ]
 requires-python = ">=3.10"
 
