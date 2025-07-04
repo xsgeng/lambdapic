@@ -1,5 +1,6 @@
 import re
 from .core.species import Species
+from packaging.version import Version, InvalidVersion
 
 def uniquify_species_names(existing_species: list[Species], new_species: list[Species]):
     """Directly modify the name attribute of species in the input list"""
@@ -28,3 +29,30 @@ def uniquify_species_names(existing_species: list[Species], new_species: list[Sp
         
         # Add the new name to the existing list
         existing_names.append(s.name)
+
+def check_newer_version_on_pypi() -> tuple[str|None, str|None]:
+    """Return (current_version, latest_version) for the given package, or (current, None) on error."""
+    import importlib.metadata
+    try:
+        current_version = importlib.metadata.version('lambdapic')
+    except Exception:
+        current_version = None
+    latest_version = None
+    try:
+        import requests
+        resp = requests.get('https://pypi.org/pypi/lambdapic/json', timeout=3)
+        if resp.ok:
+            data = resp.json()
+            latest_version = data['info']['version']
+    except ImportError:
+        pass  # requests not installed
+    except Exception:
+        pass  # network or other error
+    return current_version, latest_version
+
+def is_version_outdated(local: str, remote: str) -> bool:
+    """Return True if local version is older than remote version."""
+    try:
+        return Version(local) < Version(remote)
+    except InvalidVersion:
+        return False
