@@ -13,6 +13,8 @@ dependencies = [
     "pymetis",
     "h5py",
     "yaspin",
+    "packaging",
+    "requests",
 ]
 requires-python = ">=3.10"
 
