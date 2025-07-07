@@ -9,6 +9,8 @@ def mock_sim():
     """Fixture providing a mock simulation."""
     sim = Mock()
     sim.patches = []
+    sim.itime = 0
+    sim.mpi.rank = 0
     return sim
 
 @pytest.mark.unit
