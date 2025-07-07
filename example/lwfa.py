@@ -69,65 +69,64 @@ if __name__ == "__main__":
 
     sim.add_species([ele, carbon, proton])
 
-    @callback()
+    @callback(interval=100)
     def plot_results(sim: Simulation):
         it = sim.itime
-        if it % 100 == 0:
-            if sim.mpi.rank > 0:
-                return
+        if sim.mpi.rank > 0:
+            return
+        
+        nx_moved = int(movingwindow.patch_this_shift // dx)
+        s = np.s_[nx_moved:nx_moved+(sim.npatch_x-1)*sim.nx_per_patch, :]
+        
+        with h5py.File(f'lwfa/{ele.name}_t{sim.itime:06d}.h5', 'r', locking=False) as f:
+            nele = f['density'][s]
+
+        with h5py.File(f'lwfa/fields_t{sim.itime:06d}.h5', 'r', locking=False) as f:
+            ey = f['ey'][s] * e / (m_e * c * omega0)
             
-            nx_moved = int(movingwindow.patch_this_shift // dx)
-            s = np.s_[nx_moved:nx_moved+(sim.npatch_x-1)*sim.nx_per_patch, :]
-            
-            with h5py.File(f'lwfa/{ele.name}_t{sim.itime:06d}.h5', 'r', locking=False) as f:
-                nele = f['density'][s]
-
-            with h5py.File(f'lwfa/fields_t{sim.itime:06d}.h5', 'r', locking=False) as f:
-                ey = f['ey'][s] * e / (m_e * c * omega0)
-                
-            bwr_alpha = LinearSegmentedColormap(
-                'bwr_alpha', 
-                dict( 
-                    red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-                    green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-                    blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-                    alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-                )
+        bwr_alpha = LinearSegmentedColormap(
+            'bwr_alpha', 
+            dict( 
+                red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
+                green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
+                blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
+                alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
             )
-            fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
+        )
+        fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 
-            extent = [
-                movingwindow.total_shift,
-                movingwindow.total_shift + Lx*(sim.npatch_x-1)/sim.npatch_x,
-                0,
-                Ly
-            ]
+        extent = [
+            movingwindow.total_shift,
+            movingwindow.total_shift + Lx*(sim.npatch_x-1)/sim.npatch_x,
+            0,
+            Ly
+        ]
 
-            h1 = ax.imshow(
-                nele.T/nc, 
-                extent=extent,
-                origin='lower',
-                cmap='Grays',
-                vmax=ne/nc*2,
-                vmin=0,
-            )
-            h2 = ax.imshow(
-                ey.T, 
-                extent=extent,
-                origin='lower',
-                cmap=bwr_alpha,
-                vmax=laser.a0,
-                vmin=-laser.a0,
-            )
-            fig.colorbar(h1)
-            fig.colorbar(h2)
+        h1 = ax.imshow(
+            nele.T/nc, 
+            extent=extent,
+            origin='lower',
+            cmap='Grays',
+            vmax=ne/nc*2,
+            vmin=0,
+        )
+        h2 = ax.imshow(
+            ey.T, 
+            extent=extent,
+            origin='lower',
+            cmap=bwr_alpha,
+            vmax=laser.a0,
+            vmin=-laser.a0,
+        )
+        fig.colorbar(h1)
+        fig.colorbar(h2)
 
-            figdir = Path('lwfa')
-            if not figdir.exists():
-                figdir.mkdir()
+        figdir = Path('lwfa')
+        if not figdir.exists():
+            figdir.mkdir()
 
-            fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-            plt.close()
+        fig.savefig(figdir/f'{it:04d}.png', dpi=300)
+        plt.close()
 
     sim.run(2001, callbacks=[
             movingwindow,

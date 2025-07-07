@@ -66,59 +66,56 @@ if __name__ == "__main__":
 
     sim.add_species([ele, proton, pho])
 
-    @callback()
+    @callback(interval=100)
     def plot_results(sim):
         it = sim.itime
-        if it % 100 == 0:
-            ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
-            if sim.mpi.rank > 0:
-                return
-            ey *= e / (m_e * c * omega0)
-            
-            bwr_alpha = LinearSegmentedColormap(
-                'bwr_alpha', 
-                dict( 
-                    red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-                    green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-                    blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-                    alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-                )
-            )
-
-            fig, axes = plt.subplots(2, 1, figsize=(5, 5), layout="constrained")
-            
-            ax = axes[0]
-            
-            h2 = ax.imshow(
-                -rho.T/e/nc, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap='Grays',
-                vmax=10,
-                vmin=0,
-            )
-            h1 = ax.imshow(
-                ey.T, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap=bwr_alpha,
-                vmax=laser.a0,
-                vmin=-laser.a0,
-            )
-            fig.colorbar(h1)
-            fig.colorbar(h2)
-
-            figdir = Path('qed')
-            if not figdir.exists():
-                figdir.mkdir()
-
-            fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-            plt.close()
-
-    @callback()
-    def npho(sim: Simulation):
-        if sim.itime % 100 != 0:
+        ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
+        if sim.mpi.rank > 0:
             return
+        ey *= e / (m_e * c * omega0)
+        
+        bwr_alpha = LinearSegmentedColormap(
+            'bwr_alpha', 
+            dict( 
+                red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
+                green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
+                blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
+                alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
+            )
+        )
+
+        fig, axes = plt.subplots(2, 1, figsize=(5, 5), layout="constrained")
+        
+        ax = axes[0]
+        
+        h2 = ax.imshow(
+            -rho.T/e/nc, 
+            extent=[0, Lx, 0, Ly],
+            origin='lower',
+            cmap='Grays',
+            vmax=10,
+            vmin=0,
+        )
+        h1 = ax.imshow(
+            ey.T, 
+            extent=[0, Lx, 0, Ly],
+            origin='lower',
+            cmap=bwr_alpha,
+            vmax=laser.a0,
+            vmin=-laser.a0,
+        )
+        fig.colorbar(h1)
+        fig.colorbar(h2)
+
+        figdir = Path('qed')
+        if not figdir.exists():
+            figdir.mkdir()
+
+        fig.savefig(figdir/f'{it:04d}.png', dpi=300)
+        plt.close()
+
+    @callback(interval=100)
+    def npho(sim: Simulation):
         npart = 0
         for ipatch, p in enumerate(sim.patches):
             part = p.particles[pho.ispec]
@@ -128,14 +125,12 @@ if __name__ == "__main__":
         if sim.mpi.rank == 0:
             logger.info(f"nphoton = {npart}")
 
-    @callback("current deposition")
+    @callback("current deposition", interval=100)
     def prune(sim: Simulation):
-        if sim.itime % 100 != 0:
-            return
         for ipatch, p in enumerate(sim.patches):
             p.particles[sim.ispec].prune()
 
-    @callback("start")
+    @callback("start", interval=lambda sim: sim.itime == 0 or sim.itime == 200)
     def enable_radiation(sim: Simulation):
         from lambdapic.simulation import NonlinearComptonLCFA
         # disable first
