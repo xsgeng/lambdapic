@@ -417,7 +417,7 @@ class Patches:
                 plists[ispec][attr][ipatch] = getattr(patch.particles[ispec], attr)
 
     def init_rect_neighbor_index_2d(self, npatch_x: int, npatch_y: int, *,
-                                    boundary_conditions: dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = {}, 
+                                    boundary_conditions: dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], 
                                     patch_index_map: dict[tuple, int]={}
                                     ):
         """ 
@@ -435,9 +435,6 @@ class Patches:
             ((-1, +1), 'xminymax'), ((+1, +1), 'xmaxymax'),
         ]
 
-        if not boundary_conditions:
-            boundary_conditions = {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'}
-
         if not patch_index_map:
             patch_index_map = {(p.ipatch_x, p.ipatch_y): p.index for p in self.patches}
 
@@ -445,31 +442,38 @@ class Patches:
             p.neighbor_index.fill(-1)
             i, j = p.ipatch_x, p.ipatch_y
 
-            if i == 0 and boundary_conditions['xmin'] == 'periodic':
-                p.set_neighbor_index(xmin    =patch_index_map[(npatch_x-1, j)], 
-                                     xminymin=patch_index_map[(npatch_x-1, j-1 if j > 0 else npatch_y-1)], 
-                                     xminymax=patch_index_map[(npatch_x-1, j+1 if j < npatch_y-1 else 0)])
-            if j == 0 and boundary_conditions['ymin'] == 'periodic':
-                p.set_neighbor_index(ymin    =patch_index_map[(i, npatch_y-1)], 
-                                     xminymin=patch_index_map[(i-1 if i > 0 else npatch_x-1, npatch_y-1)], 
-                                     xmaxymin=patch_index_map[(i+1 if i < npatch_x-1 else 0, npatch_y-1)])
-            if i == npatch_x - 1 and boundary_conditions['xmax'] == 'periodic':
-                p.set_neighbor_index(xmax    =patch_index_map[(0, j)], 
-                                     xmaxymin=patch_index_map[(0, j-1 if j > 0 else npatch_y-1)], 
-                                     xmaxymax=patch_index_map[(0, j+1 if j < npatch_y-1 else 0)])
-            if j == npatch_y - 1 and boundary_conditions['ymax'] == 'periodic':
-                p.set_neighbor_index(ymax    =patch_index_map[(i, 0)], 
-                                     xminymax=patch_index_map[(i-1 if i > 0 else npatch_x-1, 0)], 
-                                     xmaxymax=patch_index_map[(i+1 if i < npatch_x-1 else 0, 0)])
-            
             for (dx, dy), name in neighbor_offsets:
-                neighbor_i = i + dx
-                neighbor_j = j + dy
-                
-                # Check if neighbor coordinates are valid
-                if 0 <= neighbor_i < npatch_x and 0 <= neighbor_j < npatch_y:
-                    neighbor_index = patch_index_map[(neighbor_i, neighbor_j)]
-                    p.set_neighbor_index(**{name: neighbor_index})
+                # tentative neighbour coordinates
+                ni = i + dx
+                nj = j + dy
+
+                # --- X wrapping ---
+                if ni < 0:
+                    if boundary_conditions['xmin'] == 'periodic':
+                        ni = npatch_x - 1
+                    else:
+                        continue
+                elif ni >= npatch_x:
+                    if boundary_conditions['xmax'] == 'periodic':
+                        ni = 0
+                    else:
+                        continue
+
+                # --- Y wrapping ---
+                if nj < 0:
+                    if boundary_conditions['ymin'] == 'periodic':
+                        nj = npatch_y - 1
+                    else:
+                        continue
+                elif nj >= npatch_y:
+                    if boundary_conditions['ymax'] == 'periodic':
+                        nj = 0
+                    else:
+                        continue
+
+                # valid neighbour after wrapping
+                neighbor_index = patch_index_map[(ni, nj)]
+                p.set_neighbor_index(**{name: neighbor_index})
     
     def init_rect_neighbor_index_3d(self, npatch_x: int, npatch_y: int, npatch_z: int, boundary_conditions: dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']], patch_index_map: dict[tuple, int]={}):
         """ 
@@ -506,27 +510,51 @@ class Patches:
             p.neighbor_index.fill(-1)
             i, j, k = p.ipatch_x, p.ipatch_y, p.ipatch_z
 
-            if i == 0 and boundary_conditions['xmin'] == 'periodic':
-                p.set_neighbor_index(xmin=patch_index_map[(npatch_x-1, j, k)])
-            if j == 0 and boundary_conditions['ymin'] == 'periodic':
-                p.set_neighbor_index(ymin=patch_index_map[(i, npatch_y-1, k)])
-            if k == 0 and boundary_conditions['zmin'] == 'periodic':
-                p.set_neighbor_index(zmin=patch_index_map[(i, j, npatch_z-1)])
-            if i == npatch_x - 1 and boundary_conditions['xmax'] == 'periodic':
-                p.set_neighbor_index(xmax=patch_index_map[(0, j, k)])
-            if j == npatch_y - 1 and boundary_conditions['ymax'] == 'periodic':
-                p.set_neighbor_index(ymax=patch_index_map[(i, 0, k)])
-            if k == npatch_z - 1 and boundary_conditions['zmax'] == 'periodic':
-                p.set_neighbor_index(zmax=patch_index_map[(i, j, 0)])
-            
-            
             for (dx, dy, dz), name in neighbor_offsets:
-                neighbor_i, neighbor_j, neighbor_k = i + dx, j + dy, k + dz
-                
-                # Check if neighbor coordinates are valid
-                if 0 <= neighbor_i < npatch_x and 0 <= neighbor_j < npatch_y and 0 <= neighbor_k < npatch_z:
-                    neighbor_index = patch_index_map[(neighbor_i, neighbor_j, neighbor_k)]
-                    p.set_neighbor_index(**{name: neighbor_index})
+                # Compute tentative neighbor coordinates
+                ni = i + dx
+                nj = j + dy
+                nk = k + dz
+
+                # --- X direction wrapping ---
+                if ni < 0:
+                    if boundary_conditions['xmin'] == 'periodic':
+                        ni = npatch_x - 1
+                    else:
+                        continue  # Non-periodic boundary reached, skip this neighbor
+                elif ni >= npatch_x:
+                    if boundary_conditions['xmax'] == 'periodic':
+                        ni = 0
+                    else:
+                        continue
+
+                # --- Y direction wrapping ---
+                if nj < 0:
+                    if boundary_conditions['ymin'] == 'periodic':
+                        nj = npatch_y - 1
+                    else:
+                        continue
+                elif nj >= npatch_y:
+                    if boundary_conditions['ymax'] == 'periodic':
+                        nj = 0
+                    else:
+                        continue
+
+                # --- Z direction wrapping ---
+                if nk < 0:
+                    if boundary_conditions['zmin'] == 'periodic':
+                        nk = npatch_z - 1
+                    else:
+                        continue
+                elif nk >= npatch_z:
+                    if boundary_conditions['zmax'] == 'periodic':
+                        nk = 0
+                    else:
+                        continue
+
+                # By this point (ni, nj, nk) is guaranteed to be a valid coordinate
+                neighbor_index = patch_index_map[(ni, nj, nk)]
+                p.set_neighbor_index(**{name: neighbor_index})
 
     def init_neighbor_rank_2d(self, patch_rank_map: dict[int, int]={}):
         """
@@ -682,6 +710,7 @@ class Patches:
                     [p for p in self],
                     npart_incoming, npart_outgoing,
                     self.npatches, self.dx, self.dy, self.dz,
+                    self.xmin_global, self.xmax_global, self.ymin_global, self.ymax_global, self.zmin_global, self.zmax_global,
                     self[0].particles[ispec].attrs
                 )
 
