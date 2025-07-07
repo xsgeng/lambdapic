@@ -322,8 +322,6 @@ static void fill_boundary_particles_to_buffer(
     }
 }
 
-
-
 // Mark out-of-bound particles as dead
 static void mark_out_of_bound_as_dead(
     double *x, double *y, double *z, npy_bool *is_dead, npy_intp npart, 
@@ -344,6 +342,23 @@ static void mark_out_of_bound_as_dead(
             y[ipart] = NAN;
             z[ipart] = NAN;
         }
+    }
+}
+
+// Apply periodic boundary conditions for a single coordinate
+static void handle_periodic(
+    double* buffer, npy_intp ibuff,
+    double min_global, double max_global, double L,
+    double min_patch, double max_patch,
+    double cell_size
+) {
+    double coord = buffer[ibuff];
+    
+    if (coord > max_global && fabs(min_patch - min_global) < cell_size) {
+        buffer[ibuff] -= L;
+    }
+    if (coord < min_global && fabs(max_patch - max_global) < cell_size) {
+        buffer[ibuff] += L;
     }
 }
 
@@ -467,20 +482,27 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
     PyObject *particles_list, *patch_list, *attrs;
     PyArrayObject *npart_incoming_array, *npart_outgoing_array;
     double dx, dy, dz;
+    double xmin_global, xmax_global, ymin_global, ymax_global, zmin_global, zmax_global;
     npy_intp npatches;
 
     if (!PyArg_ParseTuple(
-            args, "OOOOndddO", 
+            args, "OOOOndddddddddO", 
             &particles_list, 
             &patch_list,
             &npart_incoming_array,
             &npart_outgoing_array,
             &npatches,
-            &dx, &dy, &dz, &attrs
+            &dx, &dy, &dz,
+            &xmin_global, &xmax_global, &ymin_global, &ymax_global, &zmin_global, &zmax_global,
+            &attrs
         )
     ) {
         return NULL;
     }
+
+    double Lx = xmax_global - xmin_global;
+    double Ly = ymax_global - ymin_global;
+    double Lz = zmax_global - zmin_global;
 
     // Get attributes with cleanup attributes
     AUTOFREE double **x_list = get_attr_array_double(particles_list, npatches, "x");
@@ -512,11 +534,16 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
     AUTOFREE npy_intp *npart_outgoing = PyArray_DATA(npart_outgoing_array);
 
     npy_intp nattrs = PyList_Size(attrs);
+    Py_ssize_t iattr_x = -1, iattr_y = -1, iattr_z = -1;
     
     // Create array of attribute arrays
     AUTOFREE double **attrs_list = malloc(nattrs * npatches * sizeof(double*));
     for (Py_ssize_t iattr = 0; iattr < nattrs; iattr++) {
         PyObject *attr_name = PyList_GetItem(attrs, iattr);
+
+        if (PyUnicode_CompareWithASCIIString(attr_name, "x") == 0) iattr_x = iattr;
+        if (PyUnicode_CompareWithASCIIString(attr_name, "y") == 0) iattr_y = iattr;
+        if (PyUnicode_CompareWithASCIIString(attr_name, "z") == 0) iattr_z = iattr;
         
         for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
             PyObject *particle = PyList_GetItem(particles_list, ipatch);
@@ -525,6 +552,12 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
             Py_DecRef(attr_array);
         }
     }
+
+    if (iattr_x < 0 || iattr_y < 0 || iattr_z < 0) {
+        PyErr_SetString(PyExc_ValueError, "attrs must contain 'x', 'y', and 'z'");
+        return NULL;
+    }
+
     // Number of particles coming from each boundary
     AUTOFREE npy_intp** npart_incoming_boundary_list = (npy_intp**)malloc(npatches * sizeof(npy_intp**));
     // Indices of particles coming from boundary
@@ -602,6 +635,30 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
                 }
                 if (is_dead[ipart]) {
                     for (npy_intp iattr = 0; iattr < nattrs; iattr++) {
+                        if (iattr == iattr_x) {
+                            handle_periodic(
+                                buffer, ibuff*nattrs+iattr,
+                                xmin_global, xmax_global, Lx,
+                                xmin_list[ipatch], xmax_list[ipatch],
+                                dx
+                            );
+                        }
+                        if (iattr == iattr_y) {
+                            handle_periodic(
+                                buffer, ibuff*nattrs+iattr,
+                                ymin_global, ymax_global, Ly,
+                                ymin_list[ipatch], ymax_list[ipatch],
+                                dy
+                            );
+                        }
+                        if (iattr == iattr_z) {
+                            handle_periodic(
+                                buffer, ibuff*nattrs+iattr,
+                                zmin_global, zmax_global, Lz,
+                                zmin_list[ipatch], zmax_list[ipatch],
+                                dz
+                            );
+                        }
                         attrs_list[ipatch*nattrs + iattr][ipart] = buffer[ibuff*nattrs+iattr];
                     }
                     is_dead[ipart] = 0; // Mark as alive
