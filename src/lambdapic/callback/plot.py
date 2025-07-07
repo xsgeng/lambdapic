@@ -34,19 +34,21 @@ class PlotFields(Callback):
         dpi (int = 300): Image DPI
 
     Example:
-        ``` python
-        # Using field names
-        field_configs = [
-            dict(field='rho', scale=-1.0, cmap='Grays', vmin=-1.0, vmax=1.0),
-            dict(field='ey', scale=1/4e12, cmap='bwr_alpha', vmin=-1.0, vmax=1.0),
-        ]
+        >>> # Using field names
+        >>> field_configs = [
+        ...     dict(field='rho', scale=-1/e/nc, cmap='Grays', vmin=-1.0, vmax=1.0),
+        ...     dict(field='ey', scale=1/4e12, cmap='bwr_alpha', vmin=-1.0, vmax=1.0),
+        ... ]
 
-        # Using direct arrays from other callbacks
-        field_configs = [
-            dict(field=rho_array, scale=1.0, cmap='viridis'),
-            dict(field=ey_array, scale=1e-12, cmap='bwr')
-        ]
-        ```
+        >>> # Using direct arrays from other callbacks
+        >>> extract_ne = ExtractSpeciesDensity(sim, ele, interval=100)
+        >>> field_configs = [
+        ...     dict(field=extract_ne.density, scale=1/nc, cmap='viridis'),
+        ...     dict(field='ey', scale=1/4e12, cmap='bwr')
+        ... ]
+        >>> sim.run(callbacks=[
+        ...     extract_ne,
+        ...     PlotFields(field_configs, prefix='plots', interleval=100)])
     """
     stage = "maxwell second"
 

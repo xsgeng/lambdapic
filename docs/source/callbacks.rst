@@ -1,5 +1,10 @@
 Built-in Callbacks
-==========
+==================
+
+Plot on-the-fly
+---------------
+
+.. autoclass:: lambdapic.callback.plot.PlotFields
 
 .. _hdf5:
 
@@ -52,9 +57,23 @@ Laser injection callbacks for PIC simulations.
 Simple laser
 ~~~~~~~~~~~~
 
+Use :any:`SimpleLaser2D` or :any:`SimpleLaser3D`.
+
 .. autoclass:: lambdapic.callback.laser.SimpleLaser
+.. autoclass:: lambdapic.callback.laser.SimpleLaser2D
+.. autoclass:: lambdapic.callback.laser.SimpleLaser3D
 
 Gaussian laser
 ~~~~~~~~~~~~~~
 
+Use :any:`GaussianLaser2D` or :any:`GaussianLaser3D`.
+
 .. autoclass:: lambdapic.callback.laser.GaussianLaser
+.. autoclass:: lambdapic.callback.laser.GaussianLaser2D
+.. autoclass:: lambdapic.callback.laser.GaussianLaser3D
+
+Utility callbacks
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: lambdapic.callback.utils.SetTemperature
+.. autoclass:: lambdapic.callback.utils.ExtractSpeciesDensity

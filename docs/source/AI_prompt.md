@@ -218,6 +218,125 @@ class SaveParticlesToHDF5:
         stage (str): The simulation stage when this callback is executed.
         species (Species): The particle species being tracked.
     """
+
+class SetTemperature(Callback):
+    """
+    Callback to set the particle momenta (ux, uy, uz) for a species to a relativistic Maxwell-Jüttner distribution
+    with the specified temperature (in units of mc^2).
+
+    Args:
+        species (Species): The target species whose temperature is to be set.
+        temperature (float): Temperature in units of mc^2 (theta = kT/mc^2).
+        interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
+    """
+
+class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
+    """Callback to extract species density from all patches.
+    
+    Only rank 0 will gather the data, other ranks will get zeros.
+    
+    Args:
+        sim (Simulation): Simulation instance.
+        species (Species): Species instance to extract density from.
+        interval (Union[int, Callable], optional): Number of timesteps between saves, or a function(sim) -> bool that determines when to save. Defaults to 100.
+
+    Example:
+
+        >>> ne_ele = ExtractSpeciesDensity(sim, ele, interval=100)
+        use in PlotFields:
+        >>> sim.run(1000, callbacks[
+                ne_ele,
+                PlotFields(
+                    [dict(field=ne_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
+                    dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0) ],
+                    prefix='laser-target'),
+            ])
+    """
+
+class MovingWindow:
+    """Callback implementing moving window technique along x-direction.
+
+    The moving window follows the laser or plasma flow by periodically shifting
+    the simulation domain while maintaining proper boundary conditions.
+
+    Args:
+        velocity (Union[float, Callable[[float], float]]): Window velocity in m/s. 
+            Can be constant or function of time (velocity=f(sim.time))
+        start_time (Optional[float]): Time at which to start moving window. 
+            Defaults to sim.Lx/c.
+        inject_particles (bool): Whether to inject particles in new regions. 
+            Defaults to True.
+        stop_inject_time (Optional[float]): Time to stop particle injection. 
+            Defaults to None.
+
+    Note:
+        - Handles both forward (positive) and backward (negative) moving windows
+        - Maintains proper particle distributions in new regions
+        - Updates patch neighbor relationships after shifts
+        - Removes PML boundaries when moving starts
+    """
+```
+
+### Laser
+
+```python
+class SimpleLaser(Laser):
+    """
+    A simple laser pulse implementation with basic spatial and temporal profiles.
+    This class provides a straightforward way to inject a laser pulse into the simulation
+    from the left boundary with a Gaussian transverse profile and a smooth temporal envelope.
+
+    Use `SimpleLaser2D` or `SimpleLaser3D` for 2D and 3D simulations, respectively.
+    DO NOT use this class directly.
+    
+    Attributes:
+        a0 (float): Normalized vector potential amplitude
+        l0 (float): Laser wavelength
+        omega0 (float): Laser angular frequency (2πc/λ)
+        w0 (float): Laser waist size (determines transverse width of the beam)
+        ctau (float): Pulse duration (c*tau)
+        E0 (float): Peak electric field amplitude, derived from a0
+        pol_angle (float): Polarization angle in radians, 0 for z-polarization, π/2 for y-polarization
+    
+    Note:
+        This is a simplified laser implementation suitable for basic simulations.
+        For more accurate physics including proper beam evolution, wavefront curvature,
+        and Gouy phase, use the GaussianLaser class instead.
+    """
+
+class GaussianLaser(Laser):
+    """
+    Implementation of a proper Gaussian laser beam with full physics including:
+    
+    - Gaussian temporal and spatial profiles
+    - Proper beam waist evolution (:math:`w(z) = w_0\sqrt{1 + (z/z_R)^2}`)
+    - Gouy phase (:math:`tan^{-1}(z/z_R)`)
+    - Wavefront curvature (:math:`R(z) = z(1 + (z_R/z)^2)`)
+    - Correct phase evolution including propagation and curvature terms
+
+    Use GaussianLaser2D or GaussianLaser3D for 2D and 3D simulations, respectively.
+    DO NOT use this class directly.
+    
+    Attributes:
+        a0 (float): Normalized vector potential amplitude
+        l0 (float): Laser wavelength
+        omega0 (float): Laser angular frequency (2πc/λ)
+        w0 (float): Laser waist size at focus
+        ctau (float): Pulse duration (c*tau)
+        x0 (float): Pulse center position (default: 3*ctau)
+        tstop (float): Time to stop injection (default: 6*ctau)
+        E0 (float): Peak electric field amplitude, derived from a0
+        pol_angle (float): Polarization angle in radians, 0 for z-polarization, π/2 for y-polarization
+        focus_position (float): Position of laser focus relative to boundary
+        zR (float): Rayleigh length (πw₀²/λ)
+        side (str): Injection boundary ('xmin' or 'xmax')
+    
+    Note:
+        This implementation provides more accurate physics than SimpleLaser,
+        including proper beam evolution and phase effects. Use this for
+        realistic simulations where these effects matter.
+    """
+
 ```
 
 ### Data structures
@@ -273,53 +392,52 @@ class Fields:
 ### Example: plot
 
 ```python
-@callback()
+@callback(interval=100)
 def plot_results(sim: Simulation):
     it = sim.itime
-    if it % 100 == 0:
-        ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
-        
-        if sim.mpi.rank > 0:
-            return
-        ey *= e / (m_e * c * omega0)
+    ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
+    
+    if sim.mpi.rank > 0:
+        return
+    ey *= e / (m_e * c * omega0)
 
-        # color map for overlapping fields
-        bwr_alpha = LinearSegmentedColormap(
-            'bwr_alpha', 
-            dict( 
-                red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-                green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-                blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-                alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-            )
+    # color map for overlapping fields
+    bwr_alpha = LinearSegmentedColormap(
+        'bwr_alpha', 
+        dict( 
+            red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
+            green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
+            blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
+            alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
         )
-        fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
+    )
+    fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 
-        h1 = ax.imshow(
-            -rho.T/e/nc, 
-            extent=[0, Lx, 0, Ly],
-            origin='lower',
-            cmap='Grays',
-            vmax=20,
-            vmin=0,
-        )
-        h2 = ax.imshow(
-            ey.T, 
-            extent=[0, Lx, 0, Ly],
-            origin='lower',
-            cmap=bwr_alpha,
-            vmax=laser.a0,
-            vmin=-laser.a0,
-        )
-        fig.colorbar(h1)
-        fig.colorbar(h2)
+    h1 = ax.imshow(
+        -rho.T/e/nc, 
+        extent=[0, Lx, 0, Ly],
+        origin='lower',
+        cmap='Grays',
+        vmax=20,
+        vmin=0,
+    )
+    h2 = ax.imshow(
+        ey.T, 
+        extent=[0, Lx, 0, Ly],
+        origin='lower',
+        cmap=bwr_alpha,
+        vmax=laser.a0,
+        vmin=-laser.a0,
+    )
+    fig.colorbar(h1)
+    fig.colorbar(h2)
 
-        figdir = Path('laser-target')
-        if not figdir.exists():
-            figdir.mkdir()
+    figdir = Path('laser-target')
+    if not figdir.exists():
+        figdir.mkdir()
 
-        fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-        plt.close()
+    fig.savefig(figdir/f'{it:04d}.png', dpi=300)
+    plt.close()
 ```
 
 ### Example: setting external fields
@@ -356,45 +474,41 @@ def set_static_fields(sim: Simulation):
 Calculate total EM energy and total electron kinetic energy.
 
 ```python
-@callback('start')
+@callback('start', interval=100)
 def sum_EM_enerty(sim: Simulation):
-    # calculate every 100 time steps
-    if it = sim.itime % 100 == 0:
-        Eem = 0.0
-        # sum over all patches
-        for p in sim.patches:
-            f = p.fields
-            # NOTE: guard cells are in the [nx_per_patch:, ny_per_patch:] region
-            s = np.s_[:sim.nx_per_patch, :sim.ny_per_patch]
-            Eem += (0.5*epsilon_0*(f.ex[s]**2+f.ey[s]**2+f.ez[s]**2) + 
-                    0.5/mu_0     *(f.bx[s]**2+f.by[s]**2+f.bz[s]**2)).sum()
+    Eem = 0.0
+    # sum over all patches
+    for p in sim.patches:
+        f = p.fields
+        # NOTE: guard cells are in the [nx_per_patch:, ny_per_patch:] region
+        s = np.s_[:sim.nx_per_patch, :sim.ny_per_patch]
+        Eem += (0.5*epsilon_0*(f.ex[s]**2+f.ey[s]**2+f.ez[s]**2) + 
+                0.5/mu_0     *(f.bx[s]**2+f.by[s]**2+f.bz[s]**2)).sum()
 
-        # sum over all mpi ranks
-        Eem = sim.mpi.comm.reduce(Eem)
-        if sim.mpi.rank > 0:
-            return
-        
-        # print, or save to some file
-        print(f"{Eem=:g}")
+    # sum over all mpi ranks
+    Eem = sim.mpi.comm.reduce(Eem)
+    if sim.mpi.rank > 0:
+        return
+    
+    # print, or save to some file
+    print(f"{Eem=:g}")
 
 
-@callback('start')
+@callback('start', interval=100)
 def sum_ek(sim: Simulation):
-    # calculate every 100 time steps
-    if it = sim.itime % 100 == 0:
-        ek = 0.0
+    ek = 0.0
 
-        # sum over all patches
-        for p in sim.patches:
-            part = p.particles[ele.ispec]
-            # select alive particles
-            alive = part.is_alive
-            ek += ((1/part.inv_gamma[alive] - 1) * ele.m/m_e * part.w[alive]).sum() # mc2
+    # sum over all patches
+    for p in sim.patches:
+        part = p.particles[ele.ispec]
+        # select alive particles
+        alive = part.is_alive
+        ek += ((1/part.inv_gamma[alive] - 1) * ele.m/m_e * part.w[alive]).sum() # mc2
 
-        # sum over all mpi ranks
-        ek = sim.mpi.comm.reduce(ek)
-        if sim.mpi.rank > 0:
-            return
+    # sum over all mpi ranks
+    ek = sim.mpi.comm.reduce(ek)
+    if sim.mpi.rank > 0:
+        return
 ```
 
 ## Full example
@@ -470,52 +584,51 @@ if __name__ == "__main__":
 
     sim.add_species([ele, carbon, proton])
 
-    @callback()
+    @callback(interval=100)
     def plot_results(sim: Simulation):
         it = sim.itime
-        if it % 100 == 0:
-            ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
-            
-            if sim.mpi.rank > 0:
-                return
-            ey *= e / (m_e * c * omega0)
+        ex, ey, ez, bx, by, bz, jy, rho = get_fields(sim, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jy', 'rho'])
+        
+        if sim.mpi.rank > 0:
+            return
+        ey *= e / (m_e * c * omega0)
 
-            bwr_alpha = LinearSegmentedColormap(
-                'bwr_alpha', 
-                dict( 
-                    red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-                    green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-                    blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-                    alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-                )
+        bwr_alpha = LinearSegmentedColormap(
+            'bwr_alpha', 
+            dict( 
+                red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
+                green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
+                blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
+                alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
             )
-            fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
+        )
+        fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 
-            h1 = ax.imshow(
-                -rho.T/e/nc, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap='Grays',
-                vmax=20,
-                vmin=0,
-            )
-            h2 = ax.imshow(
-                ey.T, 
-                extent=[0, Lx, 0, Ly],
-                origin='lower',
-                cmap=bwr_alpha,
-                vmax=laser.a0,
-                vmin=-laser.a0,
-            )
-            fig.colorbar(h1)
-            fig.colorbar(h2)
+        h1 = ax.imshow(
+            -rho.T/e/nc, 
+            extent=[0, Lx, 0, Ly],
+            origin='lower',
+            cmap='Grays',
+            vmax=20,
+            vmin=0,
+        )
+        h2 = ax.imshow(
+            ey.T, 
+            extent=[0, Lx, 0, Ly],
+            origin='lower',
+            cmap=bwr_alpha,
+            vmax=laser.a0,
+            vmin=-laser.a0,
+        )
+        fig.colorbar(h1)
+        fig.colorbar(h2)
 
-            figdir = Path('laser-target')
-            if not figdir.exists():
-                figdir.mkdir()
+        figdir = Path('laser-target')
+        if not figdir.exists():
+            figdir.mkdir()
 
-            fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-            plt.close()
+        fig.savefig(figdir/f'{it:04d}.png', dpi=300)
+        plt.close()
 
     
     sim.run(2001, callbacks=[

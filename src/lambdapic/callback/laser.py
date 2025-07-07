@@ -117,6 +117,8 @@ class SimpleLaser(Laser):
     A simple laser pulse implementation with basic spatial and temporal profiles.
     This class provides a straightforward way to inject a laser pulse into the simulation
     from the left boundary with a Gaussian transverse profile and a smooth temporal envelope.
+
+    Use SimpleLaser2D or SimpleLaser3D for 2D and 3D simulations, respectively.
     
     Attributes:
         a0 (float): Normalized vector potential amplitude
@@ -220,6 +222,8 @@ class GaussianLaser(Laser):
     - Gouy phase (:math:`tan^{-1}(z/z_R)`)
     - Wavefront curvature (:math:`R(z) = z(1 + (z_R/z)^2)`)
     - Correct phase evolution including propagation and curvature terms
+
+    Use GaussianLaser2D or GaussianLaser3D for 2D and 3D simulations, respectively.
     
     Attributes:
         a0 (float): Normalized vector potential amplitude
