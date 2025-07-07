@@ -510,3 +510,73 @@ class MovingWindow:
 
     def _fill_particles_3d(self, sim: Simulation, patches: Sequence[Patch3D]):
         pass
+
+class SetTemperature(Callback):
+    """
+    Callback to set the particle momenta (ux, uy, uz) for a species to a relativistic Maxwell-Jüttner distribution
+    with the specified temperature (in units of mc^2).
+
+    Args:
+        species (Species): The target species whose temperature is to be set.
+        temperature (float): Temperature in units of mc^2 (theta = kT/mc^2).
+        interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
+    """
+    stage: str = "start"
+    def __init__(self, species: Species, temperature: float|List[float], interval: Union[int, Callable]|None = None) -> None:
+        self.species = species
+
+        if isinstance(temperature, float):
+            self.temperature = [temperature] * 3
+        else:
+            self.temperature = temperature
+
+        if interval is None:
+            self.interval = lambda sim: sim.itime == 0
+        else:
+            self.interval = interval
+
+    def _call(self, sim: Simulation) -> None:
+        ispec: int = sim.species.index(self.species)
+        for p in sim.patches:
+            part = p.particles[ispec]
+            alive = part.is_alive
+            n: int = alive.sum()
+            if n == 0:
+                continue
+            ux, uy, uz = self.sample_maxwell_juttner(n, self.temperature[0])
+            # stretch to simulate temperature anisotropy
+            part.ux[alive] = ux
+            part.uy[alive] = uy * self.temperature[1]/self.temperature[0]
+            part.uz[alive] = uz * self.temperature[2]/self.temperature[0]
+            part.inv_gamma[alive] = 1 / np.sqrt(1 + part.ux[alive]**2 + part.uy[alive]**2 + part.uz[alive]**2)
+
+    @staticmethod
+    def sample_maxwell_juttner(n: int, theta: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Sample n 3D momenta from the relativistic Maxwell-Jüttner distribution at temperature theta (kT/mc^2).
+        Returns arrays ux, uy, uz.
+        """
+        ux = np.zeros(n)
+        uy = np.zeros(n)
+        uz = np.zeros(n)
+        count: int = 0
+        while count < n:
+            # Rejection sampling for magnitude u
+            # f(u) ~ u^2 * exp(-sqrt(1+u^2)/theta)
+            u_try = np.random.exponential(scale=theta*3, size=n-count)  # proposal
+            gamma = np.sqrt(1 + u_try**2)
+            f = u_try**2 * np.exp(-gamma/theta)
+            fmax: float = (2*theta)**2 * np.exp(-1/theta)  # crude upper bound
+            accept = np.random.uniform(0, fmax, size=n-count) < f
+            u_accepted = u_try[accept]
+            n_accept: int = len(u_accepted)
+            if n_accept > 0:
+                # Sample directions isotropically
+                phi = np.random.uniform(0, 2*np.pi, n_accept)
+                costheta = np.random.uniform(-1, 1, n_accept)
+                sintheta = np.sqrt(1 - costheta**2)
+                ux[count:count+n_accept] = u_accepted * sintheta * np.cos(phi)
+                uy[count:count+n_accept] = u_accepted * sintheta * np.sin(phi)
+                uz[count:count+n_accept] = u_accepted * costheta
+                count += n_accept
+        return ux, uy, uz
