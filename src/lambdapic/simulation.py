@@ -338,13 +338,13 @@ class Simulation:
         edges (xmin, xmax, ymin, ymax). The thickness is determined by cpml_thickness.
         """
         for p in self.patches:
-            if p.ipatch_x == 0:
+            if p.ipatch_x == 0 and self.boundary_conditions['xmin'] == 'pml':
                 p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_x == self.npatch_x - 1:
+            if p.ipatch_x == self.npatch_x - 1 and self.boundary_conditions['xmax'] == 'pml':
                 p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_y == 0:
+            if p.ipatch_y == 0 and self.boundary_conditions['ymin'] == 'pml':
                 p.add_pml_boundary(PMLYmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_y == self.npatch_y - 1:
+            if p.ipatch_y == self.npatch_y - 1 and self.boundary_conditions['ymax'] == 'pml':
                 p.add_pml_boundary(PMLYmax(p.fields, thickness=self.cpml_thickness))
 
         
@@ -883,17 +883,17 @@ class Simulation3D(Simulation):
         The thickness is determined by cpml_thickness.
         """
         for p in self.patches:
-            if p.ipatch_x == 0:
+            if p.ipatch_x == 0 and self.boundary_conditions['xmin'] == 'pml':
                 p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_x == self.npatch_x - 1:
+            if p.ipatch_x == self.npatch_x - 1 and self.boundary_conditions['xmax'] == 'pml':
                 p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_y == 0:
+            if p.ipatch_y == 0 and self.boundary_conditions['ymin'] == 'pml':
                 p.add_pml_boundary(PMLYmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_y == self.npatch_y - 1:
+            if p.ipatch_y == self.npatch_y - 1 and self.boundary_conditions['ymax'] == 'pml':
                 p.add_pml_boundary(PMLYmax(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_z == 0:
+            if p.ipatch_z == 0 and self.boundary_conditions['zmin'] == 'pml':
                 p.add_pml_boundary(PMLZmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_z == self.npatch_z - 1:
+            if p.ipatch_z == self.npatch_z - 1 and self.boundary_conditions['zmax'] == 'pml':
                 p.add_pml_boundary(PMLZmax(p.fields, thickness=self.cpml_thickness))
 
     def create_patches(self):
