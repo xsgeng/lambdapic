@@ -44,8 +44,27 @@ See :doc:`example`, or use examples from the repo. To run the 2D laser-target ex
 
    python example/laser-target.py
 
-
 These examples demonstrate basic functionality and can be modified for your own simulations.
+
+You can set number of threads via :code:`OMP_NUM_THREADS` and :code:`NUMBA_NUM_THREADS`.
+
+.. code-block:: bash
+
+   export OMP_NUM_THREADS=24
+   export NUMBA_NUM_THREADS=24
+
+For MPI run, the number of processes should be equal to the number of NUMA nodes. On Epyc 9004, the number of NUMA nodes is 8 on dual socket nodes.
+
+.. code-block:: bash
+
+   # Slurm, no need to set num threads
+   srun -c24 -n8 -u python example/laser-target.py
+
+   # MPICH
+   export OMP_NUM_THREADS=24
+   export NUMBA_NUM_THREADS=24
+   mpiexec -np 8 -ppn 8 python -u example/laser-target.py
+
 
 Troubleshooting
 ---------------

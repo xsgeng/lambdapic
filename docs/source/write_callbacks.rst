@@ -1,15 +1,28 @@
 Writing your own callbacks
 ===========================
 
+The :code:`@callback` decorator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The :code:`@callback` decorator adds :code:`stage` and :code:`interval` attributes to the function.
+
+The :code:`stage` specifies when the callback should be called. Leave it empty to run the callback at the end of each loop.
+
+The :code:`interval` specifies how frequent the callback should be called. It can be a number or a function that returns a boolean.
+:code:`interval = lambda sim: sim.itime == 42` means the callback will be called at the 42nd iteration.
+
+By passing to the :code:`sim.run(1000, callbacks=[your callbacks])`, they will be sequentially called by the :code:`Simulation.run` method.
+
+.. autoclass:: lambdapic.callback.callback.callback
+
 Hello world
 ~~~~~~~~~~~~
 
 .. code-block:: python
 
-    @callback('start')
+    @callback('start', interval=lambda sim: sim.itime == 0)
     def hello(sim: Simulation):
-        if sim.itime == 0:
-            print("Simulation started!")
+        print("Simulation started!")
     sim = Simulation(...)
     ...
 
@@ -60,48 +73,44 @@ Calculate total EM energy,
     ele = Electron(name='ele', ppc=10, density=...)
     ...
 
-    @callback('start')
+    @callback('start', interval=100)
     def sum_EM_enerty(sim: Simulation):
-        # calculate every 100 time steps
-        if it = sim.itime % 100 == 0:
-            Eem = 0.0
-            # sum over all patches
-            for p in sim.patches:
-                f = p.fields
-                # NOTE: guard cells are in the [nx_per_patch:, ny_per_patch:] region
-                s = np.s_[:sim.nx_per_patch, :sim.ny_per_patch]
-                Eem += (0.5*epsilon_0*(f.ex[s]**2+f.ey[s]**2+f.ez[s]**2) + 
-                        0.5/mu_0     *(f.bx[s]**2+f.by[s]**2+f.bz[s]**2)).sum()
+        Eem = 0.0
+        # sum over all patches
+        for p in sim.patches:
+            f = p.fields
+            # NOTE: guard cells are in the [nx_per_patch:, ny_per_patch:] region
+            s = np.s_[:sim.nx_per_patch, :sim.ny_per_patch]
+            Eem += (0.5*epsilon_0*(f.ex[s]**2+f.ey[s]**2+f.ez[s]**2) + 
+                    0.5/mu_0     *(f.bx[s]**2+f.by[s]**2+f.bz[s]**2)).sum()
 
-            # sum over all mpi ranks
-            Eem = sim.mpi.comm.reduce(Eem)
-            if sim.mpi.rank > 0:
-                return
-            
-            # print, or save to some file
-            print(f"{Eem=:g}")
+        # sum over all mpi ranks
+        Eem = sim.mpi.comm.reduce(Eem)
+        if sim.mpi.rank > 0:
+            return
+        
+        # print, or save to some file
+        print(f"{Eem=:g}")
 
 and total electron kinetic energy.
 
 .. code-block:: python
 
-    @callback('start')
+    @callback('start', interval=100)
     def sum_ek(sim: Simulation):
-        # calculate every 100 time steps
-        if it = sim.itime % 100 == 0:
-            ek = 0.0
+        ek = 0.0
 
-            # sum over all patches
-            for p in sim.patches:
-                part = p.particles[ele.ispec]
-                # select alive particles
-                alive = part.is_alive
-                ek += ((1/part.inv_gamma[alive] - 1) * ele.m/m_e * part.w[alive]).sum() # mc2
+        # sum over all patches
+        for p in sim.patches:
+            part = p.particles[ele.ispec]
+            # select alive particles
+            alive = part.is_alive
+            ek += ((1/part.inv_gamma[alive] - 1) * ele.m/m_e * part.w[alive]).sum() # mc2
 
-            # sum over all mpi ranks
-            ek = sim.mpi.comm.reduce(ek)
-            if sim.mpi.rank > 0:
-                return
-            
-            # print, or save to some file
-            print(f"{ek=:g} mc2")
+        # sum over all mpi ranks
+        ek = sim.mpi.comm.reduce(ek)
+        if sim.mpi.rank > 0:
+            return
+        
+        # print, or save to some file
+        print(f"{ek=:g} mc2")

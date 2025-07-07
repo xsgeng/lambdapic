@@ -10,6 +10,7 @@ from lambdapic import (
     SaveSpeciesDensityToHDF5,
     Simulation3D,
     c,
+    callback,
     e,
     epsilon_0,
     m_e,
@@ -64,9 +65,8 @@ sim.add_species([ele, proton])
 ne_data = np.zeros((nx, ny))
 ey_data = np.zeros((nx, ny))
 
+@callback(interval=100)
 def read_density(sim: Simulation3D):
-    if sim.itime % 100 != 0:
-        return
     if sim.mpi.rank > 0:
         return
     

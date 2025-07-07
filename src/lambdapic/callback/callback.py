@@ -44,10 +44,10 @@ def callback(stage: Optional[str] = None, interval: Union[int, Callable] = 1) ->
         Callable: The decorated callable object (an instance of a Callback subclass).
     
     Example:
-        @callback(stage="maxwell first", interval=100)
-        def custom_field_modification(sim):
-            for patch in sim.patches:
-                patch.fields.ex *= 1.1  # Amplify Ex field by 10%
+        >>> @callback(stage="maxwell first", interval=100)
+        ... def custom_field_modification(sim):
+        ...     for patch in sim.patches:
+        ...         patch.fields.ex *= 1.1  # Amplify Ex field by 10%
     """
     def decorator(func: Callable) -> Callable:
         stage_value = "maxwell second" if stage is None else stage

@@ -19,7 +19,7 @@ class ParticlesBase:
         inv_gamma (NDArray[float64]): Inverse relativistic gamma factor
         ex_part,ey_part,ez_part (NDArray[float64]): Electric fields interpolated at particle positions
         bx_part,by_part,bz_part (NDArray[float64]): Magnetic fields interpolated at particle positions
-        is_dead (NDArray[bool_]): Boolean array indicating dead particles
+        is_dead (NDArray[bool]): Boolean array indicating dead particles
         _id (NDArray[float64]): Unique particle IDs stored as float64
         npart (int): Total number of particles (including dead)
         _npart_created (int): Counter for generating sequential local IDs
@@ -216,7 +216,7 @@ class QEDParticles(ParticlesBase):
         chi (NDArray[float64]): Quantum parameter for radiation
         tau (NDArray[float64]): Optical depth for pair production
         delta (NDArray[float64]): Energy loss fraction
-        event (NDArray[bool_]): Flags for QED events
+        event (NDArray[bool]): Flags for QED events
     """
     chi: NDArray[float64]
     tau: NDArray[float64]
