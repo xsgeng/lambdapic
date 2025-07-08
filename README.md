@@ -7,7 +7,7 @@
 It enables the customization of simulation behavior through callbacks at various stages, even when the modifications are unphysical.
 The flexibility of λPIC makes it easy to implement plugins, allowing developers to extend functionality seamlessly without modifying the core simulation logic.
 
-Visit the [documentation](https://xsgeng.github.io/lambdapic/) for installation and usage instructions.
+Visit the [documentation](https://lambdapic.readthedocs.io/) for installation and usage instructions.
 
 ## Core Classes
 ```mermaid
