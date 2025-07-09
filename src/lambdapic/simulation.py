@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional, Callable, Sequence, Dict, Literal
 
 import numpy as np
@@ -612,7 +613,7 @@ class Simulation:
                 use_unified_pusher[ispec] = True
                 logger.info(f"Rank {self.mpi.rank}: No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}")
 
-        if self.mpi.rank == 0:
+        if self.mpi.rank == 0 and os.environ.get("LAMBDAPIC_CHECK_UPDATE", "1") == "1":
             current_version, latest_version = check_newer_version_on_pypi()
             if current_version and latest_version and is_version_outdated(current_version, latest_version):
                 logger.info(f"New version available: {current_version} -> {latest_version}. Upgrade with `pip install --upgrade --upgrade-strategy=only-if-needed lambdapic`")
@@ -629,11 +630,13 @@ class Simulation:
                 self.maxwell.update_efield(0.5*self.dt)
             with Timer('sync E field'):
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('mpi sync E field'):
                 self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
             with Timer('update B field'):
                 self.maxwell.update_bfield(0.5*self.dt)
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
+            with Timer('mpi sync B field'):
                 self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
                 
             with Timer("maxwell first"):
@@ -696,6 +699,7 @@ class Simulation:
                         
                 with Timer("sync_currents"):
                     self.patches.sync_currents()
+                with Timer("mpi.sync_currents"):
                     self.mpi.sync_currents()
                     
                 with Timer("callback current deposition"):
@@ -721,8 +725,9 @@ class Simulation:
                         self.pairproduction[ispec].create_particles()
                         self.pairproduction[ispec].reaction()
 
-            for ispec, s in enumerate(self.patches.species):
-                self.mpi.sync_particles(ispec)
+            with Timer("mpi.sync_particles"):
+                for ispec, s in enumerate(self.patches.species):
+                    self.mpi.sync_particles(ispec)
 
             with Timer("sync_particles"):
                 self.patches.sync_particles()
@@ -742,6 +747,7 @@ class Simulation:
                 
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
+            with Timer('mpi sync B field'):
                 self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
                 
 
@@ -749,6 +755,7 @@ class Simulation:
                 self.maxwell.update_efield(0.5*self.dt)
             with Timer('sync E field'):
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('mpi sync E field'):
                 self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
 
             with Timer("callback maxwell second"):

@@ -396,9 +396,10 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
             // read buf
             for (int iattr = 0; iattr < nattrs; iattr++) {
                 int offset = iattr*nx_sync*ny_sync;
+                double* attr = attrs_list[iattr][ipatch];
                 for (npy_intp ix = 0; ix < nx_sync; ix++) {
                     for (npy_intp iy = 0; iy < ny_sync; iy++) {
-                        attrs_list[iattr][ipatch][INDEX2(ix_dst+ix, iy_dst+iy)] = buf[ipatch*NUM_BOUNDARIES + ibound][ix*ny_sync + iy + offset];
+                        attr[INDEX2(ix_dst+ix, iy_dst+iy)] = buf[ipatch*NUM_BOUNDARIES + ibound][ix*ny_sync + iy + offset];
                     }
                 }
             }
