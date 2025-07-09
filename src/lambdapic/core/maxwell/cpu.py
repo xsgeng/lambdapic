@@ -3,7 +3,7 @@ from numba import njit, prange
 from scipy.constants import c, epsilon_0, mu_0
 
 
-@njit(cache=True)
+@njit(cache=True, inline='always')
 def update_efield_2d(
     ex, ey, ez, 
     bx, by, bz, 
@@ -20,7 +20,7 @@ def update_efield_2d(
             ez[i, j] += bfactor * ( (by[i, j] - by[i-1, j]) / dx - (bx[i, j] - bx[i, j-1]) / dy) - jfactor * jz[i, j]
 
 
-@njit(cache=True)
+@njit(cache=True, inline='always')
 def update_bfield_2d(
     ex, ey, ez, 
     bx, by, bz, 
@@ -76,7 +76,7 @@ def update_bfield_patches_2d(
 
 
 '''3D functions'''
-@njit(cache=True)
+@njit(cache=True, inline='always')
 def update_efield_3d(
     ex, ey, ez,
     bx, by, bz,
@@ -94,7 +94,7 @@ def update_efield_3d(
                 ez[i, j, k] += bfactor * ((by[i, j, k] - by[i-1, j, k]) / dx - (bx[i, j, k] - bx[i, j-1, k]) / dy) - jfactor * jz[i, j, k]
 
 
-@njit(cache=True)
+@njit(cache=True, inline='always')
 def update_bfield_3d(
     ex, ey, ez, 
     bx, by, bz,

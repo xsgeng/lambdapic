@@ -79,9 +79,9 @@ class MPIManager2D(MPIManager):
             self.dx, self.dy
         )
         for ipatch, p in enumerate(self.patches):
-            p.particles[ispec].extend(npart_to_extend[ipatch])
-            p.particles[ispec].extended = True
-            self.patches.update_particle_lists(ipatch)
+            if npart_to_extend[ipatch] > 0:
+                p.particles[ispec].extend(npart_to_extend[ipatch])
+                self.patches.update_particle_lists(ipatch)
         
         sync_particles_2d.fill_particles_from_boundary_2d(
             [p.particles[ispec] for p in self.patches], 
@@ -141,9 +141,9 @@ class MPIManager3D(MPIManager):
             self.dx, self.dy, self.dz
         )
         for ipatch, p in enumerate(self.patches):
-            p.particles[ispec].extend(npart_to_extend[ipatch])
-            p.particles[ispec].extended = True
-            self.patches.update_particle_lists(ipatch)
+            if npart_to_extend[ipatch] > 0:
+                p.particles[ispec].extend(npart_to_extend[ipatch])
+                self.patches.update_particle_lists(ipatch)
         
         sync_particles_3d.fill_particles_from_boundary_3d(
             [p.particles[ispec] for p in self.patches], 

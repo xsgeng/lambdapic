@@ -328,7 +328,7 @@ class PMLZmax(PMLZ):
         self.bfield_start = self.nz - self.thickness - 1
         self.bfield_end = self.nz - 1
 
-@njit
+@njit(inline='always')
 def update_efield_cpml_2d(
     ex, ey, ez, 
     bx, by, bz, 
@@ -349,7 +349,7 @@ def update_efield_cpml_2d(
                       - bfactor_y * ( (bx[i, j] - bx[i, j-1]) / dy) - jfactor * jz[i, j]
 
 
-@njit
+@njit(inline='always')
 def update_bfield_cpml_2d(
     ex, ey, ez, 
     bx, by, bz, 
@@ -415,7 +415,7 @@ def update_bfield_cpml_patches_2d(
 
         update_bfield_cpml_2d(ex, ey, ez, bx, by, bz, kappa_bx, kappa_by, dx, dy, dt, nx, ny, n_guard)
 
-@njit
+@njit(inline='always')
 def update_efield_cpml_3d(
     ex, ey, ez, 
     bx, by, bz, 
@@ -439,7 +439,7 @@ def update_efield_cpml_3d(
                 ez[i,j,k] += (bfactor_x*(by[i,j,k] - by[i-1,j,k])/dx 
                             - bfactor_y*(bx[i,j,k] - bx[i,j-1,k])/dy) - jfactor*jz[i,j,k]
 
-@njit
+@njit(inline='always')
 def update_bfield_cpml_3d(
     ex, ey, ez, 
     bx, by, bz, 
