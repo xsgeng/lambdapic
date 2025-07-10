@@ -10,3 +10,7 @@ def current_deposition_cpu_3d(
     dt: float,
     q: float
 ) -> None: ...
+def reset_current_cpu_3d(
+    fields_list: List[Fields],
+    npatches: int
+) -> None: ...

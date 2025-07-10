@@ -1,8 +1,9 @@
-import numpy as np
+from deprecated import deprecated
 
 from ..patch import Patches
 from .cpu2d import current_deposition_cpu_2d
-from deprecated import deprecated
+from .cpu3d import current_deposition_cpu_3d
+
 
 class CurrentDeposition:
     """
@@ -163,6 +164,41 @@ class CurrentDeposition2D(CurrentDeposition):
                 self.npatches,
                 dt, self.q[ispec]
             )
+            
+    def reset(self) -> None:
+        """
+        Reset J and Rho to zero in parallel using C function.
+        """
+        from .cpu2d import reset_current_cpu_2d
+        if self.npatches > 0:
+            reset_current_cpu_2d([p.fields for p in self.patches], self.npatches)
 
 class CurrentDeposition3D(CurrentDeposition):
-    ...
+    def __init__(self, patches: Patches) -> None:
+        super().__init__(patches)
+        self.dy: float = patches.dy
+        self.dz: float = patches.dz
+
+
+    def generate_particle_lists(self) -> None:
+        super().generate_particle_lists()
+        for ispec, s in enumerate(self.patches.species):
+            self.y_list.append([p.particles[ispec].y for p in self.patches])
+            self.z_list.append([p.particles[ispec].z for p in self.patches])
+
+    def __call__(self, ispec:int, dt: float) -> None:
+        if self.q[ispec] != 0:
+            current_deposition_cpu_3d(
+                [p.fields for p in self.patches],
+                [p.particles[ispec] for p in self.patches],
+                self.npatches,
+                dt, self.q[ispec]
+            )
+
+    def reset(self) -> None:
+        """
+        Reset J and Rho to zero in parallel using C function.
+        """
+        from .cpu3d import reset_current_cpu_3d
+        if self.npatches > 0:
+            reset_current_cpu_3d([p.fields for p in self.patches], self.npatches)
