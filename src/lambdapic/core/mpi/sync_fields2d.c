@@ -140,6 +140,74 @@ void get_boundary_currents(
             *ix_dst = nx-ng; *ix_src = nx;  *nx_sync = ng;
             *iy_dst = ny-ng; *iy_src = ny;  *ny_sync = ng;
             break;
+        case NUM_BOUNDARIES:
+            break;
+    }
+}
+
+
+void init_boundary_types(int nx, int ny, int ng, MPI_Datatype *mpi_types_bound, MPI_Datatype *mpi_types_guard) {
+    int size[2] = {nx, ny};
+    int subsize[2] = {ng, ng};
+    int start_bound[2] = {0, 0};
+    int start_guard[2] = {0, 0};
+
+    for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        switch (ibound) {
+            case XMIN:
+                subsize[0]     = ng;      subsize[1]     = ny-2*ng;
+                start_bound[0] = 0;       start_bound[1] = 0;
+                start_guard[0] = nx-ng;   start_guard[1] = 0;
+                break;
+            case XMAX:
+                subsize[0]     = ng;      subsize[1]     = ny-2*ng;
+                start_bound[0] = nx-3*ng; start_bound[1] = 0;
+                start_guard[0] = nx-2*ng; start_guard[1] = 0;
+                break;
+            case YMIN:
+                subsize[0]     = nx-2*ng; subsize[1]     = ng;
+                start_bound[0] = 0;       start_bound[1] = 0;
+                start_guard[0] = 0;       start_guard[1] = ny-ng;
+                break;
+            case YMAX:
+                subsize[0]     = nx-2*ng; subsize[1]     = ng;
+                start_bound[0] = 0;       start_bound[1] = ny-3*ng;
+                start_guard[0] = 0;       start_guard[1] = ny-2*ng;
+                break;
+            case XMINYMIN:
+                subsize[0]     = ng;      subsize[1]     = ng;
+                start_bound[0] = 0;       start_bound[1] = 0;
+                start_guard[0] = nx-ng;   start_guard[1] = ny-ng;
+                break;
+            case XMAXYMIN:
+                subsize[0]     = ng;      subsize[1]     = ng;
+                start_bound[0] = nx-3*ng; start_bound[1] = 0;
+                start_guard[0] = nx-2*ng; start_guard[1] = ny-ng;
+                break;
+            case XMINYMAX:
+                subsize[0]     = ng;      subsize[1]     = ng;
+                start_bound[0] = 0;       start_bound[1] = ny-3*ng;
+                start_guard[0] = nx-ng;   start_guard[1] = ny-2*ng;
+                break;
+            case XMAXYMAX:
+                subsize[0]     = ng;      subsize[1]     = ng;
+                start_bound[0] = nx-3*ng; start_bound[1] = ny-3*ng;
+                start_guard[0] = nx-2*ng; start_guard[1] = ny-2*ng;
+                break;
+            case NUM_BOUNDARIES:
+                break;
+        }
+        MPI_Type_create_subarray(2, size, subsize, start_bound, MPI_ORDER_C, MPI_DOUBLE, &mpi_types_bound[ibound]);
+        MPI_Type_create_subarray(2, size, subsize, start_guard, MPI_ORDER_C, MPI_DOUBLE, &mpi_types_guard[ibound]);
+        MPI_Type_commit(&mpi_types_bound[ibound]);
+        MPI_Type_commit(&mpi_types_guard[ibound]);
+    }
+}
+
+void free_boundary_types(MPI_Datatype *mpi_types_bound, MPI_Datatype *mpi_types_guard) {
+    for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        MPI_Type_free(&mpi_types_bound[ibound]);
+        MPI_Type_free(&mpi_types_guard[ibound]);
     }
 }
 
@@ -181,6 +249,8 @@ void get_boundary_guards(
         case XMAXYMAX:
             *ix_dst = nx; *ix_src = nx-ng; *nx_sync = ng;
             *iy_dst = ny; *iy_src = ny-ng; *ny_sync = ng;
+            break;
+        case NUM_BOUNDARIES:
             break;
     }
 }
@@ -225,12 +295,12 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
     AUTOFREE double **buf = (double**) malloc(npatches * NUM_BOUNDARIES * sizeof(double*));
 
     Py_BEGIN_ALLOW_THREADS
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        const npy_intp* neighbor_index = neighbor_index_list[ipatch];
-        const npy_intp index = index_list[ipatch];
-
         for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        
+            const npy_intp* neighbor_index = neighbor_index_list[ipatch];
+            const npy_intp index = index_list[ipatch];
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (neighbor_rank < 0) {
                 buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
@@ -263,7 +333,7 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
     }
 
     // read buffers
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2)
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
         for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
@@ -328,86 +398,59 @@ static PyObject* sync_guard_fields_2d(PyObject* self, PyObject* args) {
     AUTOFREE npy_intp **neighbor_rank_list = get_attr_array_int(patches_list, npatches, "neighbor_rank");
     AUTOFREE npy_intp *index_list = get_attr_int(patches_list, npatches, "index");
 
-    // Allocate MPI request arrays
-    AUTOFREE MPI_Request *sendrecv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    // Initialize boundary types for MPI communication
+    MPI_Datatype mpi_types_bound[NUM_BOUNDARIES];
+    MPI_Datatype mpi_types_guard[NUM_BOUNDARIES];
+    init_boundary_types(NX, NY, ng, mpi_types_bound, mpi_types_guard);
 
-    // buffers
-    AUTOFREE double **buf = (double**) malloc(npatches * NUM_BOUNDARIES * sizeof(double*));
+    // Allocate MPI request arrays - 2 requests per boundary (send and recv)
+    AUTOFREE MPI_Request *send_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * nattrs * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *recv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * nattrs * sizeof(MPI_Request));
 
     Py_BEGIN_ALLOW_THREADS
-    #pragma omp parallel for
-    for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        const npy_intp* neighbor_index = neighbor_index_list[ipatch];                                                 
-        const npy_intp index = index_list[ipatch];
-
-        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            int neighbor_rank = neighbor_rank_list[ipatch][ibound];
-            if (neighbor_rank < 0) {
-                buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
-                continue;
-            }
-            int ix_src, ix_dst, nx_sync, iy_src, iy_dst, ny_sync;
-            get_boundary_guards(
-                ibound, 
-                nx, ny, ng, 
-                &ix_dst, &ix_src, &nx_sync, 
-                &iy_dst, &iy_src, &ny_sync
-            );
-        
-            // store attrs into one buffer
-            buf[ipatch*NUM_BOUNDARIES + ibound] = (double*) malloc(nattrs*nx_sync*ny_sync*sizeof(double));
-            for (int iattr = 0; iattr < nattrs; iattr++) {
-                int offset = iattr*nx_sync*ny_sync;
-                for (npy_intp ix = 0; ix < nx_sync; ix++) {
-                    for (npy_intp iy = 0; iy < ny_sync; iy++) {
-                        buf[ipatch*NUM_BOUNDARIES + ibound][ix*ny_sync + iy + offset] = attrs_list[iattr][ipatch][INDEX2(ix_src+ix, iy_src+iy)];
-                    }
+    // Post non-blocking receives and sends for all boundaries
+    #pragma omp parallel for collapse(2)
+    for (int iattr = 0; iattr < nattrs; iattr++) {
+        for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
+            const npy_intp index = index_list[ipatch];
+            const npy_intp* neighbor_index = neighbor_index_list[ipatch];                                                 
+            for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+                int neighbor_rank = neighbor_rank_list[ipatch][ibound];
+                if (neighbor_rank < 0) {
+                    send_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr] = MPI_REQUEST_NULL;
+                    recv_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr] = MPI_REQUEST_NULL;
+                    continue;
                 }
+                int send_tag = index * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr;
+                int recv_tag = neighbor_index[ibound] * NUM_BOUNDARIES * nattrs + OPPOSITE_BOUNDARY[ibound] * nattrs + iattr;
+                // Post receive for guard cells
+                MPI_Isend(
+                    attrs_list[iattr][ipatch], 1, mpi_types_bound[ibound], neighbor_rank, send_tag,
+                    comm, &send_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr]
+                );
+                MPI_Irecv(
+                    attrs_list[iattr][ipatch], 1, mpi_types_guard[ibound], neighbor_rank, recv_tag, 
+                    comm, &recv_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr]
+                );
             }
-
-            int send_tag = index * NUM_BOUNDARIES + ibound;                                                           
-            int recv_tag = neighbor_index[ibound] * NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
-            
-            MPI_Isendrecv_replace(
-                buf[ipatch*NUM_BOUNDARIES + ibound], nattrs*nx_sync*ny_sync, MPI_DOUBLE, 
-                neighbor_rank, send_tag, 
-                neighbor_rank, recv_tag, 
-                comm, &sendrecv_requests[ipatch*NUM_BOUNDARIES + ibound]
-            );
         }
     }
-    // read buffers
-    #pragma omp parallel for
-    for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            int neighbor_rank = neighbor_rank_list[ipatch][ibound];
-            if (neighbor_rank < 0) {
-                continue;
-            }
-            int ix_src, ix_dst, nx_sync, iy_src, iy_dst, ny_sync;
-            get_boundary_guards(
-                ibound, 
-                nx, ny, ng, 
-                &ix_dst, &ix_src, &nx_sync, 
-                &iy_dst, &iy_src, &ny_sync
-            );
-            MPI_Wait(&sendrecv_requests[ipatch*NUM_BOUNDARIES + ibound], MPI_STATUS_IGNORE);
-
-            // read buf
-            for (int iattr = 0; iattr < nattrs; iattr++) {
-                int offset = iattr*nx_sync*ny_sync;
-                double* attr = attrs_list[iattr][ipatch];
-                for (npy_intp ix = 0; ix < nx_sync; ix++) {
-                    for (npy_intp iy = 0; iy < ny_sync; iy++) {
-                        attr[INDEX2(ix_dst+ix, iy_dst+iy)] = buf[ipatch*NUM_BOUNDARIES + ibound][ix*ny_sync + iy + offset];
-                    }
+    #pragma omp parallel for collapse(3)
+    for (int iattr = 0; iattr < nattrs; iattr++) {
+        for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
+            for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+                int neighbor_rank = neighbor_rank_list[ipatch][ibound];
+                if (neighbor_rank < 0) {
+                    continue;
                 }
+                MPI_Wait(&send_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr], MPI_STATUS_IGNORE);
+                MPI_Wait(&recv_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr], MPI_STATUS_IGNORE);
             }
-            free(buf[ipatch*NUM_BOUNDARIES + ibound]);
         }
     }
     Py_END_ALLOW_THREADS
 
+    free_boundary_types(mpi_types_bound, mpi_types_guard);
     for (int i = 0; i < nattrs; i++) {
         free(attrs_list[i]);
     }
