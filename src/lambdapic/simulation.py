@@ -628,16 +628,16 @@ class Simulation:
             # EM from t to t+0.5dt
             with Timer('update E field'):
                 self.maxwell.update_efield(0.5*self.dt)
-            with Timer('sync E field'):
-                self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
             with Timer('mpi sync E field'):
                 self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('sync E field'):
+                self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
             with Timer('update B field'):
                 self.maxwell.update_bfield(0.5*self.dt)
-            with Timer('sync B field'):
-                self.patches.sync_guard_fields(['bx', 'by', 'bz'])
             with Timer('mpi sync B field'):
                 self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
+            with Timer('sync B field'):
+                self.patches.sync_guard_fields(['bx', 'by', 'bz'])
                 
             with Timer("maxwell first"):
                 stage_callbacks.run('maxwell first')
@@ -745,18 +745,18 @@ class Simulation:
             with Timer("laser"):
                 stage_callbacks.run('_laser')
                 
-            with Timer('sync B field'):
-                self.patches.sync_guard_fields(['bx', 'by', 'bz'])
             with Timer('mpi sync B field'):
                 self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
+            with Timer('sync B field'):
+                self.patches.sync_guard_fields(['bx', 'by', 'bz'])
                 
 
             with Timer('update E field'):
                 self.maxwell.update_efield(0.5*self.dt)
-            with Timer('sync E field'):
-                self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
             with Timer('mpi sync E field'):
                 self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('sync E field'):
+                self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
 
             with Timer("callback maxwell second"):
                 stage_callbacks.run('maxwell second')
