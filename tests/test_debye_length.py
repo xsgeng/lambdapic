@@ -2,10 +2,33 @@ import numpy as np
 import pytest
 from scipy.constants import c, epsilon_0, e, m_e, k
 from lambdapic.core.collision.cpu import debye_length_patch, debye_length_cell
+from lambdapic.core.collision.utils import ParticleData
+from lambdapic.core.particles import ParticlesBase
+from numba import typed
 
 
 class TestDebyeLengthPatch:
     """测试debye_length_patch函数的pytest测试类"""
+    
+    def create_test_particles(self, n_particles: int, 
+                            inv_gamma_value: float = 0.9,
+                            weight_value: float = 1.0) -> ParticleData:
+        """创建测试用的ParticleData对象"""
+        particles = ParticlesBase()
+        particles.initialize(n_particles)
+        
+        # 设置粒子属性
+        particles.inv_gamma[:] = inv_gamma_value
+        particles.w[:] = weight_value
+        particles.is_dead[:] = False
+        
+        # 创建ParticleData对象
+        return ParticleData(
+            x=particles.x, y=particles.y, z=particles.z,
+            ux=particles.ux, uy=particles.uy, uz=particles.uz,
+            inv_gamma=particles.inv_gamma, w=particles.w,
+            is_dead=particles.is_dead, m=m_e, q=-e
+        )
     
     def test_basic_functionality(self):
         """测试基本功能：验证debye_length_patch能正确计算德拜长度"""
@@ -13,10 +36,8 @@ class TestDebyeLengthPatch:
         nx, ny = 4, 4
         n_particles = 100
         
-        # 创建测试数据
-        inv_gamma = np.ones(n_particles, dtype=np.float64) * 0.9  # gamma ≈ 1.11
-        w = np.ones(n_particles, dtype=np.float64) * 1.0  # 权重为1
-        dead = np.zeros(n_particles, dtype=np.bool_)
+        # 创建测试粒子数据
+        particle_data = self.create_test_particles(n_particles, inv_gamma_value=0.9)
         
         # 创建bucket边界
         bucket_bound_min = np.zeros(nx * ny, dtype=np.int64)
@@ -30,18 +51,17 @@ class TestDebyeLengthPatch:
             bucket_bound_max[i] = 0
         
         # 设置物理参数
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6  # 1微米
+        cell_vol = dx * dy * dz
         
         # 创建输出数组
         debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
         
         # 调用函数
         debye_length_patch(
-            inv_gamma, w, dead,
+            particle_data,
             bucket_bound_min, bucket_bound_max,
-            m, q, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare
         )
         
@@ -54,26 +74,23 @@ class TestDebyeLengthPatch:
         """测试空cell的情况"""
         nx, ny = 2, 2
         
-        # 创建空粒子数组
-        inv_gamma = np.array([], dtype=np.float64)
-        w = np.array([], dtype=np.float64)
-        dead = np.array([], dtype=np.bool_)
+        # 创建空粒子数据
+        empty_data = self.create_test_particles(0)
         
         # 所有cell都没有粒子
         bucket_bound_min = np.zeros(nx * ny, dtype=np.int64)
         bucket_bound_max = np.zeros(nx * ny, dtype=np.int64)
         
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
         
         debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
         
         # 调用函数
         debye_length_patch(
-            inv_gamma, w, dead,
+            empty_data,
             bucket_bound_min, bucket_bound_max,
-            m, q, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare
         )
         
@@ -86,23 +103,24 @@ class TestDebyeLengthPatch:
         nx, ny = 2, 2
         n_particles = 10
         
-        inv_gamma = np.ones(n_particles, dtype=np.float64)
-        w = np.ones(n_particles, dtype=np.float64)
-        dead = np.ones(n_particles, dtype=np.bool_)  # 所有粒子都是dead
+        # 创建所有粒子都是dead的测试数据
+        dead_data = self.create_test_particles(n_particles, inv_gamma_value=1.0, weight_value=1.0)
+        
+        # 设置所有粒子为dead
+        dead_data.is_dead[:] = True
         
         bucket_bound_min = np.array([0, 0, 0, 0], dtype=np.int64)
         bucket_bound_max = np.array([n_particles, 0, 0, 0], dtype=np.int64)
         
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
         
         debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
         
         debye_length_patch(
-            inv_gamma, w, dead,
+            dead_data,
             bucket_bound_min, bucket_bound_max,
-            m, q, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare
         )
         
@@ -116,9 +134,7 @@ class TestDebyeLengthPatch:
         n_total = nx * ny * n_particles_per_cell
         
         # 创建均匀分布的粒子
-        inv_gamma = np.full(n_total, 0.95, dtype=np.float64)  # gamma ≈ 1.05
-        w = np.full(n_total, 1.0, dtype=np.float64)
-        dead = np.zeros(n_total, dtype=np.bool_)
+        uniform_data = self.create_test_particles(n_total, inv_gamma_value=0.95, weight_value=1.0)
         
         # 均匀分配到所有cell
         bucket_bound_min = np.zeros(nx * ny, dtype=np.int64)
@@ -128,16 +144,15 @@ class TestDebyeLengthPatch:
             bucket_bound_min[i] = i * n_particles_per_cell
             bucket_bound_max[i] = (i + 1) * n_particles_per_cell
         
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
         
         debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
         
         debye_length_patch(
-            inv_gamma, w, dead,
+            uniform_data,
             bucket_bound_min, bucket_bound_max,
-            m, q, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare
         )
         
@@ -156,32 +171,44 @@ class TestDebyeLengthPatch:
         # 设置非相对论情况
         kT_mc2 = 0.01
         ux, uy, uz = SetTemperature.sample_maxwell_juttner(n_particles, kT_mc2)
-        inv_gamma = np.full(n_particles, 1.0 / np.sqrt(1 + ux**2 + uy**2 + uz**2), dtype=np.float64)
-        w = np.full(n_particles, 1.0, dtype=np.float64)
-        dead = np.zeros(n_particles, dtype=np.bool_)
+        
+        particles = ParticlesBase()
+        particles.initialize(n_particles)
+        particles.ux[:] = ux
+        particles.uy[:] = uy
+        particles.uz[:] = uz
+        particles.inv_gamma[:] = 1.0 / np.sqrt(1 + ux**2 + uy**2 + uz**2)
+        particles.w[:] = 1.0
+        particles.is_dead[:] = False
+        
+        physical_data = ParticleData(
+            x=particles.x, y=particles.y, z=particles.z,
+            ux=particles.ux, uy=particles.uy, uz=particles.uz,
+            inv_gamma=particles.inv_gamma, w=particles.w,
+            is_dead=particles.is_dead, m=m_e, q=-e
+        )
 
         bucket_bound_min = np.array([0], dtype=np.int64)
         bucket_bound_max = np.array([n_particles], dtype=np.int64)
 
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
 
         # 计算理论德拜长度
-        density = n_particles / (dx * dy * dz)  # 粒子数密度
+        density = n_particles / cell_vol  # 粒子数密度
 
         # 计算温度：对于gamma = 1.01，动能 = (gamma-1)mc^2
-        kT = kT_mc2 * m * c**2
+        kT = kT_mc2 * m_e * c**2
 
         # 理论德拜长度倒数平方
-        lambda_D_inv_sq_theory = density * q**2 / (epsilon_0 * kT)
+        lambda_D_inv_sq_theory = density * e**2 / (epsilon_0 * kT)
 
         debye_length_inv_sqare = np.zeros((1, 1), dtype=np.float64)
 
         debye_length_patch(
-            inv_gamma, w, dead,
+            physical_data,
             bucket_bound_min, bucket_bound_max,
-            m, q, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare
         )
 
@@ -194,23 +221,20 @@ class TestDebyeLengthPatch:
     def test_edge_cases(self):
         """测试边界情况"""
         # 测试单个粒子
-        inv_gamma = np.array([1.0], dtype=np.float64)
-        w = np.array([1.0], dtype=np.float64)
-        dead = np.array([False], dtype=np.bool_)
+        edge_data = self.create_test_particles(1, inv_gamma_value=1.0, weight_value=1.0)
         
         bucket_bound_min = np.array([0], dtype=np.int64)
         bucket_bound_max = np.array([1], dtype=np.int64)
         
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
         
         debye_length_inv_sqare = np.zeros((1, 1), dtype=np.float64)
         
         debye_length_patch(
-            inv_gamma, w, dead,
+            edge_data,
             bucket_bound_min, bucket_bound_max,
-            m, q, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare
         )
         
@@ -221,18 +245,16 @@ class TestDebyeLengthPatch:
         """直接测试debye_length_cell函数"""
         n_particles = 10
         
-        inv_gamma = np.full(n_particles, 0.9, dtype=np.float64)
-        w = np.full(n_particles, 1.0, dtype=np.float64)
-        dead = np.zeros(n_particles, dtype=np.bool_)
+        cell_data = self.create_test_particles(n_particles, inv_gamma_value=0.9, weight_value=1.0)
         
-        m = m_e
-        q = -e
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
         
         # 调用底层函数
         result = debye_length_cell(
-            inv_gamma, w, dead, m, q,
-            np.int64(0), np.int64(n_particles), dx, dy, dz
+            cell_data,
+            np.int64(0), np.int64(n_particles), 
+            cell_vol
         )
         
         # 验证结果合理
@@ -240,43 +262,44 @@ class TestDebyeLengthPatch:
         
         # 测试空范围
         empty_result = debye_length_cell(
-            inv_gamma, w, dead, m, q,
-            np.int64(0), np.int64(0), dx, dy, dz
+            cell_data,
+            np.int64(0), np.int64(0), 
+            cell_vol
         )
         assert empty_result == -1.0
         
         # 测试全dead粒子
-        dead_particles = np.ones(n_particles, dtype=np.bool_)
+        dead_cell_data = self.create_test_particles(n_particles, inv_gamma_value=0.9, weight_value=1.0)
+        dead_cell_data.is_dead[:] = True
+        
         dead_result = debye_length_cell(
-            inv_gamma, w, dead_particles, m, q,
-            np.int64(0), np.int64(n_particles), dx, dy, dz
+            dead_cell_data,
+            np.int64(0), np.int64(n_particles), 
+            cell_vol
         )
         assert dead_result == -1.0
 
     def test_debye_length_patches(self):
         """测试debye_length_patches函数（多patch版本）"""
         from lambdapic.core.collision.cpu import debye_length_patches
-        from numba import typed
         
         npatches = 3
         nx, ny = 2, 2
         n_particles_per_patch = 20
         
         # 创建多个patch的数据，使用Numba的typed.List
-        inv_gamma_list = typed.List()
-        w_list = typed.List()
-        dead_list = typed.List()
         bucket_bound_min_list = typed.List()
         bucket_bound_max_list = typed.List()
-        m_list = typed.List()
-        q_list = typed.List()
+        particle_data_list = typed.List()
         debye_length_inv_sqare_list = typed.List()
         
         for ipatch in range(npatches):
-            # 每个patch的粒子数据
-            inv_gamma = np.full(n_particles_per_patch, 0.95, dtype=np.float64)
-            w = np.full(n_particles_per_patch, 1.0, dtype=np.float64)
-            dead = np.zeros(n_particles_per_patch, dtype=np.bool_)
+            # 使用create_test_particles创建粒子数据
+            particle_data = self.create_test_particles(
+                n_particles_per_patch, 
+                inv_gamma_value=0.95, 
+                weight_value=1.0
+            )
             
             # 均匀分配到所有cell
             bucket_bound_min = np.zeros(nx * ny, dtype=np.int64)
@@ -287,23 +310,20 @@ class TestDebyeLengthPatch:
                 bucket_bound_min[i] = i * particles_per_cell
                 bucket_bound_max[i] = (i + 1) * particles_per_cell
             
-            # 添加到typed.List中
-            inv_gamma_list.append(inv_gamma)
-            w_list.append(w)
-            dead_list.append(dead)
+            # 添加到列表中
+            particle_data_list.append(particle_data)
             bucket_bound_min_list.append(bucket_bound_min)
             bucket_bound_max_list.append(bucket_bound_max)
-            m_list.append(m_e)
-            q_list.append(-e)
             debye_length_inv_sqare_list.append(np.zeros((nx, ny), dtype=np.float64))
         
         dx = dy = dz = 1e-6
+        cell_vol = dx * dy * dz
         
         # 调用多patch函数
         debye_length_patches(
-            inv_gamma_list, w_list, dead_list,
+            particle_data_list,
             bucket_bound_min_list, bucket_bound_max_list,
-            m_list, q_list, dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare_list
         )
         

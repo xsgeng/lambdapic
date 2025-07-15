@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from scipy.constants import c, epsilon_0, k, pi
 
 from ..utils.jit_spinner import jit_spinner
+from .utils import CollisionData, ParticleData, boost_to_lab, coulomb_scattering
 
 
 @njit
@@ -25,6 +26,7 @@ def self_pairing(dead, ip_start, ip_end, random_gen):
     even = (npart % 2) == 0
     odd = not even
 
+    ip1 = -1
     ip2 = -1
     for ipair in range(npairs):
         for ip1 in range(ip2+1, nbuf):
@@ -122,51 +124,50 @@ def pairing(
 
 @njit(parallel=True, cache=True)
 def debye_length_patches(
-    inv_gamma_list: List[NDArray[np.float64]],
-    w_list: List[NDArray[np.float64]],
-    dead_list: List[NDArray[np.bool_]],
+    part_list: List[ParticleData],
     bucket_bound_min_list: List[NDArray[np.int64]],
     bucket_bound_max_list: List[NDArray[np.int64]],
-    m: List[float],
-    q: List[float],
-    dx: float, dy: float, dz: float,
+    cell_vol: float,
     debye_length_inv_sqare_list: List[NDArray[np.float64]],
 ):
-    for ipatch in prange(len(inv_gamma_list)):
+    for ipatch in prange(len(part_list)):
         debye_length_patch(
-            inv_gamma_list[ipatch], w_list[ipatch], dead_list[ipatch],
+            part_list[ipatch],
             bucket_bound_min_list[ipatch], bucket_bound_max_list[ipatch],
-            m[ipatch], q[ipatch],
-            dx, dy, dz,
+            cell_vol,
             debye_length_inv_sqare_list[ipatch]
         )
 
 @njit(inline='always')
 def debye_length_patch(
-    inv_gamma: NDArray[np.float64], w: NDArray[np.float64], dead: NDArray[np.bool_],
+    part: ParticleData,
     bucket_bound_min: NDArray[np.int64], bucket_bound_max: NDArray[np.int64],
-    m: float, q: float,
-    dx: float, dy: float, dz: float,
+    cell_vol,
     debye_length_inv_sqare: NDArray[np.float64],
 ):
     for icell in range(bucket_bound_min.size):
         ip_start = bucket_bound_min.flat[icell]
         ip_end   = bucket_bound_max.flat[icell]
-        d = debye_length_cell(inv_gamma, w, dead, m, q, ip_start, ip_end, dx, dy, dz)
+        d = debye_length_cell(part, ip_start, ip_end, cell_vol)
         if d > 0:
             debye_length_inv_sqare.flat[icell] += d
 
 @njit(inline='always')
 def debye_length_cell(
-    inv_gamma: NDArray[np.float64], w: NDArray[np.float64], dead: NDArray[np.bool_],
-    m: float, q: float,
+    part: ParticleData,
     ip_start: np.int64, ip_end: np.int64,
-    dx: float, dy: float, dz: float,
+    cell_vol: float
 ) -> float:
     density = 0.0
     kT_mc2 = 0.0
+
+    is_dead = part.is_dead
+    inv_gamma = part.inv_gamma
+    w = part.w
+    m = part.m
+    q = part.q
     for ip in range(ip_start, ip_end):
-        if dead[ip]: 
+        if is_dead[ip]: 
             continue
         density += w[ip]
 
@@ -179,7 +180,7 @@ def debye_length_cell(
 
     if density > 0:
         kT_mc2 /= density
-        density /= dx*dy*dz
+        density /= cell_vol
 
         kT = kT_mc2 * m * c**2
 
@@ -316,32 +317,20 @@ def self_collision_cell(
             uz[ip2] = p2z_new / m / c
             inv_gamma[ip2] = 1/sqrt(ux[ip2]**2 + uy[ip2]**2 + uz[ip2]**2 + 1)
 
-@njit(cache=True)
+@njit
 def inter_collision_cell(
-    ux1, uy1, uz1, inv_gamma1, w1, dead1, ip_start1, ip_end1,
-    ux2, uy2, uz2, inv_gamma2, w2, dead2, ip_start2, ip_end2,
-    m1, q1, m2, q2,
+    part1: ParticleData, ip_start1, ip_end1,
+    part2: ParticleData, ip_start2, ip_end2,
     lnLambda,
     dx, dy, dz, dt,
-    random_gen
+    gen
 ):
-    """
-    Inter collision
+    dead1 = part1.is_dead
+    dead2 = part2.is_dead
+
+    m1 = part1.m
+    m2 = part1.m
     
-    Args:
-        ux1,uy1,uz1 (np.ndarray): momentum of species 1
-        inv_gamma1 (np.ndarray): 1 / gamma of species 1
-        w1 (np.ndarray): weight of species 1
-        dead1 (np.ndarray): dead particle flag of species 1
-        ip_start1 (int): start index of particle buffer of species 1
-        ip_end1 (int): end index of particle buffer of species 1
-        m1 (float): mass of species 1
-        q1 (float): charge of species 1
-        lnLambda (float): Coulomb logarithm
-        dx,dy,dz (float): cell size, set `dz = 1` for 2D
-        dt (float): time step
-        random_gen (np.random.Generator): random number generator
-    """
     nbuf1 = ip_end1 - ip_start1
     npart1 = nbuf1 - dead1[ip_start1:ip_end1].sum()
 
@@ -356,101 +345,45 @@ def inter_collision_cell(
     # loop pairs
     for ipair, ip1, ip2, w_corr in pairing(
         dead1, ip_start1, ip_end1, 
-        dead2, ip_start2, ip_end2, random_gen
+        dead2, ip_start2, ip_end2, gen
     ):
-        w1_ = w1[ip1] * w_corr
-        w2_ = w2[ip2] * w_corr
+        w1_ = part1.w[ip1] * w_corr
+        w2_ = part2.w[ip2] * w_corr
         w_max = max(w1_, w2_)
         
-        U1 = random_gen.uniform()
-        U2 = random_gen.uniform()
-
-        gamma1 = 1/inv_gamma1[ip1]
-        gamma2 = 1/inv_gamma2[ip2]
-
-        p1x = ux1[ip1]*m1*c
-        p1y = uy1[ip1]*m1*c
-        p1z = uz1[ip1]*m1*c
-
-        p2x = ux2[ip2]*m2*c
-        p2y = uy2[ip2]*m2*c
-        p2z = uz2[ip2]*m2*c
-
-        v1x = p1x / gamma1 / m1
-        v1y = p1y / gamma1 / m1
-        v1z = p1z / gamma1 / m1
-
-        v2x = p2x / gamma2 / m2
-        v2y = p2y / gamma2 / m2
-        v2z = p2z / gamma2 / m2
-
-        vx_com = (p1x + p2x) / (gamma1*m1 + gamma2*m2)
-        vy_com = (p1y + p2y) / (gamma1*m1 + gamma2*m2)
-        vz_com = (p1z + p2z) / (gamma1*m1 + gamma2*m2)
-        gamma_com = 1.0 / sqrt(1 - (vx_com**2 + vy_com**2 + vz_com**2)/c**2 )
-        v_com_square = vx_com**2 + vy_com**2 + vz_com**2
-
-        # _, p1x_com, p1y_com, p1z_com = lorentz_boost(gamma1*m1*c, p1x, p1y, p1z, vx_com, vy_com, vz_com, gamma_com)
-        p1x_com = p1x + ((gamma_com-1)/v_com_square * (v1x*vx_com + v1y*vy_com + v1z*vz_com) - gamma_com) * m1*gamma1*vx_com
-        p1y_com = p1y + ((gamma_com-1)/v_com_square * (v1x*vx_com + v1y*vy_com + v1z*vz_com) - gamma_com) * m1*gamma1*vy_com
-        p1z_com = p1z + ((gamma_com-1)/v_com_square * (v1x*vx_com + v1y*vy_com + v1z*vz_com) - gamma_com) * m1*gamma1*vz_com
-
-        # p2x_com = p2x + ((gamma_com-1)/v_com_square * (v2x*vx_com + v2y*vy_com + v2z*vz_com) - gamma_com) * m2*gamma2*vx_com
-        # p2y_com = p2y + ((gamma_com-1)/v_com_square * (v2x*vx_com + v2y*vy_com + v2z*vz_com) - gamma_com) * m2*gamma2*vy_com
-        # p2z_com = p2z + ((gamma_com-1)/v_com_square * (v2x*vx_com + v2y*vy_com + v2z*vz_com) - gamma_com) * m2*gamma2*vz_com
-
-        p1_com = np.sqrt(p1x_com**2 + p1y_com**2 + p1z_com**2)
-
-        gamma1_com = (1 - (vx_com*v1x + vy_com*v1y + vz_com*v1z) / c**2) * gamma_com*gamma1
-        gamma2_com = (1 - (vx_com*v2x + vy_com*v2y + vz_com*v2z) / c**2) * gamma_com*gamma2
-
-        s = w_max/(dx*dy*dz) *dt * (lnLambda * (q1*q2)**2) / (4*pi*epsilon_0**2*c**4 * m1*gamma1 * m2*gamma2) \
-                *(gamma_com * p1_com)/(m1*gamma1 + m2*gamma2) * (m1*gamma1_com*m2*gamma2_com/p1_com**2 * c**2 + 1)**2
-        s *= dt_corr
-
+        d = CollisionData(
+            part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], part1.w[ip1],
+            part1.m, part1.q,
+            part2.ux[ip1], part2.uy[ip1], part2.uz[ip1], part2.inv_gamma[ip1], part2.w[ip1],
+            part2.m, part2.q,
+        )
         
-        if s < 4:
-            alpha = 0.37*s - 0.005*s**2 - 0.0064*s**3
-            sin2X2 = alpha * U1 / np.sqrt( (1-U1) + alpha*alpha*U1 )
-            cosX = 1. - 2.*sin2X2
-            sinX = 2.*np.sqrt( sin2X2 *(1.-sin2X2) )
-        else:
-            cosX = 2.*U1 - 1.
-            sinX = np.sqrt( 1. - cosX*cosX )
+        vx_com, vy_com, vz_com = d.vx_com, d.vy_com, d.vz_com
+        gamma_com = d.gamma_com
+        v_com_square = d.v_com_square
+        
+        gamma1_com = d.gamma1_com
+        gamma2_com = d.gamma2_com
+        
+        px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, dx, dy, dz, dt*dt_corr,
+                                                                   lnLambda, gen)
 
-        phi = np.random.uniform(0, 2*pi)
-        sinXcosPhi = sinX*np.cos( phi )
-        sinXsinPhi = sinX*np.sin( phi )
-
-        p_perp = sqrt( p1x_com**2 + p1y_com**2 )
-        # make sure p_perp is not too small
-        if p_perp > 1.e-10*p1_com:
-            p1x_com_new = ( p1x_com * p1z_com * sinXcosPhi - p1y_com * p1_com * sinXsinPhi ) / p_perp + p1x_com * cosX
-            p1y_com_new = ( p1y_com * p1z_com * sinXcosPhi + p1x_com * p1_com * sinXsinPhi ) / p_perp + p1y_com * cosX
-            p1z_com_new = -p_perp * sinXcosPhi + p1z_com * cosX
-        # if p_perp is too small, we use the limit px->0, py=0
-        else:
-            p1x_com_new = p1_com * sinXcosPhi
-            p1y_com_new = p1_com * sinXsinPhi
-            p1z_com_new = p1_com * cosX
-
-        vcom_dot_p = vx_com*p1x_com_new + vy_com*p1y_com_new + vz_com*p1z_com_new
-        if w2_ / w_max > U2:
-            p1x_new = p1x_com_new + vx_com * ((gamma_com-1)/v_com_square * vcom_dot_p + m1*gamma1_com*gamma_com)
-            p1y_new = p1y_com_new + vy_com * ((gamma_com-1)/v_com_square * vcom_dot_p + m1*gamma1_com*gamma_com)
-            p1z_new = p1z_com_new + vz_com * ((gamma_com-1)/v_com_square * vcom_dot_p + m1*gamma1_com*gamma_com)
-            ux1[ip1] = p1x_new / m1 / c
-            uy1[ip1] = p1y_new / m1 / c
-            uz1[ip1] = p1z_new / m1 / c
-            inv_gamma1[ip1] = 1/sqrt(ux1[ip1]**2 + uy1[ip1]**2 + uz1[ip1]**2 + 1)
-        if w1_ / w_max > U2:
-            p2x_new = -p1x_com_new + vx_com * ((gamma_com-1)/v_com_square * -vcom_dot_p + m2*gamma2_com*gamma_com)
-            p2y_new = -p1y_com_new + vy_com * ((gamma_com-1)/v_com_square * -vcom_dot_p + m2*gamma2_com*gamma_com)
-            p2z_new = -p1z_com_new + vz_com * ((gamma_com-1)/v_com_square * -vcom_dot_p + m2*gamma2_com*gamma_com)
-            ux2[ip2] = p2x_new / m2 / c
-            uy2[ip2] = p2y_new / m2 / c
-            uz2[ip2] = p2z_new / m2 / c
-            inv_gamma2[ip2] = 1/sqrt(ux2[ip2]**2 + uy2[ip2]**2 + uz2[ip2]**2 + 1)
+        U = gen.uniform()
+        if w2_ / w_max > U:
+            px1_new, py1_new, pz1_new = boost_to_lab(
+                px1_com_new, py1_com_new, pz1_com_new, gamma1_com, m1, 
+                vx_com, vy_com, vz_com, v_com_square, gamma_com
+            )
+            part1.ux[ip1], part1.uy[ip1], part1.uz[ip1] = px1_new / m1 / c, py1_new / m1 / c, pz1_new / m1 / c
+            part1.inv_gamma[ip1] = 1/sqrt(part1.ux[ip1]**2 + part1.uy[ip1]**2 + part1.uz[ip1]**2 + 1)
+        if w1_ / w_max > U:
+            px2_new, py2_new, pz2_new = boost_to_lab(
+                -px1_com_new, -py1_com_new, -pz1_com_new, gamma2_com, m2, 
+                vx_com, vy_com, vz_com, v_com_square, gamma_com
+            )
+            part2.ux[ip2], part2.uy[ip2], part2.uz[ip2] = px2_new / m2 / c, py2_new / m2 / c, pz2_new / m2 / c
+            part2.inv_gamma[ip2] = 1/sqrt(part2.ux[ip2]**2 + part2.uy[ip2]**2 + part2.uz[ip2]**2 + 1)
+            
 
 @jit_spinner
 @njit(parallel=True, cache=True)
