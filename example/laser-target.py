@@ -46,6 +46,7 @@ laser = GaussianLaser2D(
     l0=0.8e-6,
     ctau=5e-6,
     focus_position=Lx/2,
+    x0=10e-6
 )
 
 if __name__ == "__main__":
@@ -56,6 +57,7 @@ if __name__ == "__main__":
         dy=dy,
         npatch_x=16,
         npatch_y=16,
+        log_file='laser-target.log',
     )
 
     ele = Electron(density=density(10*nc), ppc=10)
@@ -66,16 +68,16 @@ if __name__ == "__main__":
     
     sim.run(2001, callbacks=[
             laser, 
-            n_ele := ExtractSpeciesDensity(sim, ele, 100),
+            n_ele := ExtractSpeciesDensity(sim, ele, 500),
             PlotFields(
                 [
                     dict(field=n_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
                     dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
                 ],
-                prefix='laser-target'
+                prefix='laser-target', interval=500,
             ),
-            SaveFieldsToHDF5('laser-target/fields', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
-            SaveSpeciesDensityToHDF5(carbon, 'laser-target/density', 100),
-            SaveSpeciesDensityToHDF5(ele, 'laser-target/density', 100),
+            SaveFieldsToHDF5('laser-target/fields', 500, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
+            SaveSpeciesDensityToHDF5(carbon, 'laser-target/density', 500),
+            SaveSpeciesDensityToHDF5(ele, 'laser-target/density', 500),
         ]
     )
