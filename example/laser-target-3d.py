@@ -47,6 +47,7 @@ laser = GaussianLaser3D(
     l0=0.8e-6,
     ctau=5e-6,
     focus_position=Lx/2,
+    x0=10e-6,
 )
 sim = Simulation3D(
     nx=nx, ny=ny, nz=nz,
@@ -54,7 +55,7 @@ sim = Simulation3D(
     npatch_x=16,
     npatch_y=8,
     npatch_z=8,
-    cpml_thickness=6,
+    log_file='laser-target-3d.log',
 )
 
 ele = Electron(density=density(1*nc), ppc=2)
