@@ -1,11 +1,12 @@
 import os
-from typing import List, Optional, Callable, Sequence, Dict, Literal
+from typing import Callable, Dict, List, Literal, Optional, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, Field, model_validator
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
+from yaspin import yaspin
 
 from .callback.callback import SimulationStage, callback
 from .core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
@@ -29,7 +30,7 @@ from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductio
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
 from .core.species import Electron, Photon, Species
-from .core.utils.logger import logger, configure_logger
+from .core.utils.logger import configure_logger, logger
 from .core.utils.timer import Timer
 from .utils import check_newer_version_on_pypi, is_version_outdated
 
@@ -628,7 +629,8 @@ class Simulation:
                 logger.info(f"Rank {self.mpi.rank}: No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}")
 
         if self.mpi.rank == 0 and os.environ.get("LAMBDAPIC_CHECK_UPDATE", "1") == "1":
-            current_version, latest_version = check_newer_version_on_pypi()
+            with yaspin(text="Checking for newer version on PyPI. Disable with LAMBDAPIC_CHECK_UPDATE=0"):
+                current_version, latest_version = check_newer_version_on_pypi()
             if current_version and latest_version and is_version_outdated(current_version, latest_version):
                 logger.info(f"New version available: {current_version} -> {latest_version}. Upgrade with `pip install --upgrade --upgrade-strategy=only-if-needed lambdapic`")
 
