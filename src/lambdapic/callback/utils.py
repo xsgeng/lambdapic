@@ -337,6 +337,10 @@ class MovingWindow:
             for attr in p.fields.attrs:
                 getattr(p.fields, attr).fill(0.0)
 
+        for sorter in sim.sorter:
+            sorter.generate_field_lists()
+            sorter.generate_particle_lists()
+
 
     def _shift_right(self, sim: Simulation) -> Sequence[Union[Patch3D, Patch2D]]:
         """Shift simulation window right by one patch.

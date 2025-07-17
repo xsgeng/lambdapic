@@ -561,6 +561,7 @@ class Simulation:
                     self.current_depositor.update_particle_lists(ipatch, ispec)
                     self.interpolator.update_particle_lists(ipatch, ispec)
                     self.pusher[ispec].update_particle_lists(ipatch)
+                    self.sorter[ispec].update_particle_lists(ipatch)
         for r in self.radiation:
             if r is None:
                 continue
