@@ -9,7 +9,12 @@ from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from lambdapic.callback.hdf5 import SaveSpeciesDensityToHDF5
 from lambdapic.core.boundary.cpml import PMLX
 
-from ..core.patch.cpu import fill_particles_2d, get_num_macro_particles_2d
+from ..core.patch.cpu import (
+    fill_particles_2d,
+    fill_particles_3d,
+    get_num_macro_particles_2d,
+    get_num_macro_particles_3d,
+)
 from ..core.patch.patch import Patch, Patch2D, Patch3D
 from ..core.species import Species
 from ..core.utils.logger import logger
@@ -655,7 +660,46 @@ class MovingWindow:
             )
 
     def _fill_particles_3d(self, sim: Simulation, patches: Sequence[Patch3D]):
-        pass
+        for ispec, s in enumerate(sim.species):
+            if s.density is None:
+                continue
+                
+            xaxis = typed.List([p.xaxis for p in patches])
+            yaxis = typed.List([p.yaxis for p in patches])
+            zaxis = typed.List([p.zaxis for p in patches])
+            x_list = typed.List([p.particles[ispec].x for p in patches])
+            y_list = typed.List([p.particles[ispec].y for p in patches])
+            z_list = typed.List([p.particles[ispec].z for p in patches])
+            w_list = typed.List([p.particles[ispec].w for p in patches])
+
+            num_macro_particles = get_num_macro_particles_3d(
+                s.density_jit,
+                xaxis,
+                yaxis,
+                zaxis,
+                len(patches), 
+                s.density_min, 
+                s.ppc_jit,
+            )
+
+            for ipatch, p in enumerate(patches):
+                p.particles[ispec].initialize(num_macro_particles[ipatch])
+
+                x_list[ipatch] = p.particles[ispec].x
+                y_list[ipatch] = p.particles[ispec].y
+                z_list[ipatch] = p.particles[ispec].z
+                w_list[ipatch] = p.particles[ispec].w
+            
+            fill_particles_3d(
+                s.density_jit,
+                xaxis, 
+                yaxis,
+                zaxis,
+                len(patches), 
+                s.density_min, 
+                s.ppc_jit,
+                x_list, y_list, z_list, w_list
+            )
 
 class SetTemperature(Callback):
     """
