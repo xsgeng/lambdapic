@@ -3,12 +3,12 @@ from functools import cached_property
 from typing import Callable, Literal, Optional, Union
 
 from numba import njit
+from numba.core.dispatcher import Dispatcher
 from numba.extending import is_jitted
-from pydantic import BaseModel, computed_field, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 from scipy.constants import e, m_e, m_p
 
-from .particles import (ParticlesBase, QEDParticles, SpinParticles,
-                        SpinQEDParticles)
+from .particles import ParticlesBase, QEDParticles, SpinParticles, SpinQEDParticles
 
 
 class Species(BaseModel):
@@ -18,7 +18,7 @@ class Species(BaseModel):
 
     density: Optional[Callable] = Field(None, description="Function defining particle density distribution")
     density_min: float = Field(0, description="Minimum density threshold")
-    ppc: int = Field(0, description="Particles per cell")
+    ppc: Union[int, Callable] = Field(0, description="Particles per cell (constant int or coordinate-based function)")
 
     momentum: tuple[Optional[Callable], Optional[Callable], Optional[Callable]] = Field(
         (None, None, None), 
@@ -35,6 +35,9 @@ class Species(BaseModel):
     )
 
     ispec: Optional[int] = Field(None, description="Internal species index")
+    
+    density_jit: Optional[Callable] = Field(None, description="JIT-compiled density function")
+    ppc_jit: Optional[Callable] = Field(None, description="JIT-compiled ppc function")
 
     @computed_field
     @cached_property
@@ -47,19 +50,36 @@ class Species(BaseModel):
     def m(self) -> float:
         """mass in SI units"""
         return self.mass * m_e
-
-    @computed_field
-    @cached_property
-    def density_jit(self) -> Callable | None:
-        """density function in JIT compiled form"""
-        if is_jitted(self.density):
-            self.density.enable_caching()
-            return self.density
-        elif inspect.isfunction(self.density):
-            return njit(self.density)
-        elif self.density is None:
-            return None
         
+    @staticmethod
+    def compile_jit(func_or_val: Callable|float|int, dimension: Literal[2, 3]) -> Dispatcher:
+        if is_jitted(func_or_val):
+            func_or_val.enable_caching()
+            return func_or_val
+        
+        elif inspect.isfunction(func_or_val):
+            narg = func_or_val.__code__.co_argcount
+            if narg != dimension:
+                raise ValueError(f"function {func_or_val} must have {dimension} arguments")
+            return njit(func_or_val)
+        
+        elif isinstance(func_or_val, (int, float)):
+            if dimension == 2:
+                @njit('float64(float64, float64)')
+                def jit_func(x, y):
+                    return func_or_val
+                return jit_func
+            elif dimension == 3:
+                @njit('float64(float64, float64, float64)')
+                def jit_func(x, y, z):
+                    return func_or_val
+                return jit_func
+            else:
+                raise ValueError("dimension must be 2 or 3")
+        
+        else:
+            raise ValueError(f"Invalid profile {func_or_val}. Must be a function, int or float.")
+            
 
     def create_particles(self, ipatch: Optional[int]=None, rank: Optional[int]=None) -> ParticlesBase:
         """ 
