@@ -753,6 +753,11 @@ class Patches:
             num_macro_particles: NDArray[int]
                 An array of integers representing the number of macro particles in each patch.
         """
+        if species.density_jit is None and species.density is not None:
+            species.density_jit = Species.compile_jit(species.density, self.dimension)
+        if species.ppc_jit is None:
+            species.ppc_jit = Species.compile_jit(species.ppc, self.dimension)
+        
         if self.dimension == 2:
             xaxis = typed.List([p.xaxis for p in self.patches])
             yaxis = typed.List([p.yaxis for p in self.patches])
@@ -764,7 +769,7 @@ class Patches:
                     yaxis, 
                     self.npatches, 
                     species.density_min, 
-                    species.ppc,
+                    species.ppc_jit,
                 )
             else:
                 num_macro_particles = np.zeros(self.npatches, dtype='int64')
@@ -782,7 +787,7 @@ class Patches:
                     zaxis,
                     self.npatches, 
                     species.density_min, 
-                    species.ppc,
+                    species.ppc_jit,
                 )
             else:
                 num_macro_particles = np.zeros(self.npatches, dtype='int64')
@@ -824,7 +829,7 @@ class Patches:
                         yaxis, 
                         self.npatches, 
                         s.density_min, 
-                        s.ppc,
+                        s.ppc_jit,
                         x_list, y_list, w_list
                     )
                     
@@ -844,7 +849,7 @@ class Patches:
                         zaxis,
                         self.npatches, 
                         s.density_min, 
-                        s.ppc,
+                        s.ppc_jit,
                         x_list, y_list, z_list, w_list
                     )
     

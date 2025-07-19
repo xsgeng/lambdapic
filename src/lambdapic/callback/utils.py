@@ -492,7 +492,7 @@ class MovingWindow:
                 yaxis, 
                 len(patches), 
                 s.density_min, 
-                s.ppc,
+                s.ppc_jit,
             )
 
             for ipatch, p in enumerate(patches):
@@ -508,7 +508,7 @@ class MovingWindow:
                 yaxis, 
                 len(patches), 
                 s.density_min, 
-                s.ppc,
+                s.ppc_jit,
                 x_list, y_list, w_list
             )
 
