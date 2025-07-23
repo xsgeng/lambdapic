@@ -23,19 +23,16 @@ SaveFieldsToHDF5
 ~~~~~~~~~~~~~~~~~
 
 .. autoclass:: lambdapic.callback.hdf5.SaveFieldsToHDF5
-    :special-members: __call__
 
 SaveSpeciesDensityToHDF5
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: lambdapic.callback.hdf5.SaveSpeciesDensityToHDF5
-    :special-members: __call__
 
 SaveParticlesToHDF5
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: lambdapic.callback.hdf5.SaveParticlesToHDF5
-    :special-members: __call__
 
 MovingWindow
 ------------
@@ -45,7 +42,6 @@ This maintains high resolution in the region of interest while reducing
 computational cost by dropping trailing cells.
 
 .. autoclass:: lambdapic.callback.utils.MovingWindow
-    :special-members: __call__
 
 .. _laser:
 

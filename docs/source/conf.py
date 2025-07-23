@@ -41,3 +41,4 @@ html_title = 'λPIC Documentation'
 
 autodoc_pydantic_model_show_json = False
 autodoc_pydantic_model_show_config_summary = False
+autoclass_content = "both"
