@@ -813,7 +813,8 @@ class Patches:
         num_macro_particles_sum = sum(num_macro_particles)
         return num_macro_particles_sum
 
-    def fill_particles(self):
+    def fill_particles(self, rand_gen: np.random.Generator):
+        rand_gens = typed.List(rand_gen.spawn(self.npatches))
         for ispec, s in enumerate(self.species):
             if s.density is not None:
                 if self.dimension == 2:
@@ -825,12 +826,13 @@ class Patches:
                     
                     fill_particles_2d(
                         s.density_jit,
-                        xaxis, 
-                        yaxis, 
-                        self.npatches, 
-                        s.density_min, 
+                        xaxis,
+                        yaxis,
+                        self.npatches,
+                        s.density_min,
                         s.ppc_jit,
-                        x_list, y_list, w_list
+                        x_list, y_list, w_list,
+                        rand_gens
                     )
                     
                 elif self.dimension == 3:
@@ -844,13 +846,14 @@ class Patches:
                     
                     fill_particles_3d(
                         s.density_jit,
-                        xaxis, 
+                        xaxis,
                         yaxis,
                         zaxis,
-                        self.npatches, 
-                        s.density_min, 
+                        self.npatches,
+                        s.density_min,
                         s.ppc_jit,
-                        x_list, y_list, z_list, w_list
+                        x_list, y_list, z_list, w_list,
+                        rand_gens
                     )
     
         self.update_lists()

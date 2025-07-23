@@ -19,7 +19,7 @@ def get_num_macro_particles_2d(density_func, xaxis_list, yaxis_list, npatches, d
 
 
 @njit(cache=False, parallel=True)
-def fill_particles_2d(density_func, xaxis_list, yaxis_list, npatches, dens_min, ppc_func, x_list, y_list, w_list):
+def fill_particles_2d(density_func, xaxis_list, yaxis_list, npatches, dens_min, ppc_func, x_list, y_list, w_list, rand_gens):
     dx = xaxis_list[0][1] - xaxis_list[0][0]
     dy = yaxis_list[0][1] - yaxis_list[0][0]
     for ipatch in prange(npatches):
@@ -30,13 +30,16 @@ def fill_particles_2d(density_func, xaxis_list, yaxis_list, npatches, dens_min, 
         y = y_list[ip]
         w = w_list[ip]
         ipart = 0
+        
+        gen = rand_gens[ipatch]
+        
         for x_grid in xaxis:
             for y_grid in yaxis:
                 dens = density_func(x_grid, y_grid)
                 ppc = int(ppc_func(x_grid, y_grid))
                 if dens > dens_min:
-                    x[ipart:ipart+ppc] = np.random.uniform(-dx/2, dx/2, ppc) + x_grid
-                    y[ipart:ipart+ppc] = np.random.uniform(-dy/2, dy/2, ppc) + y_grid
+                    x[ipart:ipart+ppc] = gen.uniform(-dx/2, dx/2, ppc) + x_grid
+                    y[ipart:ipart+ppc] = gen.uniform(-dy/2, dy/2, ppc) + y_grid
                     w[ipart:ipart+ppc] = dens*dx*dy / ppc
                     ipart += ppc
 
@@ -62,8 +65,8 @@ def get_num_macro_particles_3d(
 
 @njit(cache=False, parallel=True)
 def fill_particles_3d(
-    density_func, xaxis_list, yaxis_list, zaxis_list, npatches, dens_min, ppc_func, 
-    x_list, y_list, z_list, w_list
+    density_func, xaxis_list, yaxis_list, zaxis_list, npatches, dens_min, ppc_func,
+    x_list, y_list, z_list, w_list, rand_gens
 ):
     dx = xaxis_list[0][1] - xaxis_list[0][0]
     dy = yaxis_list[0][1] - yaxis_list[0][0]
@@ -80,6 +83,8 @@ def fill_particles_3d(
         w = w_list[ip]
         ipart = 0
         
+        gen = rand_gens[ipatch]
+        
         for x_grid in xaxis:
             for y_grid in yaxis:
                 for z_grid in zaxis:
@@ -87,8 +92,8 @@ def fill_particles_3d(
                     ppc = int(ppc_func(x_grid, y_grid, z_grid))
                     if dens > dens_min:
                         # Generate particles in 3D cell
-                        x[ipart:ipart+ppc] = np.random.uniform(-dx/2, dx/2, ppc) + x_grid
-                        y[ipart:ipart+ppc] = np.random.uniform(-dy/2, dy/2, ppc) + y_grid 
-                        z[ipart:ipart+ppc] = np.random.uniform(-dz/2, dz/2, ppc) + z_grid
+                        x[ipart:ipart+ppc] = gen.uniform(-dx/2, dx/2, ppc) + x_grid
+                        y[ipart:ipart+ppc] = gen.uniform(-dy/2, dy/2, ppc) + y_grid
+                        z[ipart:ipart+ppc] = gen.uniform(-dz/2, dz/2, ppc) + z_grid
                         w[ipart:ipart+ppc] = dens*dx*dy*dz / ppc
                         ipart += ppc

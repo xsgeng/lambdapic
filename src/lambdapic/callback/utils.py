@@ -485,6 +485,7 @@ class MovingWindow:
             x_list = typed.List([p.particles[ispec].x for p in patches])
             y_list = typed.List([p.particles[ispec].y for p in patches])
             w_list = typed.List([p.particles[ispec].w for p in patches])
+            gens = typed.List(sim.rand_gen.spawn(len(patches)))
 
             num_macro_particles = get_num_macro_particles_2d(
                 s.density_jit,
@@ -509,7 +510,8 @@ class MovingWindow:
                 len(patches), 
                 s.density_min, 
                 s.ppc_jit,
-                x_list, y_list, w_list
+                x_list, y_list, w_list,
+                gens
             )
 
     def _fill_particles_3d(self, sim: Simulation, patches: Sequence[Patch3D]):
