@@ -57,6 +57,10 @@ class SimulationConfig(BaseModel):
         {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'}, 
         description="Boundary conditions for each side of the domain. Supported values: 'pml', 'periodic'"
     )
+    random_seed: Optional[int] = Field(
+        None,
+        description="Random seed for reproducible particle initialization"
+    )
 
     @model_validator(mode='after')
     def validate_nx_divisible(self):
@@ -121,7 +125,8 @@ class Simulation:
         },
         cpml_thickness: int = 6,
         log_file: Optional[str] = None,
-        truncate_log: bool = True
+        truncate_log: bool = True,
+        random_seed: Optional[int] = None
     ) -> None:
         """Initialize a 2D PIC simulation.
 
@@ -137,6 +142,7 @@ class Simulation:
             cpml_thickness: CPML boundary thickness in cells (default: 6)
             log_file: Log file name (default: auto-generated based on timestamp)
             truncate_log: Whether to truncate existing log file (default: True)
+            random_seed: Random seed for reproducible particle initialization (default: None)
         """
         config = SimulationConfig(
             nx=nx,
@@ -150,7 +156,8 @@ class Simulation:
             boundary_conditions=boundary_conditions,
             cpml_thickness=cpml_thickness,
             log_file=log_file,
-            truncate_log=truncate_log
+            truncate_log=truncate_log,
+            random_seed=random_seed
         )
         self.dimension = 2
         
@@ -174,6 +181,8 @@ class Simulation:
         self.species: list[Species] = []
         
         self.itime = 0
+        self.random_seed = config.random_seed
+        self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
         
         # Configure logger
         configure_logger(
@@ -286,8 +295,12 @@ class Simulation:
             npart = self.patches.add_species(s)
             logger.info(f"Rank {rank}: Adding {npart:,} macro particles to {s.name}")
             
+                
+        logger.info(f"Rank {rank}: Creating random generators")
+        self._init_random_generator()
+        
         logger.info(f"Rank {rank}: Filling particles")
-        self.patches.fill_particles()
+        self.patches.fill_particles(self.rand_gen)
 
         logger.info(f"Rank {rank}: Initializing Maxwell solver")
         self._init_maxwell_solver()
@@ -507,6 +520,25 @@ class Simulation:
         self.sorter: list[ParticleSort2D] = []
         for s in self.patches.species:
             self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
+
+    def _init_random_generator(self) -> None:
+        """Create MPI-level generators for each rank.
+        
+        Returns:
+            List of generators for each MPI rank
+        """
+        if self.random_seed is None:
+            self.rand_gen = np.random.default_rng()
+            return
+        
+        if self.mpi.rank == 0:
+            master_gen = np.random.default_rng(self.random_seed)
+            gens = master_gen.spawn(self.mpi.size)
+        else:
+            gens = None
+            
+        self.rand_gen = self.mpi.comm.scatter(gens, root=0)
+
 
     def maxwell_stage(self):
         """Perform a single Maxwell solver stage (half time step).
@@ -803,7 +835,8 @@ class Simulation3D(Simulation):
             'zmax': 'pml',
         },
         log_file: Optional[str] = None,
-        truncate_log: bool = True
+        truncate_log: bool = True,
+        random_seed: Optional[int] = None
     ) -> None:
         """Initialize a 3D PIC simulation.
 
@@ -821,6 +854,7 @@ class Simulation3D(Simulation):
             n_guard: Number of guard cells (default: 3)
             cpml_thickness: CPML boundary thickness in cells (default: 6)
             boundary_conditions: Boundary conditions for each side of the domain (default: all 'pml')
+            random_seed: Random seed for reproducible particle initialization (default: None)
         """
         config = Simulation3DConfig(
             nx=nx, ny=ny, nz=nz,
@@ -832,6 +866,7 @@ class Simulation3D(Simulation):
             boundary_conditions=boundary_conditions,
             log_file=log_file,
             truncate_log=truncate_log,
+            random_seed=random_seed
         )
         self.dimension = 3
         
@@ -866,6 +901,8 @@ class Simulation3D(Simulation):
         self.current_depositor = None
         
         self.itime = 0
+        self.random_seed = config.random_seed
+        self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
         
         # Configure logger
         configure_logger(
