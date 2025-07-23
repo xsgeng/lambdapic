@@ -16,7 +16,7 @@ The dataclass for particle data. It stores, allocates, extends, prunes data.
 .. autoclass:: lambdapic.core.particles.ParticlesBase
     :members:
     :member-order: bysource
-    :special-members: __init__
+    :special-members: 
     
 QEDParticles
 ------------
@@ -26,5 +26,4 @@ Inherited from :any:`ParticlesBase`, it adds additional attributes for QED proce
 .. autoclass:: lambdapic.core.particles.QEDParticles
     :members:
     :member-order: bysource
-    :special-members: __init__
     :show-inheritance:

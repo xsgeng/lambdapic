@@ -53,7 +53,7 @@ class SimulationConfig(BaseModel):
         True, 
         description="Truncate existing log file"
     )
-    boundary_conditions: Dict[Literal['xmin', 'xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = Field(
+    boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = Field(
         {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'}, 
         description="Boundary conditions for each side of the domain. Supported values: 'pml', 'periodic'"
     )
@@ -79,7 +79,7 @@ class Simulation3DConfig(SimulationConfig):
     nz: int = Field(..., gt=0, description="Number of cells in z direction")
     dz: float = Field(..., gt=0, description="Cell size in z direction")
     npatch_z: int = Field(..., gt=0, description="Number of patches in z direction")
-    boundary_conditions: Dict[Literal['xmin', 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = Field(
+    boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = Field(
         {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml', 'zmin': 'pml', 'zmax': 'pml'}, 
         description="Boundary conditions for each side of the domain. Supported values: 'pml', 'periodic'"
     )
@@ -93,19 +93,6 @@ class Simulation3DConfig(SimulationConfig):
 
 class Simulation:
     """Main simulation class for 2D Particle-In-Cell (PIC) simulations.
-
-    Attributes:
-        dimension (int): Simulation dimensionality (2 for 2D)
-        nx (int): Number of cells in x direction
-        ny (int): Number of cells in y direction
-        dx (float): Cell size in x direction [m]
-        dy (float): Cell size in y direction [m]
-        dt (float): Time step [s]
-        n_guard (int): Number of guard cells
-        cpml_thickness (int): CPML boundary thickness in cells
-        species (list[Species]): List of particle species
-        patches (Patches): Collection of simulation patches
-        mpi (MPIManager): MPI communication handler
     """
     def __init__(
         self,
@@ -117,7 +104,7 @@ class Simulation:
         npatch_y: int,
         dt_cfl: float = 0.95,
         n_guard: int = 3,
-        boundary_conditions: Dict[Literal['xmin', 'xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = {
+        boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = {
             'xmin': 'pml',
             'xmax': 'pml',
             'ymin': 'pml',
@@ -128,21 +115,24 @@ class Simulation:
         truncate_log: bool = True,
         random_seed: Optional[int] = None
     ) -> None:
-        """Initialize a 2D PIC simulation.
-
+        """
         Args:
-            nx: Number of cells in x direction
-            ny: Number of cells in y direction
-            dx: Cell size in x direction (meters)
-            dy: Cell size in y direction (meters)
-            npatch_x: Number of patches in x direction
-            npatch_y: Number of patches in y direction
-            dt_cfl: CFL condition factor (default: 0.95)
-            n_guard: Number of guard cells (default: 3)
-            cpml_thickness: CPML boundary thickness in cells (default: 6)
-            log_file: Log file name (default: auto-generated based on timestamp)
-            truncate_log: Whether to truncate existing log file (default: True)
-            random_seed: Random seed for reproducible particle initialization (default: None)
+            nx (int): Number of grid cells in x direction. Must be divisible by npatch_x.
+            ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
+            dx (float): Grid cell size in x direction (meters).
+            dy (float): Grid cell size in y direction (meters).
+            npatch_x (int): Number of patches to divide the domain into along x direction.
+            npatch_y (int): Number of patches to divide the domain into along y direction.
+            dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
+                The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy²)). Defaults to 0.95.
+            n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
+            boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], optional): 
+                Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
+                Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
+            cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
+            log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+            truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
+            random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
         """
         config = SimulationConfig(
             nx=nx,
@@ -841,20 +831,25 @@ class Simulation3D(Simulation):
         """Initialize a 3D PIC simulation.
 
         Args:
-            nx: Number of cells in x direction
-            ny: Number of cells in y direction
-            nz: Number of cells in z direction
-            dx: Cell size in x direction (meters)
-            dy: Cell size in y direction (meters)
-            dz: Cell size in z direction (meters)
-            npatch_x: Number of patches in x direction
-            npatch_y: Number of patches in y direction
-            npatch_z: Number of patches in z direction
-            dt_cfl: CFL condition factor (default: 0.95)
-            n_guard: Number of guard cells (default: 3)
-            cpml_thickness: CPML boundary thickness in cells (default: 6)
-            boundary_conditions: Boundary conditions for each side of the domain (default: all 'pml')
-            random_seed: Random seed for reproducible particle initialization (default: None)
+            nx (int): Number of grid cells in x direction. Must be divisible by npatch_x.
+            ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
+            nz (int): Number of grid cells in z direction. Must be divisible by npatch_z.
+            dx (float): Grid cell size in x direction (meters).
+            dy (float): Grid cell size in y direction (meters).
+            dz (float): Grid cell size in z direction (meters).
+            npatch_x (int): Number of patches to divide the domain into along x direction.
+            npatch_y (int): Number of patches to divide the domain into along y direction.
+            npatch_z (int): Number of patches to divide the domain into along z direction.
+            dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
+                The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy² + 1/dz²)). Defaults to 0.95.
+            n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
+            boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']], optional): 
+                Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'.
+                Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
+            cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
+            log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+            truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
+            random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
         """
         config = Simulation3DConfig(
             nx=nx, ny=ny, nz=nz,

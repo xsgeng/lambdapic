@@ -120,14 +120,6 @@ class SimpleLaser(Laser):
 
     Use SimpleLaser2D or SimpleLaser3D for 2D and 3D simulations, respectively.
     
-    Attributes:
-        a0 (float): Normalized vector potential amplitude
-        l0 (float): Laser wavelength
-        omega0 (float): Laser angular frequency (2πc/λ)
-        w0 (float): Laser waist size (determines transverse width of the beam)
-        ctau (float): Pulse duration (c*tau)
-        E0 (float): Peak electric field amplitude, derived from a0
-        pol_angle (float): Polarization angle in radians, 0 for z-polarization, π/2 for y-polarization
     
     Note:
         This is a simplified laser implementation suitable for basic simulations.
@@ -136,9 +128,7 @@ class SimpleLaser(Laser):
     """
     def __init__(self, a0: float, w0: float, ctau: float, tstop: Optional[float]=None, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
         """
-        Initialize the SimpleLaser with given parameters.
-        
-        Args:
+        Parameters:
             sim: Simulation object that this laser will be injected into
             a0: Normalized vector potential amplitude
             w0: Laser waist size
@@ -225,19 +215,6 @@ class GaussianLaser(Laser):
 
     Use GaussianLaser2D or GaussianLaser3D for 2D and 3D simulations, respectively.
     
-    Attributes:
-        a0 (float): Normalized vector potential amplitude
-        l0 (float): Laser wavelength
-        omega0 (float): Laser angular frequency (2πc/λ)
-        w0 (float): Laser waist size at focus
-        ctau (float): Pulse duration (c*tau)
-        x0 (float): Pulse center position (default: 3*ctau)
-        tstop (float): Time to stop injection (default: 6*ctau)
-        E0 (float): Peak electric field amplitude, derived from a0
-        pol_angle (float): Polarization angle in radians, 0 for z-polarization, π/2 for y-polarization
-        focus_position (float): Position of laser focus relative to boundary
-        zR (float): Rayleigh length (πw₀²/λ)
-        side (str): Injection boundary ('xmin' or 'xmax')
     
     Note:
         This implementation provides more accurate physics than SimpleLaser,
@@ -247,9 +224,7 @@ class GaussianLaser(Laser):
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
                  x0: float=None, tstop: float=None, pol_angle: float = 0.0, focus_position: float = 0.0, side: str = "xmin"):
         """
-        Initialize the GaussianLaser with given parameters.
-        
-        Args:
+        Parameters:
             a0: Normalized vector potential amplitude
             l0: Laser wavelength
             w0: Waist size at focus
@@ -259,16 +234,14 @@ class GaussianLaser(Laser):
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
             focus_position: Position of laser focus relative to boundary (default: 0.0)
             side: Injection boundary ('xmin' or 'xmax') (default: 'xmin')
-        
-        Raises:
-            ValueError: If parameters are invalid (negative or zero values)
         """
+
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
         
         if side not in ["xmin"]:
-            raise ValueError("Invalid side: only 'xmin' is supported.")
+            raise ValueError("Invalid side: only 'xmin' is implemented.")
             
         self.a0 = a0
         self.l0 = l0

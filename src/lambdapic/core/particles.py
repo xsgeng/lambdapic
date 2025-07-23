@@ -23,6 +23,7 @@ class ParticlesBase:
         _id (NDArray[float64]): Unique particle IDs stored as float64
         npart (int): Total number of particles (including dead)
         _npart_created (int): Counter for generating sequential local IDs
+        attrs (list[str]): List of particle attributes. All attributes will be automatically synced during simulation unless specified.
 
     Note:
         You can extend/modify the particle attributes manually before calling :any:`ParticlesBase.initialize`.
@@ -53,8 +54,7 @@ class ParticlesBase:
     _npart_created: int  # counter for generating sequential local IDs
 
     def __init__(self, ipatch: Optional[int]=None, rank: Optional[int]=None) -> None:
-        """Initialize particle class.
-        
+        """
         Args:
             ipatch (Optional[int]): Patch index the particles belong to
             rank (Optional[int]): MPI rank (default: 0)

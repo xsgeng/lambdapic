@@ -13,7 +13,6 @@ Base class for fields data.
 .. autoclass:: lambdapic.core.fields.Fields
     :members:
     :member-order: bysource
-    :special-members: __init__
 
 Fields2D & Fields3D
 -------------------
@@ -21,11 +20,9 @@ Fields2D & Fields3D
 .. autoclass:: lambdapic.core.fields.Fields2D
     :members:
     :member-order: bysource
-    :special-members: __init__
     :show-inheritance:
 
 .. autoclass:: lambdapic.core.fields.Fields3D
     :members:
     :member-order: bysource
-    :special-members: __init__
     :show-inheritance:

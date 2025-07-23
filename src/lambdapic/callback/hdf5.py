@@ -15,13 +15,17 @@ class SaveFieldsToHDF5(Callback):
     """Callback to save field data to HDF5 files.
 
     Creates a new HDF5 file for each save with name pattern:
-    'prefix_t000100.h5', 'prefix_t000200.h5', etc.
+    
+    - `prefix/000100.h5`
+    - `prefix/000200.h5`
+    - ...
 
     The data structure in each file:
-    - /ex, /ey, /ez (electric fields)
-    - /bx, /by, /bz (magnetic fields)
-    - /jx, /jy, /jz (currents)
-    - /rho (charge density)
+
+    - `/ex`, `/ey,` `/ez` (electric fields)
+    - `/bx`, `/by`, `/bz` (magnetic fields)
+    - `/jx`, `/jy`, `/jz` (currents)
+    - `/rho` (charge density)
 
     Args:
         prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/t000100.h5', 'output/t000200.h5', etc.
@@ -30,11 +34,6 @@ class SaveFieldsToHDF5(Callback):
         components (Optional[List[str]], optional): List of field components to save. 
             Available: ['ex','ey','ez','bx','by','bz','jx','jy','jz','rho']. 
             If None, saves all components.
-
-    Attributes:
-        stage (str): The simulation stage when this callback is executed.
-        all_components (Set[str]): Set of all available field components.
-        components (List[str]): List of components to actually save.
     """
     stage="maxwell second"
     def __init__(self, 
@@ -63,12 +62,8 @@ class SaveFieldsToHDF5(Callback):
     def _call(self, sim: Union[Simulation, Simulation3D]):
         filename = self.prefix / f"{sim.itime:06d}.h5"
         if sim.dimension == 2:
-            if not isinstance(sim, Simulation):
-                raise TypeError("Expected Simulation for 2D case")
             self._write_2d(sim, filename)
         elif sim.dimension == 3:
-            if not isinstance(sim, Simulation3D):
-                raise TypeError("Expected Simulation3D for 3D case")
             self._write_3d(sim, filename)
         
     def _write_2d(self, sim: Simulation, filename: Path):
@@ -184,21 +179,20 @@ class SaveSpeciesDensityToHDF5(Callback):
     """Callback to save species density data to HDF5 files.
 
     Creates a new HDF5 file for each save with name pattern:
-    'prefix_speciesname_t000100.h5', 'prefix_speciesname_t000200.h5', etc.
+
+    - `prefix/speciesname_000100.h5`
+    - `prefix/speciesname_000200.h5`
+    - ...
 
     The data structure in each file:
-    - /density (2D or 3D array)
+
+    - `/density` (2D or 3D array)
 
     Args:
         species (Species): The species whose density will be saved
-        prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/{species.name}_t000100.h5', 'output/{species.name}_t000200.h5', etc.
+        prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/{species.name}_000100.h5', 'output/{species.name}_000200.h5', etc.
         interval (Union[int, Callable], optional): Number of timesteps between saves, or a 
             function(sim) -> bool that determines when to save. Defaults to 100.
-
-    Attributes:
-        stage (str): The simulation stage when this callback is executed.
-        species (Species): The species being tracked.
-        prev_rho (Optional[List[np.ndarray]]): Previous charge density values for computation.
     """
     stage = "current deposition"
     def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, Callable] = 100):
@@ -363,11 +357,17 @@ class SaveSpeciesDensityToHDF5(Callback):
 class SaveParticlesToHDF5(Callback):
     """Callback to save particle data to HDF5 files.
 
+    Creates a new HDF5 file for each save with name pattern:
+
+    - `prefix/{species.name}_particles_000100.h5`
+    - `prefix/{species.name}_particles_000200.h5`
+    - ...
+
     The data structure in each file:
-    - /id
-    - /x, y (positions)
-    - /w (weights)
-    - /... (other specified attributes)
+    - `/id`
+    - `/x, y` (positions)
+    - `/w` (weights)
+    - `/...` (other specified attributes)
 
     Args:
         species (Species): The particle species to save
@@ -376,10 +376,6 @@ class SaveParticlesToHDF5(Callback):
             function(sim) -> bool that determines when to save. Defaults to 100.
         attrs (Optional[List[str]], optional): List of particle attributes to save.
             If None, saves all attributes.
-
-    Attributes:
-        stage (str): The simulation stage when this callback is executed.
-        species (Species): The particle species being tracked.
     """
     stage="maxwell second"
     def __init__(self,
