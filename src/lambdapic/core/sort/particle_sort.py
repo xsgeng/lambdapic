@@ -69,9 +69,9 @@ class ParticleSort2D:
 
         self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
         
-        self.bucket_index_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
-        self.bucket_index_ref_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
-        self.bucket_index_target_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.particle_index_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.particle_index_ref_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.particle_index_target_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
         self.buf_list = [np.full(p.particles[ispec].is_dead.size, 0, dtype=float) for p in self.patches]
 
     def update_particle_lists(self, ipatch: int) -> None:
@@ -99,9 +99,9 @@ class ParticleSort2D:
                 
         self.is_dead_list[ipatch] = particles.is_dead
         
-        self.bucket_index_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
-        self.bucket_index_ref_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
-        self.bucket_index_target_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.particle_index_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.particle_index_ref_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.particle_index_target_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
         self.buf_list[ipatch] = np.full(particles.is_dead.size, 0, dtype=float)
 
     def _update_particle_lists(self) -> None:
@@ -129,10 +129,10 @@ class ParticleSort2D:
         self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
         
         for ipatch, p in enumerate(self.patches):
-            if self.bucket_index_list[ipatch].size < p.particles[ispec].npart:
-                self.bucket_index_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
-                self.bucket_index_ref_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
-                self.bucket_index_target_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
+            if self.particle_index_list[ipatch].size < p.particles[ispec].npart:
+                self.particle_index_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
+                self.particle_index_ref_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
+                self.particle_index_target_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
                 self.buf_list[ipatch].resize(p.particles[ispec].npart, refcheck=False)
         
     def generate_field_lists(self) -> None:
@@ -144,9 +144,11 @@ class ParticleSort2D:
         fields : list of Fields2D
             List of fields of all patches.
         """
-        self.bin_count_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
-        self.bin_count_not_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
-        self.bin_start_counter_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_count_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_bound_min_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_bound_max_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_count_not_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_start_counter_list = [np.full((self.nx_buckets, self.ny_buckets), 0, dtype=int) for _ in range(self.npatches)]
 
         self.x0s = [p.x0 - p.dx/2 for p in self.patches]
         self.y0s = [p.y0 - p.dy/2 for p in self.patches]
@@ -158,9 +160,9 @@ class ParticleSort2D:
             self.x0s, self.y0s, 
             self.nx_buckets, self.ny_buckets, self.dx_buckets, self.dy_buckets, 
             self.npatches, 
-            self.bin_count_list, self.bin_count_not_list, self.bin_start_counter_list, 
-            self.bucket_index_list, self.bucket_index_ref_list, 
-            self.bucket_index_target_list, self.buf_list
+            self.bucket_count_list, self.bucket_bound_min_list, self.bucket_bound_max_list, self.bucket_count_not_list, self.bucket_start_counter_list, 
+            self.particle_index_list, self.particle_index_ref_list, 
+            self.particle_index_target_list, self.buf_list
         )
 
 
@@ -227,9 +229,9 @@ class ParticleSort3D(ParticleSort2D):
 
         self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
         
-        self.bucket_index_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
-        self.bucket_index_ref_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
-        self.bucket_index_target_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.particle_index_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.particle_index_ref_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
+        self.particle_index_target_list = [np.full(p.particles[ispec].is_dead.size, -1, dtype=int) for p in self.patches]
         self.buf_list = [np.full(p.particles[ispec].is_dead.size, 0, dtype=float) for p in self.patches]
 
     def update_particle_lists(self, ipatch: int) -> None:
@@ -252,9 +254,9 @@ class ParticleSort3D(ParticleSort2D):
                 
         self.is_dead_list[ipatch] = particles.is_dead
         
-        self.bucket_index_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
-        self.bucket_index_ref_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
-        self.bucket_index_target_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.particle_index_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.particle_index_ref_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
+        self.particle_index_target_list[ipatch] = np.full(particles.is_dead.size, -1, dtype=int)
         self.buf_list[ipatch] = np.full(particles.is_dead.size, 0, dtype=float)
         
     def generate_field_lists(self) -> None:
@@ -266,9 +268,11 @@ class ParticleSort3D(ParticleSort2D):
         fields : list of Fields3D
             List of fields of all patches.
         """
-        self.bin_count_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
-        self.bin_count_not_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
-        self.bin_start_counter_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_count_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_bound_min_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_bound_max_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_count_not_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
+        self.bucket_start_counter_list = [np.full((self.nx_buckets, self.ny_buckets, self.nz_buckets), 0, dtype=int) for _ in range(self.npatches)]
 
         self.x0s = [p.x0 - p.dx/2 for p in self.patches]
         self.y0s = [p.y0 - p.dy/2 for p in self.patches]
@@ -281,7 +285,7 @@ class ParticleSort3D(ParticleSort2D):
             self.x0s, self.y0s, self.z0s, 
             self.nx_buckets, self.ny_buckets, self.nz_buckets, self.dx_buckets, self.dy_buckets, self.dz_buckets, 
             self.npatches, 
-            self.bin_count_list, self.bin_count_not_list, self.bin_start_counter_list, 
-            self.bucket_index_list, self.bucket_index_ref_list, 
-            self.bucket_index_target_list, self.buf_list
+            self.bucket_count_list, self.bucket_bound_min_list, self.bucket_bound_max_list, self.bucket_count_not_list, self.bucket_start_counter_list, 
+            self.particle_index_list, self.particle_index_ref_list, 
+            self.particle_index_target_list, self.buf_list
         )
