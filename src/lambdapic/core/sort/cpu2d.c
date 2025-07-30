@@ -9,10 +9,10 @@
 static void calculate_bucket_index(
     double* x, double* y, npy_bool* is_dead, 
     npy_intp npart, npy_intp nx, npy_intp ny, double dx, double dy, double x0, double y0, 
-    npy_intp* particle_cell_indices, npy_intp* grid_cell_count
+    npy_intp* particle_index, npy_intp* bucket_count
 ) {
     npy_intp ix, iy, ip, icell;
-    memset(grid_cell_count, 0, sizeof(npy_intp) * nx * ny);
+    memset(bucket_count, 0, sizeof(npy_intp) * nx * ny);
 
     icell = 0;
     for (ip = 0; ip < npart; ip++) {
@@ -21,43 +21,73 @@ static void calculate_bucket_index(
             iy = (npy_intp) floor((y[ip] - y0) / dy);
             icell = iy + ix * ny;  // Calculate the cell index
             if (0 <= ix && ix < nx && 0 <= iy && iy < ny) {
-                particle_cell_indices[ip] = icell;  // Store the cell index for the particle
-                grid_cell_count[icell] += 1;  // Increment the count of particles in the cell
+                particle_index[ip] = icell;  // Store the cell index for the particle
+                bucket_count[icell] += 1;  // Increment the count of particles in the cell
             } else {
-                particle_cell_indices[ip] = nx * ny - 1; // out-of-bound particles to the last bucket
-                grid_cell_count[nx * ny - 1] += 1;
+                particle_index[ip] = nx * ny - 1; // out-of-bound particles to the last bucket
+                bucket_count[nx * ny - 1] += 1;
             }
         } else {
             // dead stay in the same bucket with the previous particle
-            particle_cell_indices[ip] = icell;
-            grid_cell_count[icell] += 1;
+            particle_index[ip] = icell;
+            bucket_count[icell] += 1;
         }
     }
 }
 
 static PyObject* _calculate_bucket_index(PyObject* self, PyObject* args) {
-    PyArrayObject *x, *y, *is_dead, *particle_cell_indices, *grid_cell_count;
+    PyArrayObject *x, *y, *is_dead, *particle_index, *bucket_count;
     npy_intp nx, ny, npart;
     double dx, dy, x0, y0;
     if (!PyArg_ParseTuple(args, "OOOnnnddddOO", 
         &x, &y, &is_dead, 
         &npart, &nx, &ny, &dx, &dy, &x0, &y0, 
-        &particle_cell_indices, &grid_cell_count)) {
+        &particle_index, &bucket_count)) {
         return NULL;  
     }
 
     calculate_bucket_index(
         (double*) PyArray_DATA(x), (double*) PyArray_DATA(y), (npy_bool*) PyArray_DATA(is_dead), 
         npart, nx, ny, dx, dy, x0, y0, 
-        (npy_intp*) PyArray_DATA(particle_cell_indices), (npy_intp*) PyArray_DATA(grid_cell_count)
+        (npy_intp*) PyArray_DATA(particle_index), (npy_intp*) PyArray_DATA(bucket_count)
+    );
+    Py_RETURN_NONE;  
+}
+
+static void calculate_bucket_bound(
+    npy_intp* bucket_count, npy_intp* bucket_bound_min, npy_intp* bucket_bound_max, 
+    npy_intp nx, npy_intp ny
+) {
+    npy_intp icell, icell_prev;
+    bucket_bound_min[0] = 0;  // Initialize the minimum bound for the first cell
+
+    for (icell = 1; icell < nx * ny; icell++) {
+        icell_prev = icell - 1;  // Get the previous cell index
+        bucket_bound_min[icell] = bucket_bound_min[icell_prev] + bucket_count[icell_prev];  // Calculate the minimum bound for the current cell
+        bucket_bound_max[icell_prev] = bucket_bound_min[icell];  // Calculate the maximum bound for the previous cell
+    }
+    bucket_bound_max[nx * ny - 1] = bucket_bound_min[nx * ny - 1] + bucket_count[nx * ny - 1];  // Calculate the maximum bound for the last cell
+}
+
+static PyObject* _calculate_bucket_bound(PyObject* self, PyObject* args) {
+    PyArrayObject *bucket_count, *bucket_bound_min, *bucket_bound_max;
+    npy_intp nx, ny;
+    if (!PyArg_ParseTuple(args, "OOOnn", 
+        &bucket_count, &bucket_bound_min, &bucket_bound_max, 
+        &nx, &ny)) {
+        return NULL;  
+    }
+    calculate_bucket_bound(
+        (npy_intp*) PyArray_DATA(bucket_count), (npy_intp*) PyArray_DATA(bucket_bound_min), (npy_intp*) PyArray_DATA(bucket_bound_max), 
+        nx, ny
     );
     Py_RETURN_NONE;  
 }
 
 static npy_intp bucket_sort(
-    npy_intp* bin_count, npy_intp* bin_count_not, npy_intp* bin_start_counter, npy_intp nx, npy_intp ny, // length of nbin
-    npy_intp* bucket_index, npy_intp* bucket_index_ref, npy_intp npart, // length of npart
-    npy_intp* bucket_index_target, double * buf, // length of nbuf
+    npy_intp* bucket_count, npy_intp* bucket_count_not, npy_intp* bucket_start_counter, npy_intp nx, npy_intp ny, // length of nbin
+    npy_intp* particle_index, npy_intp* particle_index_ref, npy_intp npart, // length of npart
+    npy_intp* particle_index_target, double * buf, // length of nbuf
     npy_bool* is_dead, double** attrs, npy_intp nattrs
 ) {
     npy_intp ip, ibuf, ibin, ix, iy, iattr, nbuf;
@@ -67,20 +97,20 @@ static npy_intp bucket_sort(
     for (ix = 0; ix < nx; ix++) {
         for (iy = 0; iy < ny; iy++) {
             ibin = iy + ix * ny;
-            for (ip = ibuf; ip < ibuf+bin_count[ibin]; ip++) {
-                bucket_index_ref[ip] = ibin; // bucket_index_ref is what bucket_index should be after sorting
+            for (ip = ibuf; ip < ibuf+bucket_count[ibin]; ip++) {
+                particle_index_ref[ip] = ibin; // particle_index_ref is what particle_index should be after sorting
             }
-            ibuf += bin_count[ibin];
+            ibuf += bucket_count[ibin];
         }
     }
 
     // count number of particles that need to be moved
     nbuf = 0;
-    memset(bin_count_not, 0, sizeof(npy_intp) * nbin);
+    memset(bucket_count_not, 0, sizeof(npy_intp) * nbin);
     for (ip = 0; ip < npart; ip++) {
-        if (bucket_index[ip] != bucket_index_ref[ip]) {
-            bin_count_not[bucket_index_ref[ip]] += 1;
-            bucket_index_target[nbuf] = ip;
+        if (particle_index[ip] != particle_index_ref[ip]) {
+            bucket_count_not[particle_index_ref[ip]] += 1;
+            particle_index_target[nbuf] = ip;
             nbuf += 1;
         }
     }
@@ -93,21 +123,21 @@ static npy_intp bucket_sort(
     for (iattr = 0; iattr < nattrs; iattr++) {
         memset(buf, 0, sizeof(double) * nbuf);
         // re-calculate counter for each attr
-        bin_start_counter[0] = 0;
+        bucket_start_counter[0] = 0;
         for (ibin = 1; ibin < nbin; ibin++) {
-            bin_start_counter[ibin] = bin_start_counter[ibin-1] + bin_count_not[ibin-1];
+            bucket_start_counter[ibin] = bucket_start_counter[ibin-1] + bucket_count_not[ibin-1];
         }
 
         for (ip = 0; ip < npart; ip++) {
-            if (bucket_index[ip] != bucket_index_ref[ip]) {
-                buf[bin_start_counter[bucket_index[ip]]] = attrs[iattr][ip];
-                bin_start_counter[bucket_index[ip]] += 1;
+            if (particle_index[ip] != particle_index_ref[ip]) {
+                buf[bucket_start_counter[particle_index[ip]]] = attrs[iattr][ip];
+                bucket_start_counter[particle_index[ip]] += 1;
             }
         }
         
         // fill back
         for (ibuf = 0; ibuf < nbuf; ibuf++) {
-            attrs[iattr][bucket_index_target[ibuf]] = buf[ibuf];
+            attrs[iattr][particle_index_target[ibuf]] = buf[ibuf];
         }
     }
 
@@ -115,38 +145,38 @@ static npy_intp bucket_sort(
     npy_bool* is_dead_buf = (npy_bool*) buf;
     memset(is_dead_buf, 0, sizeof(npy_bool) * nbuf);
     // re-calculate counter for each attr
-    bin_start_counter[0] = 0;
+    bucket_start_counter[0] = 0;
     for (ibin = 1; ibin < nbin; ibin++) {
-        bin_start_counter[ibin] = bin_start_counter[ibin-1] + bin_count_not[ibin-1];
+        bucket_start_counter[ibin] = bucket_start_counter[ibin-1] + bucket_count_not[ibin-1];
     }
 
     for (ip = 0; ip < npart; ip++) {
-        if (bucket_index[ip] != bucket_index_ref[ip]) {
-            is_dead_buf[bin_start_counter[bucket_index[ip]]] = is_dead[ip];
+        if (particle_index[ip] != particle_index_ref[ip]) {
+            is_dead_buf[bucket_start_counter[particle_index[ip]]] = is_dead[ip];
             is_dead[ip] = 1;
-            bin_start_counter[bucket_index[ip]] += 1;
+            bucket_start_counter[particle_index[ip]] += 1;
         }
     }
     
     // fill back
     for (ibuf = 0; ibuf < nbuf; ibuf++) {
-        is_dead[bucket_index_target[ibuf]] = is_dead_buf[ibuf];
+        is_dead[particle_index_target[ibuf]] = is_dead_buf[ibuf];
     }
     
     return nbuf;
 }
 
 static PyObject* _bucket_sort(PyObject* self, PyObject* args) {
-    PyArrayObject *bin_count, *bin_count_not, *bin_start_counter;
-    PyArrayObject *bucket_index, *bucket_index_ref;
-    PyArrayObject *bucket_index_target, *buf;
+    PyArrayObject *bucket_count, *bucket_count_not, *bucket_start_counter;
+    PyArrayObject *particle_index, *particle_index_ref;
+    PyArrayObject *particle_index_target, *buf;
     PyArrayObject *is_dead;
     PyObject *attrs;
     npy_intp nx, ny, npart, nattrs;
     if (!PyArg_ParseTuple(args, "OOOnnOOnOOOOn", 
-        &bin_count, &bin_count_not, &bin_start_counter, &nx, &ny,
-        &bucket_index, &bucket_index_ref, &npart,
-        &bucket_index_target, &buf, 
+        &bucket_count, &bucket_count_not, &bucket_start_counter, &nx, &ny,
+        &particle_index, &particle_index_ref, &npart,
+        &particle_index_target, &buf, 
         &is_dead, &attrs, &nattrs)) {
         return NULL;  
     }
@@ -156,9 +186,9 @@ static PyObject* _bucket_sort(PyObject* self, PyObject* args) {
         attrs_[iattr] = (double*) GetPatchArrayData(attrs, iattr);  
     }
     npy_intp nbuf = bucket_sort(
-        (npy_intp*) PyArray_DATA(bin_count), (npy_intp*) PyArray_DATA(bin_count_not), (npy_intp*) PyArray_DATA(bin_start_counter), nx, ny, 
-        (npy_intp*) PyArray_DATA(bucket_index), (npy_intp*) PyArray_DATA(bucket_index_ref), npart, 
-        (npy_intp*) PyArray_DATA(bucket_index_target), (double*) PyArray_DATA(buf), 
+        (npy_intp*) PyArray_DATA(bucket_count), (npy_intp*) PyArray_DATA(bucket_count_not), (npy_intp*) PyArray_DATA(bucket_start_counter), nx, ny, 
+        (npy_intp*) PyArray_DATA(particle_index), (npy_intp*) PyArray_DATA(particle_index_ref), npart, 
+        (npy_intp*) PyArray_DATA(particle_index_target), (double*) PyArray_DATA(buf), 
         (npy_bool*) PyArray_DATA(is_dead), attrs_, nattrs
     );
     free(attrs_);
@@ -166,24 +196,25 @@ static PyObject* _bucket_sort(PyObject* self, PyObject* args) {
 }
 
 static PyObject* sort_particles_patches_2d(PyObject* self, PyObject* args) {
-    PyObject *bin_count_list, *bin_count_not_list, *bin_start_counter_list;
-    PyObject *bucket_index_list, *bucket_index_ref_list;
-    PyObject *bucket_index_target_list, *buf_list;
+    PyObject *bucket_count_list, *bucket_bound_min_list, *bucket_bound_max_list, 
+             *bucket_count_not_list, *bin_start_counter_list; // length of nbucket
+    PyObject *particle_index_list, *particle_index_ref_list; // length of npart
+    PyObject *particle_index_target_list, *buf_list; // length of nbuf
     PyObject *x0s, *y0s;
     PyObject *x_list, *y_list, *is_dead_list, *attrs_list;
 
     npy_intp nx, ny, npatches;
     double dx, dy;
 
-    if (!PyArg_ParseTuple(args, "OOOOOOnnddnOOOOOOO", 
+    if (!PyArg_ParseTuple(args, "OOOOOOnnddnOOOOOOOOO", 
         &x_list, &y_list, &is_dead_list, &attrs_list,
         &x0s, &y0s, 
         &nx, &ny, &dx, &dy, 
         &npatches, 
         // buffers
-        &bin_count_list, &bin_count_not_list, &bin_start_counter_list, 
-        &bucket_index_list, &bucket_index_ref_list,
-        &bucket_index_target_list, &buf_list)) {
+        &bucket_count_list, &bucket_bound_min_list, &bucket_bound_max_list, &bucket_count_not_list, &bin_start_counter_list, 
+        &particle_index_list, &particle_index_ref_list,
+        &particle_index_target_list, &buf_list)) {
         return NULL;  // Return NULL if argument parsing fails
     }
 
@@ -195,14 +226,16 @@ static PyObject* sort_particles_patches_2d(PyObject* self, PyObject* args) {
 
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        npy_int64* bin_count = (npy_int64*) GetPatchArrayData(bin_count_list, ipatch);  
-        npy_int64* bin_count_not = (npy_int64*) GetPatchArrayData(bin_count_not_list, ipatch);  
-        npy_int64* bin_start_counter = (npy_int64*) GetPatchArrayData(bin_start_counter_list, ipatch);  
+        npy_int64* bucket_count = (npy_int64*) GetPatchArrayData(bucket_count_list, ipatch);
+        npy_int64* bucket_bound_min = (npy_int64*) GetPatchArrayData(bucket_bound_min_list, ipatch);
+        npy_int64* bucket_bound_max = (npy_int64*) GetPatchArrayData(bucket_bound_max_list, ipatch);  
+        npy_int64* bucket_count_not = (npy_int64*) GetPatchArrayData(bucket_count_not_list, ipatch);  
+        npy_int64* bucket_start_counter = (npy_int64*) GetPatchArrayData(bin_start_counter_list, ipatch);  
 
-        npy_int64* bucket_index = (npy_int64*) GetPatchArrayData(bucket_index_list, ipatch);
-        npy_int64* bucket_index_ref = (npy_int64*) GetPatchArrayData(bucket_index_ref_list, ipatch);
+        npy_int64* particle_index = (npy_int64*) GetPatchArrayData(particle_index_list, ipatch);
+        npy_int64* particle_index_ref = (npy_int64*) GetPatchArrayData(particle_index_ref_list, ipatch);
         
-        npy_int64* bucket_index_target = (npy_int64*) GetPatchArrayData(bucket_index_target_list, ipatch);
+        npy_int64* particle_index_target = (npy_int64*) GetPatchArrayData(particle_index_target_list, ipatch);
         double* buf = (double*) GetPatchArrayData(buf_list, ipatch);  
         
         double x0 = PyFloat_AsDouble(PyList_GetItem(x0s, ipatch));  
@@ -219,8 +252,10 @@ static PyObject* sort_particles_patches_2d(PyObject* self, PyObject* args) {
             npart,
             nx, ny, dx, dy,
             x0, y0,
-            bucket_index, bin_count
+            particle_index, bucket_count
         );  // Calculate cell indices for the current patch
+
+        calculate_bucket_bound(bucket_count, bucket_bound_min, bucket_bound_max, nx, ny);
 
         // attributes in ipatch
         double** attrs = (double**) malloc(nattrs * sizeof(double*));
@@ -229,9 +264,9 @@ static PyObject* sort_particles_patches_2d(PyObject* self, PyObject* args) {
         }
 
         bucket_sort(
-            bin_count, bin_count_not, bin_start_counter, nx, ny, 
-            bucket_index, bucket_index_ref, npart, 
-            bucket_index_target, buf, 
+            bucket_count, bucket_count_not, bucket_start_counter, nx, ny, 
+            particle_index, particle_index_ref, npart, 
+            particle_index_target, buf, 
             is_dead, attrs, nattrs
         );
 
@@ -244,6 +279,7 @@ static PyObject* sort_particles_patches_2d(PyObject* self, PyObject* args) {
 static PyMethodDef SortMethods[] = {
     {"sort_particles_patches_2d", sort_particles_patches_2d, METH_VARARGS, "Sort particles patches"},
     {"_calculate_bucket_index", _calculate_bucket_index, METH_VARARGS, "Calculate cell index"},
+    {"_calculate_bucket_bound", _calculate_bucket_bound, METH_VARARGS, "Calculate sorted cell bound"},
     {"_bucket_sort", _bucket_sort, METH_VARARGS, "Bucket sort"},
     {NULL, NULL, 0, NULL}
 };
