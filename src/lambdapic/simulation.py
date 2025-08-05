@@ -1,6 +1,7 @@
 import os
 from typing import Callable, Dict, List, Literal, Optional, Sequence
 
+import mpi4py
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, Field, model_validator
@@ -113,7 +114,8 @@ class Simulation:
         cpml_thickness: int = 6,
         log_file: Optional[str] = None,
         truncate_log: bool = True,
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        comm: Optional[mpi4py.MPI.Comm] = None
     ) -> None:
         """
         Args:
@@ -130,9 +132,10 @@ class Simulation:
                 Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
                 Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
             cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
-            log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+            log_file (str, optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
             truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
             random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
+            comm (mpi4py.MPI.Comm, optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
         """
         config = SimulationConfig(
             nx=nx,
@@ -173,6 +176,8 @@ class Simulation:
         self.itime = 0
         self.random_seed = config.random_seed
         self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
+
+        self.comm = comm
         
         # Configure logger
         configure_logger(
@@ -206,9 +211,14 @@ class Simulation:
             Must be called before running the simulation. Performs collective
             MPI operations and should be called on all ranks.
         """
-        comm = MPIManager.get_comm()
-        rank = MPIManager.get_rank()
-        comm_size = MPIManager.get_size()
+        if self.comm is None:
+            comm = MPIManager.get_default_comm()
+            rank = MPIManager.get_default_rank()
+            comm_size = MPIManager.get_defailt_size()
+        else:
+            comm = self.comm
+            rank = comm.Get_rank()
+            comm_size = comm.Get_size()
         
         if rank == 0:
             logger.info(f"Starting simulation initialization on {comm_size} MPI ranks")
@@ -276,7 +286,7 @@ class Simulation:
         self._init_fields()
         
         logger.info(f"Rank {rank}: Initializing MPI manager")
-        self.mpi = MPIManager.create(self.patches)
+        self.mpi = MPIManager.create(self.patches, self.comm)
 
         logger.info(f"Rank {rank}: Adding PML boundaries")
         self._init_pml()
@@ -826,7 +836,8 @@ class Simulation3D(Simulation):
         },
         log_file: Optional[str] = None,
         truncate_log: bool = True,
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        comm: Optional[mpi4py.MPI.Comm] = None
     ) -> None:
         """Initialize a 3D PIC simulation.
 
@@ -850,6 +861,7 @@ class Simulation3D(Simulation):
             log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
             truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
             random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
+            comm (Optional[mpi4py.MPI.Comm], optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
         """
         config = Simulation3DConfig(
             nx=nx, ny=ny, nz=nz,
@@ -898,6 +910,8 @@ class Simulation3D(Simulation):
         self.itime = 0
         self.random_seed = config.random_seed
         self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
+
+        self.comm = comm
         
         # Configure logger
         configure_logger(
