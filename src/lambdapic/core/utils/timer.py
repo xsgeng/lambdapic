@@ -58,9 +58,9 @@ class Timer:
         self.interval = (self.end - self.start) / self.norm
         
         if self.name:
-            message = f"Rank {MPIManager.get_rank()} {self.name} took {self.interval:.1f}{self.unit}"
+            message = f"Rank {MPIManager.get_default_rank()} {self.name} took {self.interval:.1f}{self.unit}"
         else:
-            message = f"Rank {MPIManager.get_rank()} Completed in {self.interval:.1f}{self.unit}"
+            message = f"Rank {MPIManager.get_default_rank()} Completed in {self.interval:.1f}{self.unit}"
         
         if self.interval > 0.1:
             logger.log("TIMER", message, **self.log_kwargs)

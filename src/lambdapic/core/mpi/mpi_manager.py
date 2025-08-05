@@ -1,7 +1,7 @@
 import numpy as np
 from mpi4py import MPI
 from numba import prange
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ..particles import ParticlesBase
 from ..patch.patch import Patch2D, Patches, Boundary2D
@@ -12,9 +12,10 @@ from . import sync_particles_2d, sync_fields2d, sync_fields3d, sync_particles_3d
 class MPIManager:
     """Handles MPI communication between different Patches instances"""
     
-    def __init__(self, patches: Patches):
+    def __init__(self, patches: Patches, comm: Optional[MPI.Comm]=None):
         """Initialize MPI environment"""
-        from mpi4py.MPI import COMM_WORLD as comm
+        if comm is None:
+            from mpi4py.MPI import COMM_WORLD as comm
 
         self.comm = comm
         self.rank = self.comm.Get_rank()
@@ -26,25 +27,25 @@ class MPIManager:
 
         self.n_guard = patches.n_guard
 
-    @classmethod
-    def create(cls, patches: Patches) -> "MPIManager":
+    @staticmethod
+    def create(patches: Patches, comm: Optional[MPI.Comm]=None) -> "MPIManager":
         if patches.dimension == 2:
-            return MPIManager2D(patches)
+            return MPIManager2D(patches, comm)
         elif patches.dimension == 3:
-            return MPIManager3D(patches)
+            return MPIManager3D(patches, comm)
         else:
             raise ValueError(f"Invalid dimension {patches.dimension=}")
 
-    @classmethod
-    def get_comm(cls):
+    @staticmethod
+    def get_default_comm():
         return MPI.COMM_WORLD
 
-    @classmethod
-    def get_rank(cls):
+    @staticmethod
+    def get_default_rank():
         return MPI.COMM_WORLD.Get_rank()
     
-    @classmethod
-    def get_size(cls):
+    @staticmethod
+    def get_defailt_size():
         return MPI.COMM_WORLD.Get_size()
 
     def sync_particles(self, ispec: int):
@@ -57,9 +58,9 @@ class MPIManager:
         raise NotImplementedError
 
 class MPIManager2D(MPIManager):
-    def __init__(self, patches: Patches):
+    def __init__(self, patches: Patches, comm: Optional[MPI.Comm]=None):
         assert patches.dimension == 2
-        super().__init__(patches)
+        super().__init__(patches, comm)
         self.nx_per_patch = patches.nx
         self.ny_per_patch = patches.ny
         self.dx = patches.dx
@@ -117,9 +118,9 @@ class MPIManager2D(MPIManager):
         )
 
 class MPIManager3D(MPIManager):
-    def __init__(self, patches: Patches):
+    def __init__(self, patches: Patches, comm: Optional[MPI.Comm]=None):
         assert patches.dimension == 3
-        super().__init__(patches)
+        super().__init__(patches, comm)
         self.nx_per_patch = patches.nx
         self.ny_per_patch = patches.ny
         self.nz_per_patch = patches.nz
