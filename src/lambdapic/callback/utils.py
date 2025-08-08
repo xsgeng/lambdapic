@@ -557,32 +557,78 @@ class SetTemperature(Callback):
             part.inv_gamma[alive] = 1 / np.sqrt(1 + part.ux[alive]**2 + part.uy[alive]**2 + part.uz[alive]**2)
 
     @staticmethod
-    def sample_maxwell_juttner(n: int, theta: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def maxwell_juttner_pdf(gamma: np.ndarray[float], theta: float) -> np.ndarray[float]:
         """
-        Sample n 3D momenta from the relativistic Maxwell-Jüttner distribution at temperature theta (kT/mc^2).
-        Returns arrays ux, uy, uz.
+        Probability density function of Maxwell-Jüttner distribution
         """
-        ux = np.zeros(n)
-        uy = np.zeros(n)
-        uz = np.zeros(n)
-        count: int = 0
-        while count < n:
-            # Rejection sampling for magnitude u
-            # f(u) ~ u^2 * exp(-sqrt(1+u^2)/theta)
-            u_try = np.random.exponential(scale=theta*3, size=n-count)  # proposal
-            gamma = np.sqrt(1 + u_try**2)
-            f = u_try**2 * np.exp(-gamma/theta)
-            fmax: float = (2*theta)**2 * np.exp(-1/theta)  # crude upper bound
-            accept = np.random.uniform(0, fmax, size=n-count) < f
-            u_accepted = u_try[accept]
-            n_accept: int = len(u_accepted)
-            if n_accept > 0:
-                # Sample directions isotropically
-                phi = np.random.uniform(0, 2*np.pi, n_accept)
-                costheta = np.random.uniform(-1, 1, n_accept)
-                sintheta = np.sqrt(1 - costheta**2)
-                ux[count:count+n_accept] = u_accepted * sintheta * np.cos(phi)
-                uy[count:count+n_accept] = u_accepted * sintheta * np.sin(phi)
-                uz[count:count+n_accept] = u_accepted * costheta
+        from scipy.special import kn
+        beta = np.sqrt(1 - 1/(gamma**2))
+        x = 1/theta
+
+        # valid for x < 100
+        k2 = kn(2, x)
+        
+        return (gamma**2 * beta) / (theta * k2) * np.exp(-gamma/theta)
+    
+    @staticmethod
+    def sample_maxwell_juttner(size: int, theta: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Generate samples from Maxwell-Jüttner distribution
+        Using a mixed strategy to adapt to different temperature ranges:
+        - θ ≤ 0.01: Non-relativistic approximation (Gamma distribution)
+        - 0.01 < θ ≤ 0.5: Uniform distribution + rejection sampling
+        - θ > 0.5: Gamma proposal distribution + β acceptance probability
+        """
+        import scipy
+        
+        gamma = np.zeros(size)
+        # Non-relativistic approximation (θ ≤ 0.01)
+        if theta <= 0.01:
+            gamma[:] = scipy.stats.gamma(a=1.5, scale=theta).rvs(size=size) + 1
+        
+        # Medium temperature range (0.01 < θ ≤ 0.5)
+        elif theta <= 0.5:
+            gamma_max = 1 + 10 * theta
+            # Find PDF maximum
+            res = scipy.optimize.minimize_scalar(
+                lambda g: -SetTemperature.maxwell_juttner_pdf(g, theta),
+                bounds=(1, gamma_max),
+                method='bounded'
+            )
+            f_max = -res.fun
+            M = f_max * 1.1 + 1e-10  # Safety factor
+            
+            count: int = 0
+            while count < size:
+                gamma_prop = np.random.uniform(1, gamma_max, size-count)
+                f_val = SetTemperature.maxwell_juttner_pdf(gamma_prop, theta)
+                accept = np.random.uniform(0, M, size-count) < f_val
+                gamma_accept = gamma_prop[accept]
+                n_accept = len(gamma_accept)
+                
+                gamma[count:count+n_accept] = gamma_accept
                 count += n_accept
-        return ux, uy, uz
+        
+        # High temperature range (θ > 0.5)
+        else:
+            gamma_dist = scipy.stats.gamma(a=3, scale=theta)
+            count: int = 0
+            while count < size:
+                gamma_prop = gamma_dist.rvs(size-count)
+                beta_val = np.sqrt(1 - 1/(gamma_prop**2))
+                accept = (np.random.uniform(size=size-count) < beta_val) & (gamma_prop >= 1)
+                gamma_accept = gamma_prop[accept]
+                n_accept = len(gamma_accept)
+                
+                gamma[count:count+n_accept] = gamma_accept
+                count += n_accept
+        
+        u = np.sqrt(gamma**2 - 1)
+        phi = np.random.uniform(0, 2*np.pi, size)
+        costheta = np.random.uniform(-1, 1, size)
+        sintheta = np.sqrt(1 - costheta**2)
+        ux = u * sintheta * np.cos(phi)
+        uy = u * sintheta * np.sin(phi)
+        uz = u * costheta
+        
+        return  ux, uy, uz
