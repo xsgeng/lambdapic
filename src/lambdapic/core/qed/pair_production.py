@@ -112,8 +112,6 @@ class NonlinearPairProductionLCFA(PairProductionBase):
         assert isinstance(species.electron, Electron), "Please use `Electron` species for pair production."
         assert isinstance(species.positron, Positron), "Please use `Positron` species for pair production."
 
-        assert species.electron.ispec is not None
-        assert species.positron.ispec is not None
         self.electron_ispec = species.electron.ispec
         self.positron_ispec = species.positron.ispec
 
