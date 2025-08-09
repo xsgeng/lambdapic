@@ -115,7 +115,6 @@ class NonlinearComptonLCFA(RadiationBase):
         radiation_species = patches.species[ispec]
         assert isinstance(radiation_species, Electron), "Only support electron radiation. Please use `Electron` species."
         assert isinstance(radiation_species.photon, Photon), "Please use `Photon` species."
-        assert radiation_species.photon.ispec is not None
         self.photon_ispec = radiation_species.photon.ispec
 
         self.generate_particle_lists()

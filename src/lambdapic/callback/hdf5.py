@@ -215,8 +215,6 @@ class SaveSpeciesDensityToHDF5(Callback):
         Raises:
             AssertionError: If species has not been initialized
         """
-        if self.species.ispec is None:
-            raise ValueError(f"Species {self.species.name} has not been initialized.")
         return self.species.ispec
         
     def _call(self, sim: Union[Simulation, Simulation3D]):
