@@ -153,4 +153,9 @@ _generate_qed_tables()
 setup(
     name="lambdapic",
     ext_modules=extensions,
+    entry_points={
+    'console_scripts': [
+        'lambdapic = lambdapic.cli:app',
+        ],
+    },
 )

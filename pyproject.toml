@@ -15,6 +15,7 @@ dependencies = [
     "yaspin",
     "packaging",
     "requests",
+    "typer"
 ]
 requires-python = ">=3.10"
 
@@ -42,6 +43,9 @@ test = [
     "pytest-xdist>=3.0",
     "codecov>=2.0"
 ]
+
+[project.scripts]
+lambdapic = "lambdapic.cli:app"
 
 [build-system]
 requires = [
