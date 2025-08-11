@@ -43,6 +43,7 @@ class SimulationConfig(BaseModel):
     dy: float = Field(..., gt=0, description="Cell size in y direction")
     npatch_x: int = Field(..., gt=0, description="Number of patches in x direction")
     npatch_y: int = Field(..., gt=0, description="Number of patches in y direction")
+    nsteps: int | None = Field(None, gt=0, description="Number of simulation steps")
     dt_cfl: float = Field(0.95, gt=0, le=1, description="CFL condition factor")
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
@@ -103,6 +104,7 @@ class Simulation:
         dy: float,
         npatch_x: int,
         npatch_y: int,
+        nsteps: int | None = None,
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = {
@@ -144,6 +146,7 @@ class Simulation:
             dy=dy,
             npatch_x=npatch_x,
             npatch_y=npatch_y,
+            nsteps=nsteps,
             dt_cfl=dt_cfl,
             n_guard=n_guard,
             boundary_conditions=boundary_conditions,
@@ -160,6 +163,7 @@ class Simulation:
         self.dy = config.dy
         self.npatch_x = config.npatch_x
         self.npatch_y = config.npatch_y
+        self.nsteps = config.nsteps
         self.dt = config.dt_cfl * (dx**-2 + dy**-2)**-0.5 / c
         self.n_guard = config.n_guard
         self.boundary_conditions = config.boundary_conditions
@@ -621,7 +625,8 @@ class Simulation:
                     
                     
 
-    def run(self, nsteps: int, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None):
+    def run(self, nsteps: int|None = None, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None,
+            stop_callback: Callable[..., bool] = lambda: False,):
         """Run the simulation for a specified number of steps.
         
         Args:
@@ -666,6 +671,11 @@ class Simulation:
             if current_version and latest_version and is_version_outdated(current_version, latest_version):
                 logger.info(f"New version available: {current_version} -> {latest_version}. Upgrade with `pip install --upgrade --upgrade-strategy=only-if-needed lambdapic`")
 
+        if nsteps is None:
+            if self.nsteps is None:
+                raise ValueError("nsteps must be provided either in Simulation or as an argument to run()")
+            nsteps = self.nsteps
+            
         self.mpi.comm.Barrier()
         for self.istep in trange(nsteps, disable=self.mpi.rank>0, position=1):
             
@@ -813,6 +823,9 @@ class Simulation:
                 stage_callbacks.run('maxwell second')
         
             self.itime += 1
+
+            if stop_callback():
+                return "stop by callback"
         
         self.mpi.comm.Barrier()
 
@@ -823,6 +836,7 @@ class Simulation3D(Simulation):
         nx: int, ny: int, nz: int,
         dx: float, dy: float, dz: float,
         npatch_x: int, npatch_y: int, npatch_z: int,
+        nsteps: int | None = None,
         dt_cfl: float = 0.95,
         n_guard: int = 3,
         cpml_thickness: int = 6,
@@ -867,6 +881,7 @@ class Simulation3D(Simulation):
             nx=nx, ny=ny, nz=nz,
             dx=dx, dy=dy, dz=dz,
             npatch_x=npatch_x, npatch_y=npatch_y, npatch_z=npatch_z,
+            nsteps=nsteps,
             dt_cfl=dt_cfl,
             n_guard=n_guard,
             cpml_thickness=cpml_thickness,
@@ -887,6 +902,8 @@ class Simulation3D(Simulation):
         self.npatch_x = config.npatch_x
         self.npatch_y = config.npatch_y
         self.npatch_z = config.npatch_z
+
+        self.nsteps = config.nsteps
 
         self.dt = config.dt_cfl * (dx**-2 + dy**-2 + dz**-2)**-0.5 / c
         self.n_guard = config.n_guard
