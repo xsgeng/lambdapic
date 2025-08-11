@@ -53,81 +53,82 @@ laser = SimpleLaser2D(
 
 ne = 0.01*nc
 
-if __name__ == "__main__":
-    sim = Simulation(
-        nx=nx,
-        ny=ny,
-        dx=dx,
-        dy=dy,
-        npatch_x=10,
-        npatch_y=10,
+sim = Simulation(
+    nx=nx,
+    ny=ny,
+    dx=dx,
+    dy=dy,
+    npatch_x=10,
+    npatch_y=10,
+    nsteps=2001,
+)
+
+ele = Electron(density=density(ne), ppc=10)
+proton = Proton(density=density(ne/8*2), ppc=2)
+carbon = Species(name="C", charge=6, mass=12*1800, density=density(ne/8), ppc=1)
+
+sim.add_species([ele, carbon, proton])
+
+@callback(interval=100)
+def plot_results(sim: Simulation):
+    it = sim.itime
+    if sim.mpi.rank > 0:
+        return
+    
+    nx_moved = int(movingwindow.patch_this_shift // dx)
+    s = np.s_[nx_moved:nx_moved+(sim.npatch_x-1)*sim.nx_per_patch, :]
+    
+    with h5py.File(f'lwfa/{ele.name}_t{sim.itime:06d}.h5', 'r', locking=False) as f:
+        nele = f['density'][s]
+
+    with h5py.File(f'lwfa/fields_t{sim.itime:06d}.h5', 'r', locking=False) as f:
+        ey = f['ey'][s] * e / (m_e * c * omega0)
+        
+    bwr_alpha = LinearSegmentedColormap(
+        'bwr_alpha', 
+        dict( 
+            red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
+            green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
+            blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
+            alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
+        )
     )
+    fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 
-    ele = Electron(density=density(ne), ppc=10)
-    proton = Proton(density=density(ne/8*2), ppc=2)
-    carbon = Species(name="C", charge=6, mass=12*1800, density=density(ne/8), ppc=1)
+    extent = [
+        movingwindow.total_shift,
+        movingwindow.total_shift + Lx*(sim.npatch_x-1)/sim.npatch_x,
+        0,
+        Ly
+    ]
 
-    sim.add_species([ele, carbon, proton])
+    h1 = ax.imshow(
+        nele.T/nc, 
+        extent=extent,
+        origin='lower',
+        cmap='Grays',
+        vmax=ne/nc*2,
+        vmin=0,
+    )
+    h2 = ax.imshow(
+        ey.T, 
+        extent=extent,
+        origin='lower',
+        cmap=bwr_alpha,
+        vmax=laser.a0,
+        vmin=-laser.a0,
+    )
+    fig.colorbar(h1)
+    fig.colorbar(h2)
 
-    @callback(interval=100)
-    def plot_results(sim: Simulation):
-        it = sim.itime
-        if sim.mpi.rank > 0:
-            return
-        
-        nx_moved = int(movingwindow.patch_this_shift // dx)
-        s = np.s_[nx_moved:nx_moved+(sim.npatch_x-1)*sim.nx_per_patch, :]
-        
-        with h5py.File(f'lwfa/{ele.name}_t{sim.itime:06d}.h5', 'r', locking=False) as f:
-            nele = f['density'][s]
+    figdir = Path('lwfa')
+    if not figdir.exists():
+        figdir.mkdir()
 
-        with h5py.File(f'lwfa/fields_t{sim.itime:06d}.h5', 'r', locking=False) as f:
-            ey = f['ey'][s] * e / (m_e * c * omega0)
-            
-        bwr_alpha = LinearSegmentedColormap(
-            'bwr_alpha', 
-            dict( 
-                red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-                green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-                blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-                alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-            )
-        )
-        fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
+    fig.savefig(figdir/f'{it:04d}.png', dpi=300)
+    plt.close()
 
-        extent = [
-            movingwindow.total_shift,
-            movingwindow.total_shift + Lx*(sim.npatch_x-1)/sim.npatch_x,
-            0,
-            Ly
-        ]
-
-        h1 = ax.imshow(
-            nele.T/nc, 
-            extent=extent,
-            origin='lower',
-            cmap='Grays',
-            vmax=ne/nc*2,
-            vmin=0,
-        )
-        h2 = ax.imshow(
-            ey.T, 
-            extent=extent,
-            origin='lower',
-            cmap=bwr_alpha,
-            vmax=laser.a0,
-            vmin=-laser.a0,
-        )
-        fig.colorbar(h1)
-        fig.colorbar(h2)
-
-        figdir = Path('lwfa')
-        if not figdir.exists():
-            figdir.mkdir()
-
-        fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-        plt.close()
-
+if __name__ == "__main__":
     sim.run(2001, callbacks=[
             movingwindow,
             laser, 
