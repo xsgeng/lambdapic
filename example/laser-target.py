@@ -49,23 +49,24 @@ laser = GaussianLaser2D(
     x0=10e-6
 )
 
-if __name__ == "__main__":
-    sim = Simulation(
-        nx=nx,
-        ny=ny,
-        dx=dx,
-        dy=dy,
-        npatch_x=16,
-        npatch_y=16,
-        log_file='laser-target.log',
-    )
+sim = Simulation(
+    nx=nx,
+    ny=ny,
+    dx=dx,
+    dy=dy,
+    npatch_x=16,
+    npatch_y=16,
+    nsteps=2000,
+    log_file='laser-target.log',
+)
 
-    ele = Electron(density=density(10*nc), ppc=10)
-    proton = Proton(density=density(10*nc/8*2), ppc=10)
-    carbon = Species(name="C", charge=6, mass=12*1800, density=density(10*nc/8), ppc=10)
+ele = Electron(density=density(10*nc), ppc=10)
+proton = Proton(density=density(10*nc/8*2), ppc=10)
+carbon = Species(name="C", charge=6, mass=12*1800, density=density(10*nc/8), ppc=10)
 
-    sim.add_species([ele, carbon, proton])
+sim.add_species([ele, carbon, proton])
     
+if __name__ == "__main__":
     sim.run(2001, callbacks=[
             laser, 
             n_ele := ExtractSpeciesDensity(sim, ele, 500),

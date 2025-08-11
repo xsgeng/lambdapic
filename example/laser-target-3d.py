@@ -55,6 +55,7 @@ sim = Simulation3D(
     npatch_x=16,
     npatch_y=8,
     npatch_z=8,
+    nsteps=1001,
     log_file='laser-target-3d.log',
 )
 
