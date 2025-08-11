@@ -222,10 +222,10 @@ class Simulation:
         
         if rank == 0:
             logger.info(f"Starting simulation initialization on {comm_size} MPI ranks")
-            logger.info(f"Domain size: {self.Lx:.2e} x {self.Ly:.2e} m")
-            logger.info(f"Grid: {self.nx} x {self.ny} cells")
-            logger.info(f"Patches: {self.npatch_x} x {self.npatch_y}")
-            logger.info(f"Patch size: {self.nx_per_patch} x {self.ny_per_patch} cells")
+            logger.info(f"Domain size: {self.Lx:.2e} x {self.Ly:.2e}" + f" x {self.Lz:.2e}" if self.dimension == 3 else "" + " m")
+            logger.info(f"Grid: {self.nx} x {self.ny}" + f" x {self.nz}" if self.dimension == 3 else "")
+            logger.info(f"Patches: {self.npatch_x} x {self.npatch_y}" + f" x {self.npatch_z}" if self.dimension == 3 else "")
+            logger.info(f"Patch size: {self.nx_per_patch} x {self.ny_per_patch}" + f" x {self.nz_per_patch}" if self.dimension == 3 else " cells")
             logger.info(f"Time step: {self.dt:.2e} s")
             logger.info(f"Guard cells: {self.n_guard}")
             logger.info(f"Boundary conditions: {self.boundary_conditions}")
