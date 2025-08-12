@@ -17,7 +17,31 @@ from ..simulation import Simulation, Simulation3D
 from .callback import Callback
 
 
-def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
+def get_fields(sim: Simulation|Simulation3D, fields: Sequence[str], slice_at: Optional[float] = None) -> Sequence[np.ndarray]:
+    """
+    Get fields from all patches.
+    If 3D simulation, fields are sliced at `slice_at` (default: Lz/2).
+
+    Only rank 0 will gather the data, other ranks will get None.
+    
+    Parameters:
+        sim (Simulation): Simulation instance.
+        fields (Sequence[str]): List of fields to get.
+        slice_at (Optional[float]): z position to slice at. defaults to Lz/2.
+        
+    Returns:
+        Sequence[np.ndarray]: List of fields named as field. 2-dimensional array.
+    """
+
+    if isinstance(sim, Simulation3D):
+        return get_fields_3d(sim, fields, slice_at)
+    elif isinstance(sim, Simulation):
+        return get_fields_2d(sim, fields)
+    else:
+        raise ValueError(f"Unsupported simulation type: {type(sim)}")
+
+
+def get_fields_2d(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
     """
     Get fields from all patches.
     
@@ -83,6 +107,122 @@ def get_fields(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray]:
         sim.mpi.comm.Barrier()
         
     return ret
+
+
+def get_fields_3d(sim: Simulation3D, fields: Sequence[str], slice_at: Optional[float] = None) -> Sequence[np.ndarray]:
+    """
+    Get 3D fields from all patches at a specific z-slice.
+    
+    Only rank 0 will gather the data, other ranks will get None.
+    This function first extracts the z-slice from each patch, then communicates
+    the sliced data to rank 0 for assembly.
+    
+    Args:
+        sim (Simulation3D): 3D Simulation instance.
+        fields (Sequence[str]): List of fields to get.
+        slice_at (Optional[float]): Z position to slice at. If None, defaults to Lz/2.
+        
+    Returns:
+        Sequence[np.ndarray]: List of 2D fields (nx, ny) representing the z-slice.
+    """
+    ret = []
+    patches = sim.patches
+    nx_per_patch = sim.nx_per_patch
+    ny_per_patch = sim.ny_per_patch
+    nz_per_patch = sim.nz_per_patch
+    npatch_x = sim.npatch_x
+    npatch_y = sim.npatch_y
+    npatch_z = sim.npatch_z
+    nx = sim.nx
+    ny = sim.ny
+    nz = sim.nz
+    ng = sim.n_guard
+    
+    assert sim.dimension == 3, "Only 3D simulation is supported"
+    
+    if not fields:
+        return ret
+    
+    # Set default slice position to Lz/2 if not provided
+    if slice_at is None:
+        slice_at = sim.Lz / 2
+    
+    if slice_at < 0 or slice_at > sim.Lz:
+        raise ValueError(f"Slice position {slice_at} is outside the simulation domain [0, {sim.Lz}]")
+    
+    # Create mapping from patch coordinates to patch index, only for patches containing the slice
+    local_index_info = {}
+    for ipatch, p in enumerate(patches):
+        # Check if this patch contains the slice_at position
+        if p.zmin <= slice_at <= p.zmax:
+            local_index_info[(p.ipatch_x, p.ipatch_y, p.ipatch_z)] = p.index
+    
+    index_info = sim.mpi.comm.gather(local_index_info)
+    
+    # Calculate the z-index for the slice
+    z_global = slice_at + sim.dz / 2  # Convert position to grid index
+    iz_global = int(z_global / sim.dz)
+
+    iz_local = iz_global - iz_global // nz_per_patch * nz_per_patch
+    
+    if sim.mpi.rank == 0:
+        patch_index_map = {k: v for d in index_info for k, v in d.items()} if index_info else {}
+        local_patches = {p.index: ipatch for ipatch, p in enumerate(patches)}
+    
+    for field in fields:
+        if sim.mpi.rank == 0:
+            field_ = np.zeros((nx, ny))
+            buf = np.zeros((nx_per_patch + 2*ng, ny_per_patch + 2*ng))
+            
+            # Only process patches that contain the z-slice
+            for ipatch_x in range(npatch_x):
+                for ipatch_y in range(npatch_y):
+                    for ipatch_z in range(npatch_z):
+                        # Check if this patch contains the slice
+                        if (ipatch_x, ipatch_y, ipatch_z) in patch_index_map:
+                            s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,
+                                      ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
+                            
+                            index = patch_index_map[(ipatch_x, ipatch_y, ipatch_z)]
+                            if index in local_patches:
+                                # Local patch: extract the slice directly
+                                p = patches[local_patches[index]]
+                                field_data = getattr(p.fields, field)
+                                # Extract z-slice, excluding guard cells
+                                field_[s] = field_data[:-2*ng, :-2*ng, iz_local]
+                            else:
+                                # Remote patch: receive the slice data
+                                sim.mpi.comm.Recv(buf, tag=index)
+                                field_[s] = buf[:-2*ng, :-2*ng]
+            
+            ret.append(field_)
+        else:
+            # Other ranks: send slice data for patches they own
+            req = []
+            for p in patches:
+                # Only send data if this patch contains the z-slice
+                if p.zmin <= slice_at <= p.zmax:
+                    # Calculate local z-index within this patch
+                    iz_local = iz_global - p.ipatch_z * nz_per_patch + ng  # Add guard cells
+                    
+                    # Extract the z-slice from the 3D field data
+                    field_data = getattr(p.fields, field)
+                    slice_data = field_data[:, :, iz_local].copy()
+                    
+                    req_ = sim.mpi.comm.Isend(slice_data, dest=0, tag=p.index)
+                    req.append(req_)
+            
+            # Wait for all send operations to complete
+            for req_ in req:
+                req_.wait()
+            
+            ret.append(None)
+        
+        # Synchronize all processes
+        sim.mpi.comm.Barrier()
+    
+    return ret
+
 
 class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
     """Callback to extract species density from all patches.
