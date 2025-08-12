@@ -4,8 +4,9 @@ from typing import Any, Callable, Optional, Union
 
 from yaspin import yaspin
 
-from lambdapic.core.utils import logger
-from lambdapic.core.utils.timer import Timer
+from ..core.utils import logger
+from ..core.utils.timer import Timer
+from ..simulation import Simulation
 
 class SimulationStage(str, Enum):
     """Enumeration of possible simulation stages for callbacks."""
@@ -89,7 +90,7 @@ class Callback:
     interval: int | Callable
     stage: str
     
-    def __call__(self, sim: 'Simulation') -> None:
+    def __call__(self, sim: Simulation) -> None:
         if callable(self.interval):
             if not self.interval(sim):
                 return
@@ -108,5 +109,5 @@ class Callback:
 
         return ret
 
-    def _call(self, sim: 'Simulation') -> None:
+    def _call(self, sim: Simulation) -> None:
         raise NotImplementedError
