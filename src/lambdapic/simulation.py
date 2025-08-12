@@ -680,7 +680,7 @@ class Simulation:
         for self.istep in trange(nsteps, disable=self.mpi.rank>0, position=1):
             
             # start of simulation stages
-            with Timer('callback start'):
+            with Timer('Callbacks: start stage'):
                 stage_callbacks.run('start')
             
             # EM from t to t+0.5dt
@@ -717,14 +717,14 @@ class Simulation:
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
                         
-                    with Timer("callback push_position first"):
+                    with Timer("Callbacks: push position first stage"):
                         stage_callbacks.run('push position first')
 
                     if self.interpolator:
                         with Timer(f'Interpolation for {self.species[ispec].name}'):
                             self.interpolator(ispec)
                             
-                        with Timer("callback interpolator"):
+                        with Timer("Callbacks: interpolator stage"):
                             stage_callbacks.run('interpolator')
 
                     with Timer(f'radiation for {self.species[ispec].name}'):
@@ -744,14 +744,14 @@ class Simulation:
                     with Timer(f"Pushing {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt)
                         
-                    with Timer("callback push momentum"):
+                    with Timer("Callbacks: push momentum stage"):
                         stage_callbacks.run('push momentum')
                     
                     # position from t+0.5t to t+dt, using new momentum
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
                         
-                    with Timer("callback push_position second"):
+                    with Timer("Callbacks: push position second stage"):
                         stage_callbacks.run('push position second')
                         
                     if self.current_depositor:
@@ -763,7 +763,7 @@ class Simulation:
                 with Timer("mpi.sync_currents"):
                     self.mpi.sync_currents()
                     
-                with Timer("callback current deposition"):
+                with Timer("Callbacks: current deposition stage"):
                     stage_callbacks.run('current deposition')
 
             # set ispec to None out of species loop
@@ -796,7 +796,7 @@ class Simulation:
             with Timer("Updating lists"):
                 self.update_lists()
 
-            with Timer("callback qed create particles"):
+            with Timer("Callbacks: qed create particles stage"):
                 stage_callbacks.run("qed create particles")
 
             # EM from t to t+0.5dt
@@ -819,7 +819,7 @@ class Simulation:
             with Timer('sync E field'):
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
 
-            with Timer("callback maxwell second"):
+            with Timer("Callbacks: maxwell second stage"):
                 stage_callbacks.run('maxwell second')
         
             self.itime += 1
