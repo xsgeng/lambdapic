@@ -1,4 +1,4 @@
-Installation Guide
+Installation & Usage
 ==================
 
 System Requirements
@@ -65,6 +65,30 @@ For MPI run, the number of processes should be equal to the number of NUMA nodes
    export NUMBA_NUM_THREADS=24
    mpiexec -np 8 -ppn 8 python -u example/laser-target.py
 
+Auto-reload functionality
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can also run from the λPIC commandline interface (CLI).
+
+Currently, the CLI supports autoreload functionality. The simulation script will be automatically reloaded on modification. 
+This is useful in HPC environments when you want to modify & re-run the simulation **without re-queuing** the job. 
+
+.. code-block:: bash
+
+   # in a sbatch script
+   #SBATCH -c24
+   #SBATCH -n8
+   #SBATCH -u
+   ...
+   srun lambdapic autoreload example/laser-target.py
+
+   # find somethig wrong in the output figures.
+   # modify example/laser-target.py ...
+   # job will automatically restart with new script
+
+.. note::
+   You should put the :code:`sim.run` in the :code:`__name__ == "__main__"` block to avoid run on import,
+   since the CLI will reload and call run.
 
 Troubleshooting
 ---------------
