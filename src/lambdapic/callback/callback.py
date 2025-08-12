@@ -66,11 +66,11 @@ def callback(stage: Optional[str] = None, interval: Union[int, Callable] = 1) ->
             
             if sim.mpi.rank == 0:
                 with yaspin(text=f"Running callback: {func.__name__}") as sp:
-                    with Timer(f"Running callback: {func.__name__}"):
+                    with Timer(f"callback: {func.__name__}"):
                         ret = func(*args, **kwargs)
                     sim.mpi.comm.Barrier()
             else:
-                with Timer(f"Running callback: {func.__name__}"):
+                with Timer(f"callback: {func.__name__}"):
                     ret = func(*args, **kwargs)
                 sim.mpi.comm.Barrier()
             
@@ -98,11 +98,11 @@ class Callback:
         
         if sim.mpi.rank == 0:
             with yaspin(text=f"Running callback: {self.__class__.__name__}") as sp:
-                with Timer(f"Running callback: {self.__class__.__name__}"):
+                with Timer(f"callback: {self.__class__.__name__}"):
                     ret = self._call(sim)
                 sim.mpi.comm.Barrier()
         else:
-            with Timer(f"Running callback: {self.__class__.__name__}"):
+            with Timer(f"callback: {self.__class__.__name__}"):
                 ret = self._call(sim)
             sim.mpi.comm.Barrier()
 
