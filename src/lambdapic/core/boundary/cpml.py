@@ -42,7 +42,9 @@ class PML(Boundary):
             sigma_max: 
                 the maximum value of the parameter sigma
         """
-
+        if fields.nx <= thickness:
+            raise ValueError(f"PML thickness must be smaller than patch size. {thickness = }, nx = {fields.nx}")
+        
         self.fields = fields
         self.nx = fields.nx
         self.dx = fields.dx
@@ -59,6 +61,9 @@ class PML(Boundary):
 
 
         if isinstance(fields, Fields2D):
+            if fields.ny <= thickness:
+                raise ValueError(f"PML thickness must be smaller than patch size. {thickness = }, ny = {fields.ny}")
+            
             self.ny = fields.ny
             self.dy = fields.dy
             self.dimensions = (fields.nx, fields.ny)
@@ -66,6 +71,9 @@ class PML(Boundary):
             shapey = fields.ny
             shapez = 0
         elif isinstance(fields, Fields3D):
+            if fields.ny <= thickness or fields.nz <= thickness:
+                raise ValueError(f"PML thickness must be smaller than patch size. {thickness = }, ny = {fields.ny}, nz = {fields.nz}")
+            
             self.ny = fields.ny
             self.nz = fields.nz
             self.dy = fields.dy
