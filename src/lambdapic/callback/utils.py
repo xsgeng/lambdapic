@@ -543,7 +543,7 @@ class MovingWindow:
         
         return new_patches
                 
-    def _update_patch_info(self, sim: Simulation):
+    def _update_patch_info(self, sim: Simulation|Simulation3D):
         """Update patch neighbor relationships after shift.
 
         Args:
@@ -554,6 +554,12 @@ class MovingWindow:
             - Rebuilds neighbor mappings
             - Maintains proper patch connectivity
         """
+        if isinstance(sim, Simulation3D):
+            self._update_patch_info_3d(sim)
+        else:
+            self._update_patch_info_2d(sim)
+                
+    def _update_patch_info_2d(self, sim: Simulation):
         # Gather updated patch information from all ranks
         comm = sim.mpi.comm
         rank = comm.Get_rank()
@@ -578,6 +584,32 @@ class MovingWindow:
         sim.patches.init_rect_neighbor_index_2d(sim.npatch_x, sim.npatch_y, boundary_conditions=sim.boundary_conditions, patch_index_map=patch_index_map)
         sim.patches.init_neighbor_ipatch_2d()
         sim.patches.init_neighbor_rank_2d(patch_rank_map)
+                
+    def _update_patch_info_3d(self, sim: Simulation3D):
+        # Gather updated patch information from all ranks
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+        
+        # Prepare local patch info
+        local_info = []
+        for p in sim.patches:
+            local_info.append((p.ipatch_x, p.ipatch_y, p.ipatch_z, p.index, p.rank))
+            
+        # Gather all patch info
+        all_info = comm.allgather(local_info)
+        
+        # Build global mappings
+        patch_index_map = {}
+        patch_rank_map = {}
+        for rank_info in all_info:
+            for (ipx, ipy, ipz, idx, r) in rank_info:
+                patch_index_map[(ipx, ipy, ipz)] = idx
+                patch_rank_map[idx] = r
+                
+        # Reinitialize neighbor relationships
+        sim.patches.init_rect_neighbor_index_3d(sim.npatch_x, sim.npatch_y, sim.npatch_z, boundary_conditions=sim.boundary_conditions, patch_index_map=patch_index_map)
+        sim.patches.init_neighbor_ipatch_3d()
+        sim.patches.init_neighbor_rank_3d(patch_rank_map)
 
     def _fill_particles(self, sim: Simulation, new_patches: Sequence[Union[Patch2D, Patch3D]]):
         """Fill particles in newly entered regions of moving window.
@@ -671,6 +703,7 @@ class MovingWindow:
             y_list = typed.List([p.particles[ispec].y for p in patches])
             z_list = typed.List([p.particles[ispec].z for p in patches])
             w_list = typed.List([p.particles[ispec].w for p in patches])
+            gens = typed.List(sim.rand_gen.spawn(len(patches)))
 
             num_macro_particles = get_num_macro_particles_3d(
                 s.density_jit,
@@ -698,7 +731,8 @@ class MovingWindow:
                 len(patches), 
                 s.density_min, 
                 s.ppc_jit,
-                x_list, y_list, z_list, w_list
+                x_list, y_list, z_list, w_list,
+                gens
             )
 
 class SetTemperature(Callback):
