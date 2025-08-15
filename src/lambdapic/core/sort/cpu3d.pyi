@@ -17,12 +17,16 @@ def sort_particles_patches_3d(
     dy: float,
     dz: float,
     npatches: int,
-    bin_count_list: List[np.ndarray],
-    bin_count_not_list: List[np.ndarray],
-    bin_start_counter_list: List[np.ndarray],
-    bucket_index_list: List[np.ndarray],
-    bucket_index_ref_list: List[np.ndarray],
-    bucket_index_target_list: List[np.ndarray],
+    
+    bucket_count_list: List[np.ndarray],
+    bucket_bound_min_list: List[np.ndarray],
+    bucket_bound_max_list: List[np.ndarray],
+    bucket_count_not_list: List[np.ndarray],
+    bucket_start_counter_list: List[np.ndarray],
+
+    particle_index_list: List[np.ndarray],
+    particle_index_ref_list: List[np.ndarray],
+    particle_index_target_list: List[np.ndarray],
     buf_list: List[np.ndarray]
 ) -> None: ...
 
