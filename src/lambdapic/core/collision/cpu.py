@@ -66,7 +66,7 @@ def pairing(
     if npart1 == 0 or npart2 == 0:
         return
 
-    if npart1 > npart2:
+    if npart1 >= npart2:
         npairs = npart1
         npairs_not_repeated = npart2
         shuffled_idx = np.arange(nbuf1) + ip_start1
