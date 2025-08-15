@@ -25,8 +25,8 @@ static void calculate_cell_index(
                 particle_index[ip] = icell;
                 bucket_count[icell] += 1;
             } else {
-                particle_index[ip] = nx * ny - 1; // out-of-bound particles to the last bucket
-                bucket_count[nx * ny - 1] += 1;
+                particle_index[ip] = nx * ny * nz - 1; // out-of-bound particles to the last bucket
+                bucket_count[nx * ny * nz - 1] += 1;
             }
         } else {
             // dead stay in the same bucket with the previous particle
