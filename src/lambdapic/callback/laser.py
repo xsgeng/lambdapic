@@ -1,15 +1,16 @@
 from typing import Optional
 import numpy as np
 
-from lambdapic.core.boundary.cpml import PMLXmin
-from lambdapic.core.utils.logger import logger
+from ..core.boundary.cpml import PMLXmin
+from ..core.boundary.utils import get_pml
+from ..core.utils.logger import logger
 from ..core.fields import Fields
 from ..core.patch.patch import Patch
 from numba import njit, prange, typed
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from numpy.typing import NDArray
 
-from ..simulation import Simulation
+from ..simulation import Simulation, Simulation3D
 
 @njit(parallel=True, cache=True)
 def _update_laser_bfields_2d(
@@ -17,12 +18,13 @@ def _update_laser_bfields_2d(
     ex, ey, ez,
     bx, by, bz,
     jx, jy, jz, 
-    dx, dy, nx, ny, dt,
+    dx, dy, dt,
+    iy_start, iy_end,
     ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], 
 ):
-    for iy in prange(ny):
+    for iy in prange(iy_start, iy_end):
         bx[laserpos-1, iy] = bx[0, iy]
-    for iy in prange(ny):
+    for iy in prange(iy_start, iy_end):
         bz[laserpos-1, iy] = 1 / ((c*dt / dx + 1)*c) * (
             + 4 * ey_source[iy]
             + 2 * (ey[0, iy] + c * 0.5*(bz[0, iy] + bz[-1, iy]))
@@ -45,13 +47,14 @@ def _update_laser_bfields_3d(
     ex, ey, ez,
     bx, by, bz,
     jx, jy, jz, 
-    dx, dy, dz, nx, ny, nz, dt,
+    dx, dy, dz, dt,
+    iy_start, iy_end, iz_start, iz_end,
     ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], 
 ):
-    for iy in prange(ny):
+    for iy in prange(iy_start, iy_end):
         bx[laserpos-1, iy, :] = bx[0, iy, :]
-    for iy in prange(ny):
-        for iz in range(nz):
+    for iy in prange(iy_start, iy_end):
+        for iz in range(iz_start, iz_end):
             bz[laserpos-1, iy, iz] = 1 / ((c*dt / dx + 1)*c) * (
                 + 4 * ey_source[iy, iz]
                 + 2 * (ey[0, iy, iz] + c * 0.5*(bz[0, iy, iz] + bz[-1, iy, iz]))
@@ -73,11 +76,11 @@ def _update_laser_bfields_3d(
 class Laser:
     stage = "_laser"
     disabled = False
-    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
+    def _get_r(self, sim, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
         raise NotImplementedError
     
-    def _update_bfields(self, laserpos: int, f: Fields, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+    def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
         raise NotImplementedError
     
 class Laser2D(Laser):
@@ -86,30 +89,49 @@ class Laser2D(Laser):
         r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2)
         return r
 
-    def _update_bfields(self, laserpos: int, f: Fields, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+    def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+        f = patch.fields
+        iy_start, iy_end = 0, f.ny
+        if (pml := get_pml(patch.pml_boundary, "ymin")) is not None:
+            iy_start = pml.thickness
+        if (pml := get_pml(patch.pml_boundary, "ymax")) is not None:
+            iy_end = f.ny - pml.thickness
         _update_laser_bfields_2d(
             laserpos,
             f.ex, f.ey, f.ez,
             f.bx, f.by, f.bz,
             f.jx, f.jy, f.jz,
-            f.dx, f.dy, f.nx, f.ny, dt,
+            f.dx, f.dy, dt,
+            iy_start, iy_end,
             ey_source,
             ez_source
         )
 
 class Laser3D(Laser):
-    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
+    def _get_r(self, sim: Simulation3D, patch: Patch) -> NDArray[np.float64]:
         f = patch.fields
         r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2)**2 + (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2)**2)**0.5
         return r
     
-    def _update_bfields(self, laserpos: int, f: Fields, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+    def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+        f = patch.fields
+        iy_start, iy_end = 0, f.ny
+        iz_start, iz_end = 0, f.nz
+        if (pml := get_pml(patch.pml_boundary, "ymin")) is not None:
+            iy_start = pml.thickness
+        if (pml := get_pml(patch.pml_boundary, "ymax")) is not None:
+            iy_end = f.ny - pml.thickness
+        if (pml := get_pml(patch.pml_boundary, "zmin")) is not None:
+            iz_start = pml.thickness
+        if (pml := get_pml(patch.pml_boundary, "zmax")) is not None:
+            iz_end = f.nz - pml.thickness
         _update_laser_bfields_3d(
             laserpos,
             f.ex, f.ey, f.ez,
             f.bx, f.by, f.bz,
             f.jx, f.jy, f.jz,
-            f.dx, f.dy, f.dz, f.nx, f.ny, f.nz, dt,
+            f.dx, f.dy, f.dz, dt,
+            iy_start, iy_end, iz_start, iz_end,
             ey_source,
             ez_source
         )
@@ -195,8 +217,7 @@ class SimpleLaser(Laser):
                 # - Temporal oscillation: sin(ω₀t)
                 # - Smooth temporal envelope: tprof
                 efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
-                f = p.fields
-                self._update_bfields(laserpos, f, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
+                self._update_bfields(laserpos, p, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
 
 class SimpleLaser2D(Laser2D, SimpleLaser):
     ...
@@ -318,8 +339,7 @@ class GaussianLaser(Laser):
                 
                 # Set fields based on polarization
                 efield = amp * np.sin(phase) * tprof
-                f = p.fields
-                self._update_bfields(laserpos, f, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
+                self._update_bfields(laserpos, p, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
 
 class GaussianLaser2D(Laser2D, GaussianLaser):
     ...

@@ -1,5 +1,44 @@
+from typing import List
+
 from scipy.constants import c, epsilon_0
 
+from .cpml import PML, PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
+
+
+# 边界类型到PML类的映射
+_BOUNDARY_PML_MAPPING = {
+    'xmin': PMLXmin,
+    'xmax': PMLXmax,
+    'ymin': PMLYmin,
+    'ymax': PMLYmax,
+    'zmin': PMLZmin,
+    'zmax': PMLZmax
+}
+
+def _validate_boundary(boundary: str) -> str:
+    boundary = boundary.lower()
+    if boundary not in _BOUNDARY_PML_MAPPING:
+        raise ValueError('boundary must be xmin, xmax, ymin, ymax, zmin, or zmax')
+    return boundary
+
+def has_pml(pml_boundary: List[PML], boundary: str) -> bool:
+    boundary = _validate_boundary(boundary)
+    pml_class = _BOUNDARY_PML_MAPPING[boundary]
+    return any(isinstance(pml, pml_class) for pml in pml_boundary)
+    
+def get_pml(pml_boundary: List[PML], boundary: str) -> PML|None:
+    boundary = _validate_boundary(boundary)
+    pml_class = _BOUNDARY_PML_MAPPING[boundary]
+    
+    # 直接查找并返回第一个匹配的PML对象
+    for pml in pml_boundary:
+        if isinstance(pml, pml_class):
+            return pml
+    
+    return None
+        
+        
+        
 def clamp_zero_bfield(bx, by, bz, n_guard):
     clamp_zero_xmin(bx, n_guard, halfgrid=False)
     clamp_zero_xmax(bx, n_guard, halfgrid=False)
