@@ -102,6 +102,7 @@ class Species:
         self.density_jit: Callable | None = None
         self.ppc_jit: Callable | None = None
 
+        self._aux_attrs: list[str] = []
         self._ispec: int | None = None
         
     @property
