@@ -295,7 +295,7 @@ class Simulation:
         self._init_pml()
         
         for s in self.species:
-            npart = self.patches.add_species(s)
+            npart = self.patches.add_species(s, aux_attrs=s._aux_attrs)
             logger.info(f"Rank {rank}: Adding {npart:,} macro particles to {s.name}")
             
                 
