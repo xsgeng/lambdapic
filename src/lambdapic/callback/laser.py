@@ -51,21 +51,23 @@ def _update_laser_bfields_3d(
     for iy in prange(ny):
         bx[laserpos-1, iy, :] = bx[0, iy, :]
     for iy in prange(ny):
-        bz[laserpos-1, iy, :] = 1 / ((c*dt / dx + 1)*c) * (
-            + 4 * ey_source[iy, :]
-            + 2 * (ey[0, iy, :] + c * 0.5*(bz[0, iy, :] + bz[-1, iy, :]))
-            - 2 * ey[laserpos, iy, :]
-            + dt/epsilon_0 * jy[laserpos, iy, :]
-            + (c*dt / dx - 1)*c * bz[laserpos, iy, :]
-        )
-        by[laserpos-1, iy, :] = 1 / ((c*dt / dx + 1)*c) * (
-            - 4 * ez_source[iy, :]
-            - 2 * (ez[0, iy, :] - c * 0.5*(by[0, iy, :] + by[-1, iy, :]))
-            + 2 * ez[laserpos, iy, :]
-            - (dt*c**2) * (bx[laserpos, iy, :] - bx[laserpos, iy, :]-1)/dy
-            - dt/epsilon_0 * jz[laserpos, iy, :]
-            + (c*dt / dx - 1)*c * by[laserpos, iy, :]
-        )
+        for iz in range(nz):
+            bz[laserpos-1, iy, iz] = 1 / ((c*dt / dx + 1)*c) * (
+                + 4 * ey_source[iy, iz]
+                + 2 * (ey[0, iy, iz] + c * 0.5*(bz[0, iy, iz] + bz[-1, iy, iz]))
+                - 2 * ey[laserpos, iy, iz]
+                - (dt*c**2) * (bx[laserpos, iy, iz] - bx[laserpos, iy, iz-1])/dz
+                + dt/epsilon_0 * jy[laserpos, iy, iz]
+                + (c*dt / dx - 1)*c * bz[laserpos, iy, iz]
+            )
+            by[laserpos-1, iy, iz] = 1 / ((c*dt / dx + 1)*c) * (
+                - 4 * ez_source[iy, iz]
+                - 2 * (ez[0, iy, iz] - c * 0.5*(by[0, iy, iz] + by[-1, iy, iz]))
+                + 2 * ez[laserpos, iy, iz]
+                - (dt*c**2) * (bx[laserpos, iy, iz] - bx[laserpos, iy-1, iz])/dy
+                - dt/epsilon_0 * jz[laserpos, iy, iz]
+                + (c*dt / dx - 1)*c * by[laserpos, iy, iz]
+            )
 
         
 class Laser:
