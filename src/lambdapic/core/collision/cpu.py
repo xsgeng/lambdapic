@@ -3,6 +3,8 @@ from math import sqrt
 from scipy.constants import c, pi, epsilon_0
 import numpy as np
 
+from ..utils.jit_spinner import jit_spinner
+
 @njit(cache=True)
 def self_pairing(dead, ip_start, ip_end, random_gen):
     nbuf = ip_end - ip_start
@@ -399,6 +401,7 @@ def inter_collision_cell(
             uz2[ip2] = p2z_new / m2 / c
             inv_gamma2[ip2] = 1/sqrt(ux2[ip2]**2 + uy2[ip2]**2 + uz2[ip2]**2 + 1)
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def self_collision_parallel(
     cell_bound_min, cell_bound_max, 
@@ -441,6 +444,7 @@ def self_collision(
             )
 
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def inter_collision_parallel(
     cell_bound_min1, cell_bound_max1, 

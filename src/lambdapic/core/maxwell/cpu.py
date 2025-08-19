@@ -2,6 +2,8 @@ import numpy as np
 from numba import njit, prange
 from scipy.constants import c, epsilon_0, mu_0
 
+from ..utils.jit_spinner import jit_spinner
+
 
 @njit(cache=True, inline='always')
 def update_efield_2d(
@@ -33,7 +35,8 @@ def update_bfield_2d(
             by[i, j] -= dt * (-(ez[i+1, j] - ez[i, j]) / dx)
             bz[i, j] -= dt * ( (ey[i+1, j] - ey[i, j]) / dx - (ex[i, j+1] - ex[i, j]) / dy)
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_efield_patches_2d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -56,7 +59,8 @@ def update_efield_patches_2d(
         update_efield_2d(ex, ey, ez, bx, by, bz, jx, jy, jz, dx, dy, dt, nx, ny, n_guard)
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_bfield_patches_2d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -109,7 +113,8 @@ def update_bfield_3d(
                 bz[i, j, k] -= dt * ((ey[i+1, j, k] - ey[i, j, k]) / dx - (ex[i, j+1, k] - ex[i, j, k]) / dy)
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_efield_patches_3d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -132,7 +137,8 @@ def update_efield_patches_3d(
         update_efield_3d(ex, ey, ez, bx, by, bz, jx, jy, jz, dx, dy, dz, dt, nx, ny, nz, n_guard)
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_bfield_patches_3d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
