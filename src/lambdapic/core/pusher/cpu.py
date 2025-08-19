@@ -1,11 +1,13 @@
 from numba import njit, prange
 from scipy.constants import c
 
+from ..utils.jit_spinner import jit_spinner
 from .boris import boris
 from .photon import update_photon_gamma
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def boris_push_patches(
     ux_list, uy_list, uz_list, inv_gamma_list,
     ex_list, ey_list, ez_list,
@@ -31,7 +33,8 @@ def boris_push_patches(
         boris( ux, uy, uz, inv_gamma, ex, ey, ez, bx, by, bz, q, m, npart, is_dead, dt )
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def photon_push_patches(
     ux_list, uy_list, uz_list, inv_gamma_list,
     is_dead_list,
@@ -63,7 +66,8 @@ def push_position_2d( x, y, ux, uy, inv_gamma, N, is_dead, dt):
         x[ip] += cdt * inv_gamma[ip] * ux[ip]
         y[ip] += cdt * inv_gamma[ip] * uy[ip]
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def push_position_patches_2d(
     x_list, y_list,
     ux_list, uy_list, inv_gamma_list,

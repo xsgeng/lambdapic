@@ -11,7 +11,9 @@ from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from numpy.typing import NDArray
 
 from ..simulation import Simulation, Simulation3D
+from ..core.utils.jit_spinner import jit_spinner
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def _update_laser_bfields_2d(
     laserpos,
@@ -41,6 +43,7 @@ def _update_laser_bfields_2d(
             + (c*dt / dx - 1)*c * by[laserpos, iy]
         )
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def _update_laser_bfields_3d(
     laserpos,

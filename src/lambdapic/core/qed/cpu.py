@@ -1,6 +1,7 @@
 import numpy as np
 from numba import boolean, float64, int64, njit, prange, void
 
+from ..utils.jit_spinner import jit_spinner
 from .inline import (
     calculate_chi_inline,
     create_pair_inline_2d,
@@ -14,6 +15,7 @@ from .optical_depth import update_tau_e, update_tau_gamma
 calculate_chi_cpu = njit(calculate_chi_inline)
 
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_chi_patches(
     ux_list, uy_list, uz_list, inv_gamma_list,
@@ -53,6 +55,7 @@ def update_chi_patches(
 
 
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def radiation_event_patches(
     tau_list,
@@ -82,6 +85,7 @@ def radiation_event_patches(
         )
 
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def pairproduction_event_patches(
     tau_list,
@@ -112,6 +116,7 @@ def pairproduction_event_patches(
 create_photon_2d = njit(create_photon_inline_2d)
 find_event_index = njit(find_event_index_inline)
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def create_photon_patches_2d(
     x_ele_list, y_ele_list, ux_ele_list, uy_ele_list, uz_ele_list, w_ele_list, is_dead_ele_list,
@@ -150,6 +155,7 @@ def create_photon_patches_2d(
 
 create_pair_2d = njit(create_pair_inline_2d)
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def create_pair_patches_2d(
     x_pho_list, y_pho_list, ux_pho_list, uy_pho_list, uz_pho_list, w_pho_list, is_dead_pho_list,
@@ -199,6 +205,7 @@ def create_pair_patches_2d(
 create_photon_3d = njit(create_photon_inline_3d)
 find_event_index = njit(find_event_index_inline)
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def create_photon_patches_3d(
     x_ele_list, y_ele_list, z_ele_list, ux_ele_list, uy_ele_list, uz_ele_list, w_ele_list, is_dead_ele_list,
@@ -239,6 +246,7 @@ def create_photon_patches_3d(
 
 create_pair_3d = njit(create_pair_inline_3d)
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def create_pair_patches_3d(
     x_pho_list, y_pho_list, z_pho_list, ux_pho_list, uy_pho_list, uz_pho_list, w_pho_list, is_dead_pho_list,
@@ -288,6 +296,7 @@ def create_pair_patches_3d(
             x_pos, y_pos, z_pos, ux_pos, uy_pos, uz_pos, inv_gamma_pos, w_pos, is_dead_pos, 
         )
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def photon_recoil_patches(
     ux_list, uy_list, uz_list, inv_gamma_list,
@@ -313,6 +322,7 @@ def photon_recoil_patches(
                 inv_gamma[ip] = (1 + ux[ip]**2 + uy[ip]**2 + uz[ip]**2) ** -0.5
 
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def remove_photon_patches(
     event_list, is_dead_list, npatches

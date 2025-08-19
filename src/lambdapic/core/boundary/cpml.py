@@ -3,7 +3,7 @@ from numba import njit, prange
 from scipy.constants import c, epsilon_0
 
 from ..fields import Fields, Fields2D, Fields3D
-
+from ..utils.jit_spinner import jit_spinner
 
 class Boundary:
     ...
@@ -376,7 +376,8 @@ def update_bfield_cpml_2d(
 
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_efield_cpml_patches_2d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -402,7 +403,8 @@ def update_efield_cpml_patches_2d(
         update_efield_cpml_2d(ex, ey, ez, bx, by, bz, jx, jy, jz, kappa_ex, kappa_ey, dx, dy, dt, nx, ny, n_guard)
 
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_bfield_cpml_patches_2d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -468,7 +470,8 @@ def update_bfield_cpml_3d(
                 bz[i,j,k] -= (efactor_x*(ey[i+1,j,k] - ey[i,j,k])/dx 
                             - efactor_y*(ex[i,j+1,k] - ex[i,j,k])/dy)
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_efield_cpml_patches_3d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -496,7 +499,8 @@ def update_efield_cpml_patches_3d(
                             kappa_ex, kappa_ey, kappa_ez, 
                             dx, dy, dz, dt, nx, ny, nz, n_guard)
 
-@njit(cache=True, parallel=True)
+@jit_spinner
+@njit(parallel=True, cache=True)
 def update_bfield_cpml_patches_3d(
     ex_list, ey_list, ez_list,
     bx_list, by_list, bz_list,
@@ -596,6 +600,7 @@ def update_psi_y_and_b_2d(kappa, sigma, a, nx, dt, dy, start, stop, ex, ez, bx, 
             bx[ix, ipos] -= fac * psi_bx_y[ix, ipos]
             bz[ix, ipos] += fac * psi_bz_y[ix, ipos]
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_psi_x_and_e_3d(kappa, sigma, a, ny, nz, dt, dx, start, stop, by, bz, ey, ez, psi_ey_x, psi_ez_x):
     fac = dt * c**2
@@ -616,6 +621,7 @@ def update_psi_x_and_e_3d(kappa, sigma, a, ny, nz, dt, dx, start, stop, by, bz, 
                 ey[ipos, iy, iz] -= fac * psi_ey_x[ipos, iy, iz]
                 ez[ipos, iy, iz] += fac * psi_ez_x[ipos, iy, iz]
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_psi_x_and_b_3d(kappa, sigma, a, ny, nz, dt, dx, start, stop, ey, ez, by, bz, psi_by_x, psi_bz_x):
     fac = dt
@@ -636,6 +642,7 @@ def update_psi_x_and_b_3d(kappa, sigma, a, ny, nz, dt, dx, start, stop, ey, ez, 
                 by[ipos, iy, iz] += fac * psi_by_x[ipos, iy, iz]
                 bz[ipos, iy, iz] -= fac * psi_bz_x[ipos, iy, iz]
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_psi_y_and_e_3d(kappa, sigma, a, nx, nz, dt, dy, start, stop, bx, bz, ex, ez, psi_ex_y, psi_ez_y):
     fac = dt * c**2
@@ -655,6 +662,7 @@ def update_psi_y_and_e_3d(kappa, sigma, a, nx, nz, dt, dy, start, stop, bx, bz, 
                 ex[ix, ipos, iz] += fac * psi_ex_y[ix, ipos, iz]
                 ez[ix, ipos, iz] -= fac * psi_ez_y[ix, ipos, iz]
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_psi_y_and_b_3d(kappa, sigma, a, nx, nz, dt, dy, start, stop, ex, ez, bx, bz, psi_bx_y, psi_bz_y):
     fac = dt
@@ -674,6 +682,7 @@ def update_psi_y_and_b_3d(kappa, sigma, a, nx, nz, dt, dy, start, stop, ex, ez, 
                 bx[ix, ipos, iz] -= fac * psi_bx_y[ix, ipos, iz]
                 bz[ix, ipos, iz] += fac * psi_bz_y[ix, ipos, iz]
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_psi_z_and_e_3d(kappa, sigma, a, nx, ny, dt, dz, start, stop, bx, by, ex, ey, psi_ex_z, psi_ey_z):
     fac = dt * c**2
@@ -694,6 +703,7 @@ def update_psi_z_and_e_3d(kappa, sigma, a, nx, ny, dt, dz, start, stop, bx, by, 
                 ex[ix, iy, ipos] += fac * psi_ex_z[ix, iy, ipos]
                 ey[ix, iy, ipos] -= fac * psi_ey_z[ix, iy, ipos]
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def update_psi_z_and_b_3d(kappa, sigma, a, nx, ny, dt, dz, start, stop, ex, ey, bx, by, psi_bx_z, psi_by_z):
     fac = dt
