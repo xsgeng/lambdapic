@@ -700,8 +700,8 @@ def update_psi_z_and_e_3d(kappa, sigma, a, nx, ny, dt, dz, start, stop, bx, by, 
                 psi_ey_z[ix, iy, ipos] = bcoeff * psi_ey_z[ix, iy, ipos] \
                     + ccoeff_d * (bx[ix, iy, ipos] - bx[ix, iy, ipos-1])
 
-                ex[ix, iy, ipos] += fac * psi_ex_z[ix, iy, ipos]
-                ey[ix, iy, ipos] -= fac * psi_ey_z[ix, iy, ipos]
+                ex[ix, iy, ipos] -= fac * psi_ex_z[ix, iy, ipos]
+                ey[ix, iy, ipos] += fac * psi_ey_z[ix, iy, ipos]
 
 @jit_spinner
 @njit(parallel=True, cache=True)
