@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Literal, Optional, Sequence
 
 import mpi4py
@@ -91,70 +92,72 @@ class Simulation3DConfig(SimulationConfig):
             raise ValueError(f'nz ({self.nz}) must be divisible by npatch_z ({self.npatch_z})')
         return self
 
-
+@dataclass
 class Simulation:
     """Main simulation class for 2D Particle-In-Cell (PIC) simulations.
+
+    Parameters:
+        nx (int): Number of grid cells in x direction. Must be divisible by npatch_x.
+        ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
+        dx (float): Grid cell size in x direction (meters).
+        dy (float): Grid cell size in y direction (meters).
+        npatch_x (int): Number of patches to divide the domain into along x direction.
+        npatch_y (int): Number of patches to divide the domain into along y direction.
+        dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
+            The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy²)). Defaults to 0.95.
+        n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
+        boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], optional): 
+            Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
+            Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
+        cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
+        log_file (str, optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+        truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
+        random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
+        comm (mpi4py.MPI.Comm, optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
     """
-    def __init__(
-        self,
-        nx: int,
-        ny: int,
-        dx: float,
-        dy: float,
-        npatch_x: int,
-        npatch_y: int,
-        nsteps: int | None = None,
-        dt_cfl: float = 0.95,
-        n_guard: int = 3,
-        boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = {
-            'xmin': 'pml',
-            'xmax': 'pml',
-            'ymin': 'pml',
-            'ymax': 'pml',
-        },
-        cpml_thickness: int = 6,
-        log_file: Optional[str] = None,
-        truncate_log: bool = True,
-        random_seed: Optional[int] = None,
-        comm: Optional[mpi4py.MPI.Comm] = None
-    ) -> None:
-        """
-        Args:
-            nx (int): Number of grid cells in x direction. Must be divisible by npatch_x.
-            ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
-            dx (float): Grid cell size in x direction (meters).
-            dy (float): Grid cell size in y direction (meters).
-            npatch_x (int): Number of patches to divide the domain into along x direction.
-            npatch_y (int): Number of patches to divide the domain into along y direction.
-            dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
-                The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy²)). Defaults to 0.95.
-            n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
-            boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], optional): 
-                Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
-                Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
-            cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
-            log_file (str, optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
-            truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
-            random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
-            comm (mpi4py.MPI.Comm, optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
-        """
-        config = SimulationConfig(
-            nx=nx,
-            ny=ny,
-            dx=dx,
-            dy=dy,
-            npatch_x=npatch_x,
-            npatch_y=npatch_y,
-            nsteps=nsteps,
-            dt_cfl=dt_cfl,
-            n_guard=n_guard,
-            boundary_conditions=boundary_conditions,
-            cpml_thickness=cpml_thickness,
-            log_file=log_file,
-            truncate_log=truncate_log,
-            random_seed=random_seed
-        )
+    nx: int
+    ny: int
+    nz: int = field(init=False)
+    dx: float
+    dy: float
+    dz: float = field(init=False)
+    npatch_x: int
+    npatch_y: int
+    npatch_z: int = field(init=False)
+    nsteps: int | None = field(default=None)
+    dt_cfl: float  = field(default=0.95)
+    n_guard: int = field(default=3)
+    boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = field(default_factory=lambda:{
+        'xmin': 'pml',
+        'xmax': 'pml',
+        'ymin': 'pml',
+        'ymax': 'pml',
+    })
+    cpml_thickness: int = field(default=6)
+    log_file: Optional[str] = field(default=None)
+    truncate_log: bool = field(default=True)
+    random_seed: Optional[int] = field(default=None)
+    comm: Optional[mpi4py.MPI.Comm] = field(default=None)
+
+    def _validate(self):
         self.dimension = 2
+
+        config = SimulationConfig(
+            nx=self.nx,
+            ny=self.ny,
+            dx=self.dx,
+            dy=self.dy,
+            npatch_x=self.npatch_x,
+            npatch_y=self.npatch_y,
+            nsteps=self.nsteps,
+            dt_cfl=self.dt_cfl,
+            n_guard=self.n_guard,
+            boundary_conditions=self.boundary_conditions,
+            cpml_thickness=self.cpml_thickness,
+            log_file=self.log_file,
+            truncate_log=self.truncate_log,
+            random_seed=self.random_seed
+        )
         
         self.nx = config.nx
         self.ny = config.ny
@@ -163,24 +166,29 @@ class Simulation:
         self.npatch_x = config.npatch_x
         self.npatch_y = config.npatch_y
         self.nsteps = config.nsteps
-        self.dt = config.dt_cfl * (dx**-2 + dy**-2)**-0.5 / c
+        self.dt = config.dt_cfl * (self.dx**-2 + self.dy**-2)**-0.5 / c
         self.n_guard = config.n_guard
         self.boundary_conditions = config.boundary_conditions
         self.cpml_thickness = config.cpml_thickness
+        self.random_seed = config.random_seed
 
         self.Lx = self.nx * self.dx
         self.Ly = self.ny * self.dy
 
         self.nx_per_patch = self.nx // self.npatch_x
         self.ny_per_patch = self.ny // self.npatch_y
+    
+        return config
+    
+    def __post_init__(self,) -> None:
+        config = self._validate()
 
         self.species: list[Species] = []
         
         self.itime = 0
-        self.random_seed = config.random_seed
         self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
 
-        self.comm = comm
+        self.comm = self.comm
         
         # Configure logger
         configure_logger(
@@ -828,66 +836,59 @@ class Simulation:
         
         self.mpi.comm.Barrier()
 
+Simulation2D = Simulation
 
+@dataclass
 class Simulation3D(Simulation):
-    def __init__(
-        self,
-        nx: int, ny: int, nz: int,
-        dx: float, dy: float, dz: float,
-        npatch_x: int, npatch_y: int, npatch_z: int,
-        nsteps: int | None = None,
-        dt_cfl: float = 0.95,
-        n_guard: int = 3,
-        cpml_thickness: int = 6,
-        boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = {
-            'xmin': 'pml',
-            'xmax': 'pml',
-            'ymin': 'pml',
-            'ymax': 'pml',
-            'zmin': 'pml',
-            'zmax': 'pml',
-        },
-        log_file: Optional[str] = None,
-        truncate_log: bool = True,
-        random_seed: Optional[int] = None,
-        comm: Optional[mpi4py.MPI.Comm] = None
-    ) -> None:
-        """Initialize a 3D PIC simulation.
+    """Main class for 3D PIC simulation.
+    
+    Parameters:
+        nx (int): Number of grid cells in x direction. Must be divisible by npatch_x.
+        ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
+        nz (int): Number of grid cells in z direction. Must be divisible by npatch_z.
+        dx (float): Grid cell size in x direction (meters).
+        dy (float): Grid cell size in y direction (meters).
+        dz (float): Grid cell size in z direction (meters).
+        npatch_x (int): Number of patches to divide the domain into along x direction.
+        npatch_y (int): Number of patches to divide the domain into along y direction.
+        npatch_z (int): Number of patches to divide the domain into along z direction.
+        dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
+            The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy² + 1/dz²)). Defaults to 0.95.
+        n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
+        boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']], optional): 
+            Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'.
+            Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
+        cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
+        log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+        truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
+        random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
+        comm (Optional[mpi4py.MPI.Comm], optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
+    """
+    nz: int = field(init=True)
+    dz: float = field(init=True)
+    npatch_z: int = field(init=True)
+    boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = field(default_factory=lambda:{
+        'xmin': 'pml',
+        'xmax': 'pml',
+        'ymin': 'pml',
+        'ymax': 'pml',
+        'zmin': 'pml',
+        'zmax': 'pml',
+    })
 
-        Args:
-            nx (int): Number of grid cells in x direction. Must be divisible by npatch_x.
-            ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
-            nz (int): Number of grid cells in z direction. Must be divisible by npatch_z.
-            dx (float): Grid cell size in x direction (meters).
-            dy (float): Grid cell size in y direction (meters).
-            dz (float): Grid cell size in z direction (meters).
-            npatch_x (int): Number of patches to divide the domain into along x direction.
-            npatch_y (int): Number of patches to divide the domain into along y direction.
-            npatch_z (int): Number of patches to divide the domain into along z direction.
-            dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
-                The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy² + 1/dz²)). Defaults to 0.95.
-            n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
-            boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']], optional): 
-                Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'.
-                Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
-            cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
-            log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
-            truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
-            random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
-            comm (Optional[mpi4py.MPI.Comm], optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
-        """
+    def _validate(self):
         config = Simulation3DConfig(
-            nx=nx, ny=ny, nz=nz,
-            dx=dx, dy=dy, dz=dz,
-            npatch_x=npatch_x, npatch_y=npatch_y, npatch_z=npatch_z,
-            nsteps=nsteps,
-            dt_cfl=dt_cfl,
-            n_guard=n_guard,
-            cpml_thickness=cpml_thickness,
-            boundary_conditions=boundary_conditions,
-            log_file=log_file,
-            truncate_log=truncate_log,
-            random_seed=random_seed
+            nx=self.nx, ny=self.ny, nz=self.nz,
+            dx=self.dx, dy=self.dy, dz=self.dz,
+            npatch_x=self.npatch_x, npatch_y=self.npatch_y, npatch_z=self.npatch_z,
+            nsteps=self.nsteps,
+            dt_cfl=self.dt_cfl,
+            n_guard=self.n_guard,
+            cpml_thickness=self.cpml_thickness,
+            boundary_conditions=self.boundary_conditions,
+            log_file=self.log_file,
+            truncate_log=self.truncate_log,
+            random_seed=self.random_seed
         )
         self.dimension = 3
         
@@ -904,7 +905,7 @@ class Simulation3D(Simulation):
 
         self.nsteps = config.nsteps
 
-        self.dt = config.dt_cfl * (dx**-2 + dy**-2 + dz**-2)**-0.5 / c
+        self.dt = config.dt_cfl * (self.dx**-2 + self.dy**-2 + self.dz**-2)**-0.5 / c
         self.n_guard = config.n_guard
         self.boundary_conditions = config.boundary_conditions
         self.cpml_thickness = config.cpml_thickness
@@ -917,27 +918,7 @@ class Simulation3D(Simulation):
         self.ny_per_patch = self.ny // self.npatch_y
         self.nz_per_patch = self.nz // self.npatch_z
 
-        self.species: list[Species] = []
-        
-        self.maxwell = None
-        self.interpolator = None
-        self.current_depositor = None
-        
-        self.itime = 0
-        self.random_seed = config.random_seed
-        self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
-
-        self.comm = comm
-        
-        # Configure logger
-        configure_logger(
-            sink=config.log_file,
-            truncate_existing=config.truncate_log
-        )
-        
-        logger.info("Simulation instance created")
-
-        self.initialized = False
+        return config
 
     def _set_global_domain_bounds(self):
         """Set global domain bounds on patches."""
