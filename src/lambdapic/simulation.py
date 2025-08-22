@@ -165,12 +165,7 @@ class Simulation:
         self.dy = config.dy
         self.npatch_x = config.npatch_x
         self.npatch_y = config.npatch_y
-        self.nsteps = config.nsteps
         self.dt = config.dt_cfl * (self.dx**-2 + self.dy**-2)**-0.5 / c
-        self.n_guard = config.n_guard
-        self.boundary_conditions = config.boundary_conditions
-        self.cpml_thickness = config.cpml_thickness
-        self.random_seed = config.random_seed
 
         self.Lx = self.nx * self.dx
         self.Ly = self.ny * self.dy
@@ -183,9 +178,15 @@ class Simulation:
     def __post_init__(self,) -> None:
         config = self._validate()
 
+        self.nsteps = config.nsteps
+        self.n_guard = config.n_guard
+        self.boundary_conditions = config.boundary_conditions
+        self.cpml_thickness = config.cpml_thickness
+
         self.species: list[Species] = []
         
         self.itime = 0
+        self.random_seed = config.random_seed
         self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
 
         self.comm = self.comm
@@ -903,12 +904,7 @@ class Simulation3D(Simulation):
         self.npatch_y = config.npatch_y
         self.npatch_z = config.npatch_z
 
-        self.nsteps = config.nsteps
-
         self.dt = config.dt_cfl * (self.dx**-2 + self.dy**-2 + self.dz**-2)**-0.5 / c
-        self.n_guard = config.n_guard
-        self.boundary_conditions = config.boundary_conditions
-        self.cpml_thickness = config.cpml_thickness
 
         self.Lx = self.nx * self.dx
         self.Ly = self.ny * self.dy
