@@ -738,18 +738,18 @@ class MovingWindow:
 class SetTemperature(Callback):
     """
     Callback to set the particle momenta (ux, uy, uz) for a species to a relativistic Maxwell-Jüttner distribution
-    with the specified temperature (in units of mc^2).
+    with the specified temperature (in units of eV).
 
     Args:
         species (Species): The target species whose temperature is to be set.
-        temperature (float): Temperature in units of mc^2 (theta = kT/mc^2).
+        temperature (float): Temperature in units of eV.
         interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
     """
     stage: str = "start"
-    def __init__(self, species: Species, temperature: float|List[float], interval: Union[int, Callable]|None = None) -> None:
+    def __init__(self, species: Species, temperature: float|int|List[float|int], interval: Union[int, Callable]|None = None) -> None:
         self.species = species
 
-        if isinstance(temperature, float):
+        if isinstance(temperature, (float, int)):
             self.temperature = [temperature] * 3
         else:
             self.temperature = temperature
@@ -760,14 +760,16 @@ class SetTemperature(Callback):
             self.interval = interval
 
     def _call(self, sim: Simulation) -> None:
-        ispec: int = sim.species.index(self.species)
+        ispec = self.species.ispec
         for p in sim.patches:
             part = p.particles[ispec]
             alive = part.is_alive
             n: int = alive.sum()
             if n == 0:
                 continue
-            ux, uy, uz = self.sample_maxwell_juttner(n, self.temperature[0])
+            
+            thetax = self.temperature[0]*e / (self.species.m * c**2)
+            ux, uy, uz = self.sample_maxwell_juttner(n, thetax)
             # stretch to simulate temperature anisotropy
             part.ux[alive] = ux
             part.uy[alive] = uy * self.temperature[1]/self.temperature[0]
