@@ -83,3 +83,9 @@ def configure_logger(
         diagnose=diagnose
     )
 
+def rank_log(msg: str, comm):
+    rank = comm.Get_rank()
+    if rank == 0:
+        logger.info(msg)
+    else:
+        logger.debug(f"Rank {rank}: {msg}")

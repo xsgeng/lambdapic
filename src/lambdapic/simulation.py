@@ -31,7 +31,7 @@ from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductio
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
 from .core.species import Electron, Photon, Species
-from .core.utils.logger import configure_logger, logger
+from .core.utils.logger import configure_logger, logger, rank_log
 from .core.utils.timer import Timer
 from .utils import check_newer_version_on_pypi, is_version_outdated
 
@@ -189,8 +189,6 @@ class Simulation:
         self.random_seed = config.random_seed
         self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
 
-        self.comm = self.comm
-        
         # Configure logger
         configure_logger(
             sink=config.log_file,
@@ -283,24 +281,24 @@ class Simulation:
                 patches_list[p.rank].append(p)
 
         comm.Barrier()
-        logger.info(f"Rank {rank}: Receiving patch info")
+        rank_log("Receiving patch info", comm)
         self.patches: Patches = comm.scatter(patches_list, root=0)
 
         self._set_global_domain_bounds()
         
-        logger.info(f"Rank {rank}: Initializing neighbor indices")
+        rank_log("Initializing neighbor indices", comm)
         if self.dimension == 2:
             self.patches.init_neighbor_ipatch_2d()
         elif self.dimension == 3:
             self.patches.init_neighbor_ipatch_3d()
 
-        logger.info(f"Rank {rank}: Initializing fields")
+        rank_log("Initializing fields", comm)
         self._init_fields()
         
-        logger.info(f"Rank {rank}: Initializing MPI manager")
+        rank_log("Initializing MPI manager", comm)
         self.mpi = MPIManager.create(self.patches, self.comm)
 
-        logger.info(f"Rank {rank}: Adding PML boundaries")
+        rank_log("Adding PML boundaries", comm)
         self._init_pml()
         
         for s in self.species:
@@ -308,28 +306,28 @@ class Simulation:
             logger.info(f"Rank {rank}: Adding {npart:,} macro particles to {s.name}")
             
                 
-        logger.info(f"Rank {rank}: Creating random generators")
+        rank_log("Creating random generators", comm)
         self._init_random_generator()
         
-        logger.info(f"Rank {rank}: Filling particles")
+        rank_log("Filling particles", comm)
         self.patches.fill_particles(self.rand_gen)
 
-        logger.info(f"Rank {rank}: Initializing Maxwell solver")
+        rank_log("Initializing Maxwell solver", comm)
         self._init_maxwell_solver()
         
-        logger.info(f"Rank {rank}: Initializing field interpolator")
+        rank_log("Initializing field interpolator", comm)
         self._init_interpolator()
         
-        logger.info(f"Rank {rank}: Initializing current depositor")
+        rank_log("Initializing current depositor", comm)
         self._init_current_depositor()
         
-        logger.info(f"Rank {rank}: Initializing pushers")
+        rank_log("Initializing pushers", comm)
         self._init_pushers()
 
-        logger.info(f"Rank {rank}: Initializing QED modules")
+        rank_log("Initializing QED modules", comm)
         self._init_qed()
 
-        logger.info(f"Rank {rank}: Initializing particle sorter")
+        rank_log("Initializing particle sorter", comm)
         self._init_sorter()
         
         self.initialized = True
@@ -484,10 +482,10 @@ class Simulation:
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
             if s.pusher == "boris":
-                logger.info(f"Using Boris pusher for {s.name}")
+                rank_log(f"Using Boris pusher for {s.name}", self.mpi.comm)
                 self.pusher.append(BorisPusher(self.patches, ispec))
             elif s.pusher == "photon":
-                logger.info(f"Using Photon pusher for {s.name}")
+                rank_log(f"Using Photon pusher for {s.name}", self.mpi.comm)
                 self.pusher.append(PhotonPusher(self.patches, ispec))
 
     def _init_qed(self):
@@ -671,7 +669,7 @@ class Simulation:
                 not self.pairproduction[ispec] and \
                 not stages_in_pusher.intersection([stage for stage, cb in stage_callbacks.stage_callbacks.items() if cb]):
                 use_unified_pusher[ispec] = True
-                logger.info(f"Rank {self.mpi.rank}: No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}")
+                rank_log(f"No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}", self.mpi.comm)
 
         if self.mpi.rank == 0 and os.environ.get("LAMBDAPIC_CHECK_UPDATE", "1") == "1":
             with yaspin(text="Checking for newer version on PyPI. Disable with LAMBDAPIC_CHECK_UPDATE=0"):
