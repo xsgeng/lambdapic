@@ -44,6 +44,7 @@ class SimulationConfig(BaseModel):
     npatch_x: int = Field(..., gt=0, description="Number of patches in x direction")
     npatch_y: int = Field(..., gt=0, description="Number of patches in y direction")
     nsteps: int | None = Field(None, gt=0, description="Number of simulation steps")
+    sim_time: float | None = Field(None, gt=0, description="Simulation time in seconds")
     dt_cfl: float = Field(0.95, gt=0, le=1, description="CFL condition factor")
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
@@ -76,6 +77,13 @@ class SimulationConfig(BaseModel):
             raise ValueError(f'ny ({self.ny}) must be divisible by npatch_y ({self.npatch_y})')
         return self
 
+    @model_validator(mode='after')
+    def validate_nsteps_sim_time_mutual_exclusion(self):
+        """Validate that nsteps and sim_time are not both provided."""
+        if self.nsteps is not None and self.sim_time is not None:
+            raise ValueError("Cannot specify both nsteps and sim_time. Use only one.")
+        return self
+
 
 class Simulation3DConfig(SimulationConfig):
     nz: int = Field(..., gt=0, description="Number of cells in z direction")
@@ -103,10 +111,12 @@ class Simulation:
         dy (float): Grid cell size in y direction (meters).
         npatch_x (int): Number of patches to divide the domain into along x direction.
         npatch_y (int): Number of patches to divide the domain into along y direction.
+        nsteps (int, optional): Number of simulation steps. Mutually exclusive with sim_time.
+        sim_time (float, optional): Total simulation time in seconds. Mutually exclusive with nsteps.
         dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
             The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy²)). Defaults to 0.95.
         n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
-        boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], optional): 
+        boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], optional):
             Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
             Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
         cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
@@ -125,6 +135,7 @@ class Simulation:
     npatch_y: int
     npatch_z: int = field(init=False)
     nsteps: int | None = field(default=None)
+    sim_time: float | None = field(default=None)
     dt_cfl: float  = field(default=0.95)
     n_guard: int = field(default=3)
     boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = field(default_factory=lambda:{
@@ -150,6 +161,7 @@ class Simulation:
             npatch_x=self.npatch_x,
             npatch_y=self.npatch_y,
             nsteps=self.nsteps,
+            sim_time=self.sim_time if hasattr(self, 'sim_time') else None,
             dt_cfl=self.dt_cfl,
             n_guard=self.n_guard,
             boundary_conditions=self.boundary_conditions,
@@ -179,6 +191,7 @@ class Simulation:
         config = self._validate()
 
         self.nsteps = config.nsteps
+        self.sim_time = config.sim_time
         self.n_guard = config.n_guard
         self.boundary_conditions = config.boundary_conditions
         self.cpml_thickness = config.cpml_thickness
@@ -631,12 +644,13 @@ class Simulation:
                     
                     
 
-    def run(self, nsteps: int|None = None, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None,
+    def run(self, nsteps: int|None = None, sim_time: float|None = None, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None,
             stop_callback: Callable[..., bool] = lambda: False,):
-        """Run the simulation for a specified number of steps.
+        """Run the simulation for a specified number of steps or time duration.
         
         Args:
-            nsteps: Number of time steps to run
+            nsteps: Number of time steps to run (mutually exclusive with sim_time)
+            sim_time: Total simulation time in seconds (mutually exclusive with nsteps)
             callbacks: Callbacks to execute at different simulation stages
             
         Note:
@@ -676,14 +690,12 @@ class Simulation:
                 current_version, latest_version = check_newer_version_on_pypi()
             if current_version and latest_version and is_version_outdated(current_version, latest_version):
                 logger.info(f"New version available: {current_version} -> {latest_version}. Upgrade with `pip install --upgrade --upgrade-strategy=only-if-needed lambdapic`")
-
-        if nsteps is None:
-            if self.nsteps is None:
-                raise ValueError("nsteps must be provided either in Simulation or as an argument to run()")
-            nsteps = self.nsteps
+        
+        # handle simulation steps
+        nsteps_ = self._handle_nsteps(nsteps, sim_time)
             
         self.mpi.comm.Barrier()
-        for self.istep in trange(nsteps, disable=self.mpi.rank>0, position=1):
+        for self.istep in trange(nsteps_, disable=self.mpi.rank>0, position=1):
             
             # start of simulation stages
             with Timer('Callbacks: start stage'):
@@ -835,6 +847,27 @@ class Simulation:
         
         self.mpi.comm.Barrier()
 
+    def _handle_nsteps(self, nsteps, sim_time):
+        if nsteps is not None and sim_time is not None:
+            raise ValueError("Cannot specify both nsteps and sim_time in run() method")
+        # Determine number of steps to run based on nsteps or sim_time
+        elif nsteps is None and sim_time is None:
+            if self.nsteps is not None:
+                nsteps_ = self.nsteps
+            elif self.sim_time is not None:
+                # Calculate nsteps from simulation time
+                nsteps_ = int(self.sim_time / self.dt)
+            else:
+                raise ValueError("Must provide either nsteps or sim_time, either in Simulation or as an argument to run()")
+        elif sim_time is not None and nsteps is None:
+            # Calculate nsteps from simulation time parameter
+            nsteps_ = int(sim_time / self.dt)
+        elif nsteps is not None and sim_time is None:
+            nsteps_ = nsteps
+        else:
+            raise RuntimeError("This should never be reached")
+        return nsteps_
+
 Simulation2D = Simulation
 
 @dataclass
@@ -851,6 +884,8 @@ class Simulation3D(Simulation):
         npatch_x (int): Number of patches to divide the domain into along x direction.
         npatch_y (int): Number of patches to divide the domain into along y direction.
         npatch_z (int): Number of patches to divide the domain into along z direction.
+        nsteps (int, optional): Number of simulation steps. Mutually exclusive with sim_time.
+        sim_time (float, optional): Total simulation time in seconds. Mutually exclusive with nsteps.
         dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
             The actual time step is calculated as dt = dt_cfl / (c * sqrt(1/dx² + 1/dy² + 1/dz²)). Defaults to 0.95.
         n_guard (int, optional): Number of guard cells used for field synchronization between patches. Defaults to 3.
@@ -881,6 +916,7 @@ class Simulation3D(Simulation):
             dx=self.dx, dy=self.dy, dz=self.dz,
             npatch_x=self.npatch_x, npatch_y=self.npatch_y, npatch_z=self.npatch_z,
             nsteps=self.nsteps,
+            sim_time=self.sim_time,
             dt_cfl=self.dt_cfl,
             n_guard=self.n_guard,
             cpml_thickness=self.cpml_thickness,

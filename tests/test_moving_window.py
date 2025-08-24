@@ -121,11 +121,11 @@ def test_lwfa(lwfa_simulation2d):
     sim, win = lwfa_simulation2d
     
     # Run simulation for a few steps
-    sim.run(sim.nx_per_patch*2, [win])
+    sim.run(sim.nx_per_patch*2, callbacks=[win])
     
 def test_lwfa_3d(lwfa_simulation3d):
     sim, win = lwfa_simulation3d
     
     # Run simulation for a few steps
-    sim.run(sim.nx_per_patch*2, [win])
+    sim.run(sim.nx_per_patch*2, callbacks=[win])
     
