@@ -108,7 +108,7 @@ class Species:
     @property
     def ispec(self) -> int:
         if self._ispec is None:
-            raise ValueError("Species index is not set")
+            raise ValueError("Species index is not set. Maybe not added via Simulation.add_species")
         return self._ispec
     
     @ispec.setter

@@ -835,7 +835,7 @@ class SetTemperature(Callback):
             count: int = 0
             while count < size:
                 gamma_prop = gamma_dist.rvs(size-count)
-                beta_val = np.sqrt(1 - 1/(gamma_prop**2))
+                beta_val = beta_val = np.sqrt(1 - 1/(np.ma.array(gamma_prop, mask=gamma_prop < 1)**2))
                 accept = (np.random.uniform(size=size-count) < beta_val) & (gamma_prop >= 1)
                 gamma_accept = gamma_prop[accept]
                 n_accept = len(gamma_accept)
