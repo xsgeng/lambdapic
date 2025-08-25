@@ -29,7 +29,7 @@ class SaveFieldsToHDF5(Callback):
 
     Args:
         prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/t000100.h5', 'output/t000200.h5', etc.
-        interval (Union[int, Callable], optional): Number of timesteps between saves, or a 
+        interval (Union[int, float, Callable], optional): Number of timesteps between saves, or a 
             function(sim) -> bool that determines when to save. Defaults to 100.
         components (Optional[List[str]], optional): List of field components to save. 
             Available: ['ex','ey','ez','bx','by','bz','jx','jy','jz','rho']. 
@@ -38,7 +38,7 @@ class SaveFieldsToHDF5(Callback):
     stage="maxwell second"
     def __init__(self, 
                  prefix: Union[str, Path]='', 
-                 interval: Union[int, Callable] = 100,
+                 interval: Union[int, float, Callable] = 100,
                  components: Optional[List[str]] = None) -> None:
         self.prefix = Path(prefix)
         self.interval = interval
@@ -191,11 +191,11 @@ class SaveSpeciesDensityToHDF5(Callback):
     Args:
         species (Species): The species whose density will be saved
         prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/{species.name}_000100.h5', 'output/{species.name}_000200.h5', etc.
-        interval (Union[int, Callable], optional): Number of timesteps between saves, or a 
+        interval (Union[int, float, Callable], optional): Number of timesteps between saves, or a 
             function(sim) -> bool that determines when to save. Defaults to 100.
     """
     stage = "current deposition"
-    def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, Callable] = 100):
+    def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, float, Callable] = 100):
         self.species = species
         self.prefix = Path(prefix)
         self.prefix.mkdir(parents=True, exist_ok=True)
@@ -370,7 +370,7 @@ class SaveParticlesToHDF5(Callback):
     Args:
         species (Species): The particle species to save
         prefix (str): Prefix for output filenames. For example, if prefix is 'output', the files will be named 'output/{species.name}_particles_0000100.h5'.
-        interval (Union[int, Callable], optional): Number of timesteps between saves, or a
+        interval (Union[int, float, Callable], optional): Number of timesteps between saves, or a
             function(sim) -> bool that determines when to save. Defaults to 100.
         attrs (Optional[List[str]], optional): List of particle attributes to save.
             If None, saves all attributes.
@@ -379,7 +379,7 @@ class SaveParticlesToHDF5(Callback):
     def __init__(self,
                  species: Species,
                  prefix: Union[str, Path]='',
-                 interval: Union[int, Callable] = 100,
+                 interval: Union[int, float, Callable] = 100,
                  attrs: Optional[List[str]] = None) -> None:
         self.prefix = Path(prefix)
         self.prefix.mkdir(parents=True, exist_ok=True)

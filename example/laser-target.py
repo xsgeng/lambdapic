@@ -75,7 +75,7 @@ if __name__ == "__main__":
                     dict(field=n_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
                     dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
                 ],
-                prefix='laser-target', interval=500,
+                prefix='laser-target', interval=10e-15,
             ),
             SaveFieldsToHDF5('laser-target/fields', 500, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
             SaveSpeciesDensityToHDF5(carbon, 'laser-target/density', 500),

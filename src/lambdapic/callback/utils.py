@@ -237,7 +237,7 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
     Args:
         sim (Simulation): Simulation instance.
         species (Species): Species instance to extract density from.
-        interval (Union[int, Callable], optional): Number of timesteps between saves, or a function(sim) -> bool that determines when to save. Defaults to 100.
+        interval (Union[int, float, Callable], optional): Number of timesteps between saves, or a function(sim) -> bool that determines when to save. Defaults to 100.
 
     Example:
 
@@ -253,7 +253,7 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
     """
 
     stage = "current deposition"
-    def __init__(self, sim: Simulation, species: Species, interval: Union[int, Callable] = 100) -> None:
+    def __init__(self, sim: Simulation, species: Species, interval: Union[int, float, Callable] = 100) -> None:
         self.species = species
         self.interval = interval
         self.prev_rho = None
@@ -746,7 +746,7 @@ class SetTemperature(Callback):
         interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
     """
     stage: str = "start"
-    def __init__(self, species: Species, temperature: float|int|List[float|int], interval: Union[int, Callable]|None = None) -> None:
+    def __init__(self, species: Species, temperature: float|int|List[float|int], interval: Union[int, float, Callable]|None = None) -> None:
         self.species = species
 
         if isinstance(temperature, (float, int)):

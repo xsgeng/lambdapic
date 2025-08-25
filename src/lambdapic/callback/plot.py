@@ -29,7 +29,7 @@ class PlotFields(Callback):
             - vmin: Minimum value for normalization (optional)
             - vmax: Maximum value for normalization (optional)
         prefix (Union[str, Path]): Output directory for plots
-        interval (Union[int, Callable] = 100): Save interval
+        interval (Union[int, float, Callable] = 100): Save interval
         figsize (Tuple[float, float] = (10, 6)): Figure size
         dpi (int = 300): Image DPI
 
@@ -55,7 +55,7 @@ class PlotFields(Callback):
     def __init__(self,
                  field_configs: List[Dict],
                  prefix: Union[str, Path],
-                 interval: Union[int, Callable] = 100,
+                 interval: Union[int, float, Callable] = 100,
                  figsize: tuple | None = None,
                  dpi: int = 300):
         self.prefix = Path(prefix)

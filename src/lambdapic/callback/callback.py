@@ -27,7 +27,19 @@ class SimulationStage(str, Enum):
         """Get a list of all available stages."""
         return [stage.value for stage in cls]
 
-def callback(stage: Optional[str] = None, interval: Union[int, Callable] = 1) -> Callable:
+def _check_inverval(interval: int|float|Callable) -> None:
+    if not isinstance(interval, (int, float, Callable)):
+            raise TypeError(f"Invalid interval: {interval}. Must be int, float, or Callable")
+        
+    if isinstance(interval, float):
+        if interval <= 0 or interval >= 1:
+            raise ValueError(f"Invalid interval: {interval}. Must be between 0 and 1s if it is a float")
+    if isinstance(interval, int):
+        if interval < 1:
+            raise ValueError(f"Invalid interval: {interval}. Must be greater than 0 if it is an integer")
+        
+
+def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> Callable:
     """
     A decorator for implementing callbacks in PIC simulations.
     
@@ -38,8 +50,14 @@ def callback(stage: Optional[str] = None, interval: Union[int, Callable] = 1) ->
         stage: The simulation stage at which this callback should be executed.
                Must be one of the values defined in SimulationStage.
                Defaults to "maxwell second" if not specified.
-        interval: The number of iterations between calls to the callback function.
-               Defaults to 1 (call every iteration).
+        interval (int|float|Callable): if int, The number of iterations between calls to the callback function.
+
+            if float, The time interval in seconds between calls to the callback function.
+            
+            if Callable, The function to determine whether to call the callback function.
+               The function should take a Simulation object as an argument and return a boolean value.
+        
+            Defaults to 1 (call every iteration).
     
     Returns:
         Callable: The decorated callable object (an instance of a Callback subclass).
@@ -56,14 +74,20 @@ def callback(stage: Optional[str] = None, interval: Union[int, Callable] = 1) ->
         if stage_value not in SimulationStage.all_stages():
             raise ValueError(f"Invalid stage: {stage_value}. Must be one of: {SimulationStage.all_stages()}")
         
+        _check_inverval(interval)
+        
         @wraps(func)
         def wrapper(*args, **kwargs):
             sim = args[-1]
             if callable(interval):
                 if not interval(sim):
                     return
-            elif sim.itime % interval != 0:
-                return
+            elif isinstance(interval, int):
+                if sim.itime % interval != 0:
+                    return
+            elif isinstance(interval, float):
+                if sim.time % interval >= sim.dt:
+                    return
             
             if sim.mpi.rank == 0:
                 with yaspin(text=f"Running callback: {func.__name__}") as sp:
@@ -87,15 +111,21 @@ def callback(stage: Optional[str] = None, interval: Union[int, Callable] = 1) ->
 class Callback:
     """A base class for implementing callbacks in PIC simulations."""
 
-    interval: int | Callable
+    interval: int | float | Callable
     stage: str
     
     def __call__(self, sim: Simulation) -> None:
+        _check_inverval(self.interval)
+
         if callable(self.interval):
             if not self.interval(sim):
                 return
-        elif sim.itime % self.interval != 0:
-            return
+        elif isinstance(self.interval, int):
+            if sim.itime % self.interval != 0:
+                return
+        elif isinstance(self.interval, float):
+            if sim.time % self.interval >= sim.dt:
+                return
         
         if sim.mpi.rank == 0:
             with yaspin(text=f"Running callback: {self.__class__.__name__}") as sp:
