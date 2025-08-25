@@ -5,7 +5,7 @@ import numpy as np
 
 from ..utils.jit_spinner import jit_spinner
 
-@njit(cache=True)
+@njit
 def self_pairing(dead, ip_start, ip_end, random_gen):
     nbuf = ip_end - ip_start
     npart = nbuf - dead[ip_start:ip_end].sum()
@@ -53,7 +53,7 @@ def self_pairing(dead, ip_start, ip_end, random_gen):
             
         yield ipair, idx[ip1], idx[ip2], w_corr
 
-@njit(cache=True)
+@njit
 def pairing(
     dead1, ip_start1, ip_end1,
     dead2, ip_start2, ip_end2,
