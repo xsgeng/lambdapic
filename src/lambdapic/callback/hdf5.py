@@ -362,6 +362,7 @@ class SaveParticlesToHDF5(Callback):
     - ...
 
     The data structure in each file:
+    
     - `/id`
     - `/x, y` (positions)
     - `/w` (weights)

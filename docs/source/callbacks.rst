@@ -69,7 +69,25 @@ Use :any:`GaussianLaser2D` or :any:`GaussianLaser3D`.
 .. autoclass:: lambdapic.callback.laser.GaussianLaser3D
 
 Utility callbacks
-~~~~~~~~~~~~~~~~~~
+-----------------
+
+SetTemperature
+~~~~~~~~~~~~~~
+
+Set the temperature of a species to a given value in eV.
 
 .. autoclass:: lambdapic.callback.utils.SetTemperature
+
+ExtractSpeciesDensity
+~~~~~~~~~~~~~~~~~~~~~
+
+Extract the density of a species to buffer.
+
 .. autoclass:: lambdapic.callback.utils.ExtractSpeciesDensity
+
+LoadParticles
+~~~~~~~~~~~~~
+
+Load particles from a hdf5 file.
+
+.. autoclass:: lambdapic.callback.utils.LoadParticles
