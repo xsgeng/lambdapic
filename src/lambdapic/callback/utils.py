@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Union
 
+import h5py
 import numpy as np
 from numba import typed
 from numpy.typing import NDArray
@@ -852,3 +853,125 @@ class SetTemperature(Callback):
         uz = u * costheta
         
         return  ux, uy, uz
+    
+class LoadParticles(Callback):
+    """
+    Callback to load particles from HDF5 files with batch processing support.
+    
+    This callback loads particle data from HDF5 files and distributes particles
+    to their respective simulation patches based on spatial coordinates. It supports
+    batch processing to handle large datasets efficiently with controlled memory usage.
+    
+    Parameters:
+        species (Species): The target species to load particles into.
+        file (str|Path): Path to the HDF5 file containing particle data.
+        interval (Union[int, float, Callable], optional): Frequency of execution.
+            Can be a number of timesteps, a time interval, or a callable function
+            that returns True when the callback should execute. Defaults to running
+            only at the first timestep.
+            
+    Attributes:
+        _batch_size (int): Number of particles to process in each batch.
+            Controls memory usage during loading. Default is 10,000 particles per batch.
+            
+    Example:
+        >>> # Load electrons from an HDF5 file at simulation start
+        >>> load_ele = LoadParticles(ele, "particles.h5")
+        >>> sim.run(1000, callbacks=[load_ele])
+        
+    Note:
+        - The HDF5 file should contain datasets for all particle attributes (x, y, z, ux, uy, uz, w, etc.)
+        - Particles are automatically distributed to patches based on their spatial coordinates
+        - Batch processing reduces memory usage for large particle datasets
+    """
+    stage: str = "start"
+    def __init__(self, species: Species, file: str|Path, interval: Union[int, float, Callable]|None = None) -> None:
+        
+        self.species = species
+        self.file = file
+
+        self._batch_size = 10000  # Default batch size for memory-efficient loading
+
+        if interval is None:
+            self.interval = lambda sim: sim.itime == 0
+        else:
+            self.interval = interval
+
+        
+    def _load_from_file(self, sim: Simulation) -> None:
+        attrs = self._filter_attributes(sim)
+        with h5py.File(self.file, 'r', locking=False) as f:
+            total_particles = f['x'].shape[0]
+            
+            # Process data in batches to reduce memory usage
+            for start_idx in range(0, total_particles, self._batch_size):
+                end_idx = min(start_idx + self._batch_size, total_particles)
+                
+                # Read current batch of data
+                data = {}
+                for attr in attrs:
+                    data[attr] = f[attr][start_idx:end_idx]
+                
+                # Extract coordinate data for spatial filtering
+                x = data.get('x', None)
+                y = data.get('y', None)
+                z = data.get('z', None)
+                
+                # Process particle distribution for each patch
+                for ip, p in enumerate(sim.patches):
+                    inbound = (x >= p.xmin - p.dx/2) & (x < p.xmax + p.dx/2)
+                    
+                    if sim.dimension >= 2:
+                        inbound &= (y >= p.ymin - p.dy/2) & (y < p.ymax + p.dy/2)
+                    
+                    if sim.dimension == 3:
+                        inbound &= (z >= p.zmin - p.dz/2) & (z < p.zmax + p.dz/2)
+                    
+                    npart = np.sum(inbound)
+                    if npart == 0:
+                        continue
+                        
+                    # Extend particle arrays and assign data
+                    part = p.particles[self.species.ispec]
+                    part.extend(npart)
+                    
+                    # Assign particle attributes for this batch
+                    for attr in attrs:
+                        attr_data = data[attr][inbound]
+                        getattr(part, attr)[-npart:] = attr_data
+
+                    # update inv_gamma
+                    if 'ux' in attrs or 'uy' in attrs or 'uz' in attrs:
+                        part.inv_gamma[-npart:] = np.sqrt(1 + part.ux[-npart:]**2 + part.uy[-npart:]**2 + part.uz[-npart:]**2)
+
+                    # mark particles as alive
+                    part.is_dead[-npart:] = False
+        sim.update_lists()
+
+    def _filter_attributes(self, sim: Simulation, ) -> set[str]:
+        with h5py.File(self.file, 'r', locking=False) as f:
+            attrs_file: set[str] = set(f.keys())
+
+        if sim.dimension >= 1 and 'x' not in attrs_file:
+            raise ValueError(f"Attribute 'x' not found in {self.file}")
+        if sim.dimension >= 2 and 'y' not in attrs_file:
+            raise ValueError(f"Attribute 'y' not found in {self.file}")
+        if sim.dimension == 3 and 'z' not in attrs_file:
+            raise ValueError(f"Attribute 'z' not found in {self.file}")
+        if 'w' not in attrs_file:
+            raise ValueError(f"Attribute 'w' not found in {self.file}")
+
+        attrs = attrs_file.intersection(sim.patches[0].particles[0].attrs)
+        if '_id' in attrs:
+            attrs.remove('_id')
+        if 'inv_gamma' in attrs:
+            attrs.remove('inv_gamma')
+
+        attrs_discard = attrs_file.difference(attrs)
+        if len(attrs_discard) > 0:
+            logger.warning(f"Attributes {attrs_discard} in {self.file} discarded: Not attribute of particle {self.species.name} or cannot be manually set")
+
+        return attrs
+    
+    def _call(self, sim: Simulation) -> None:
+        self._load_from_file(sim)
