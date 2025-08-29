@@ -1,6 +1,6 @@
 name: lambdapic
 dependencies:
-  - python=3.12
+  - python==3.12
   - mpi4py
   - h5py
   - numpy
@@ -8,6 +8,7 @@ dependencies:
   - scipy
   - pip
   - sphinx==8.2.3
+  - matplotlib
   - pip:
     - furo==2024.8.6
     - autodoc_pydantic==2.2.0
