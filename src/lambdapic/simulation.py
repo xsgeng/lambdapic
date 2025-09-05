@@ -33,7 +33,7 @@ from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
 from .core.species import Electron, Photon, Species
 from .core.utils.logger import configure_logger, logger, rank_log
 from .core.utils.timer import Timer
-from .utils import check_newer_version_on_pypi, is_version_outdated
+from .utils import auto_patch_2d, auto_patch_3d, check_newer_version_on_pypi, get_num_threads, is_version_outdated
 
 
 class SimulationConfig(BaseModel):
@@ -109,8 +109,8 @@ class Simulation:
         ny (int): Number of grid cells in y direction. Must be divisible by npatch_y.
         dx (float): Grid cell size in x direction (meters).
         dy (float): Grid cell size in y direction (meters).
-        npatch_x (int): Number of patches to divide the domain into along x direction.
-        npatch_y (int): Number of patches to divide the domain into along y direction.
+        npatch_x (int): Number of patches to divide the domain into along x direction. Default 0 for auto patch number.
+        npatch_y (int): Number of patches to divide the domain into along y direction. Default 0 for auto patch number.
         nsteps (int, optional): Number of simulation steps. Mutually exclusive with sim_time.
         sim_time (float, optional): Total simulation time in seconds. Mutually exclusive with nsteps.
         dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
@@ -131,8 +131,8 @@ class Simulation:
     dx: float
     dy: float
     dz: float = field(init=False)
-    npatch_x: int
-    npatch_y: int
+    npatch_x: int = field(default=0)
+    npatch_y: int = field(default=0)
     npatch_z: int = field(init=False)
     nsteps: int | None = field(default=None)
     sim_time: float | None = field(default=None)
@@ -149,6 +149,8 @@ class Simulation:
     truncate_log: bool = field(default=True)
     random_seed: Optional[int] = field(default=None)
     comm: Optional[mpi4py.MPI.Comm] = field(default=None)
+
+    _auto_patch_factor: int = field(default=4, init=False)
 
     def _validate(self):
         self.dimension = 2
@@ -188,6 +190,8 @@ class Simulation:
         return config
     
     def __post_init__(self,) -> None:
+        self._auto_patch()
+
         config = self._validate()
 
         self.nsteps = config.nsteps
@@ -211,6 +215,25 @@ class Simulation:
         logger.info("Simulation instance created")
         self.initialized = False
         
+    def _auto_patch(self):
+        if self.npatch_x == 0 or self.npatch_y == 0:
+            num_threades = get_num_threads()
+            if self.comm is None:
+                comm = MPIManager.get_default_comm()
+                rank = MPIManager.get_default_rank()
+            else:
+                comm = self.comm
+                rank = comm.Get_rank()
+            
+            num_threades = comm.reduce(num_threades)
+            if rank == 0:
+                assert isinstance(num_threades, int)
+                npatch_x, npatch_y = auto_patch_2d(self.nx, self.ny, self.n_guard, self.cpml_thickness, num_threades*self._auto_patch_factor)
+            else:
+                npatch_x, npatch_y = None, None
+
+            self.npatch_x, self.npatch_y = comm.bcast((npatch_x, npatch_y))
+
     @property
     def time(self) -> float:
         """Get the current simulation time in seconds.
@@ -881,9 +904,9 @@ class Simulation3D(Simulation):
         dx (float): Grid cell size in x direction (meters).
         dy (float): Grid cell size in y direction (meters).
         dz (float): Grid cell size in z direction (meters).
-        npatch_x (int): Number of patches to divide the domain into along x direction.
-        npatch_y (int): Number of patches to divide the domain into along y direction.
-        npatch_z (int): Number of patches to divide the domain into along z direction.
+        npatch_x (int): Number of patches to divide the domain into along x direction. Default 0 for auto patch number.
+        npatch_y (int): Number of patches to divide the domain into along y direction. Default 0 for auto patch number.
+        npatch_z (int): Number of patches to divide the domain into along z direction. Default 0 for auto patch number.
         nsteps (int, optional): Number of simulation steps. Mutually exclusive with sim_time.
         sim_time (float, optional): Total simulation time in seconds. Mutually exclusive with nsteps.
         dt_cfl (float, optional): CFL (Courant-Friedrichs-Lewy) stability factor. Must be ≤ 1.0.
@@ -900,7 +923,7 @@ class Simulation3D(Simulation):
     """
     nz: int = field(init=True)
     dz: float = field(init=True)
-    npatch_z: int = field(init=True)
+    npatch_z: int = field(default=0, init=True)
     boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']] = field(default_factory=lambda:{
         'xmin': 'pml',
         'xmax': 'pml',
@@ -949,6 +972,25 @@ class Simulation3D(Simulation):
         self.nz_per_patch = self.nz // self.npatch_z
 
         return config
+    
+    def _auto_patch(self):
+        if self.npatch_x == 0 or self.npatch_y == 0 or self.npatch_z == 0:
+            num_threades = get_num_threads()
+            if self.comm is None:
+                comm = MPIManager.get_default_comm()
+                rank = MPIManager.get_default_rank()
+            else:
+                comm = self.comm
+                rank = comm.Get_rank()
+            
+            num_threades = comm.reduce(num_threades)
+            if rank == 0:
+                assert isinstance(num_threades, int)
+                npatch_x, npatch_y, npatch_z = auto_patch_3d(self.nx, self.ny, self.nz, self.n_guard, self.cpml_thickness, num_threades*self._auto_patch_factor)
+            else:
+                npatch_x, npatch_y, npatch_z = None, None, None
+
+            self.npatch_x, self.npatch_y, self.npatch_z = comm.bcast((npatch_x, npatch_y, npatch_z))
 
     def _set_global_domain_bounds(self):
         """Set global domain bounds on patches."""

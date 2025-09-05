@@ -12,6 +12,8 @@ from lambdapic.core.mpi.sync_particles_2d import (
 
 from lambdapic.core.patch.patch import Boundary2D
 
+import numpy as np
+
 @pytest.mark.mpi
 def test_syncparticles():
     rank = comm.Get_rank()
@@ -55,7 +57,7 @@ def test_syncparticles():
 
     s = Electron(density=lambda x, y: 1.0, ppc=10)
     patches.add_species(s)
-    patches.fill_particles()
+    patches.fill_particles(np.random.default_rng())
 
     for p in patches:
         p.particles[0].x[:] += 1

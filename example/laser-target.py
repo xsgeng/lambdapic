@@ -54,8 +54,6 @@ sim = Simulation(
     ny=ny,
     dx=dx,
     dy=dy,
-    npatch_x=16,
-    npatch_y=16,
     nsteps=2000,
     log_file='laser-target.log',
 )

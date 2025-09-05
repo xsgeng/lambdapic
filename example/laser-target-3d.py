@@ -52,9 +52,6 @@ laser = GaussianLaser3D(
 sim = Simulation3D(
     nx=nx, ny=ny, nz=nz,
     dx=dx, dy=dy, dz=dz,
-    npatch_x=16,
-    npatch_y=8,
-    npatch_z=8,
     nsteps=1001,
     log_file='laser-target-3d.log',
 )
