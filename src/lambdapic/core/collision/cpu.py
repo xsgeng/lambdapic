@@ -1,9 +1,13 @@
-from numba import njit, prange
+import math
 from math import sqrt
-from scipy.constants import c, pi, epsilon_0
+
 import numpy as np
+from numba import njit, prange
+from numpy.typing import NDArray
+from scipy.constants import c, epsilon_0, k, pi
 
 from ..utils.jit_spinner import jit_spinner
+
 
 @njit
 def self_pairing(dead, ip_start, ip_end, random_gen):
@@ -115,31 +119,40 @@ def pairing(
                 
             yield ipair, ip_start1 + ip1, shuffled_idx[ip2], w_corr
 
-# def debye_length_cell(
-#     ux, uy, uz, inv_gamma, w, dead,
-#     m, q, lnLambda,
-#     ip_start, ip_end,
-#     dx, dy, dz, dt,
-#     debye_length
-# ):
-#     nbuf = ip_end - ip_start
-#     npart = nbuf - dead[ip_start:ip_end].sum()
-#     if npart == 0:
-#         return
+def debye_length_cell(
+    inv_gamma: NDArray[np.float64], w: NDArray[np.float64], dead: NDArray[np.bool_],
+    m: float, q: float,
+    ip_start: int, ip_end: int,
+    dx: float, dy: float, dz: float,
+) -> float:
+    density = 0.0
+    kT_mc2 = 0.0
+    for ip in range(ip_start, ip_end):
+        if dead[ip]: 
+            continue
+        density += w[ip]
 
-#     density = 0.0
-#     kT = 0.0 # in mc2
-#     mean_charge = 0.0
-#     for ip in range(ip_start, ip_end):
-#         if dead[ip]: 
-#             continue
-#         px = ux[ip] * m * c
-#         py = uy[ip] * m * c
-#         pz = uz[ip] * m * c
-#         p2 = px**2 + py**2 + pz**2
-#         kT += p2 * inv_gamma[ip]
-#         density += w[ip] / (dx*dy*dz)
-#         mean_charge += w[ip] * q
+        gamma = 1 / inv_gamma[ip]
+        u2 = gamma**2 - 1
+
+        # T = <v*p> / 3
+        kT_mc2 += w[ip] * u2 / sqrt(1 + u2)
+
+
+    if density > 0:
+        kT_mc2 /= density
+        density /= dx*dy*dz
+
+        kT = kT_mc2 * m * c**2
+
+        if kT > 0:
+            debye_length_inv_sqare = density * q**2 / (epsilon_0 * kT)
+        else:
+            debye_length_inv_sqare = math.inf
+    else:
+        debye_length_inv_sqare = -1.0
+
+    return debye_length_inv_sqare
 
 @njit(cache=True)
 def self_collision_cell(
