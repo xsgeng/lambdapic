@@ -1,5 +1,6 @@
 import math
 from math import sqrt
+from typing import List
 
 import numpy as np
 from numba import njit, prange
@@ -119,10 +120,47 @@ def pairing(
                 
             yield ipair, ip_start1 + ip1, shuffled_idx[ip2], w_corr
 
+@njit(parallel=True, cache=True)
+def debye_length_patches(
+    inv_gamma_list: List[NDArray[np.float64]],
+    w_list: List[NDArray[np.float64]],
+    dead_list: List[NDArray[np.bool_]],
+    bucket_bound_min_list: List[NDArray[np.int64]],
+    bucket_bound_max_list: List[NDArray[np.int64]],
+    m: List[float],
+    q: List[float],
+    dx: float, dy: float, dz: float,
+    debye_length_inv_sqare_list: List[NDArray[np.float64]],
+):
+    for ipatch in prange(len(inv_gamma_list)):
+        debye_length_patch(
+            inv_gamma_list[ipatch], w_list[ipatch], dead_list[ipatch],
+            bucket_bound_min_list[ipatch], bucket_bound_max_list[ipatch],
+            m[ipatch], q[ipatch],
+            dx, dy, dz,
+            debye_length_inv_sqare_list[ipatch]
+        )
+
+@njit(inline='always')
+def debye_length_patch(
+    inv_gamma: NDArray[np.float64], w: NDArray[np.float64], dead: NDArray[np.bool_],
+    bucket_bound_min: NDArray[np.int64], bucket_bound_max: NDArray[np.int64],
+    m: float, q: float,
+    dx: float, dy: float, dz: float,
+    debye_length_inv_sqare: NDArray[np.float64],
+):
+    for icell in range(bucket_bound_min.size):
+        ip_start = bucket_bound_min.flat[icell]
+        ip_end   = bucket_bound_max.flat[icell]
+        d = debye_length_cell(inv_gamma, w, dead, m, q, ip_start, ip_end, dx, dy, dz)
+        if d > 0:
+            debye_length_inv_sqare.flat[icell] += d
+
+@njit(inline='always')
 def debye_length_cell(
     inv_gamma: NDArray[np.float64], w: NDArray[np.float64], dead: NDArray[np.bool_],
     m: float, q: float,
-    ip_start: int, ip_end: int,
+    ip_start: np.int64, ip_end: np.int64,
     dx: float, dy: float, dz: float,
 ) -> float:
     density = 0.0
@@ -136,7 +174,7 @@ def debye_length_cell(
         u2 = gamma**2 - 1
 
         # T = <v*p> / 3
-        kT_mc2 += w[ip] * u2 / sqrt(1 + u2)
+        kT_mc2 += w[ip] * u2 / sqrt(1 + u2) / 3
 
 
     if density > 0:
