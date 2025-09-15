@@ -258,7 +258,7 @@ class TestDebyeLengthPatch:
         )
         
         # 验证结果合理
-        assert result > 0
+        assert result[0] > 0
         
         # 测试空范围
         empty_result = debye_length_cell(
@@ -266,7 +266,7 @@ class TestDebyeLengthPatch:
             np.int64(0), np.int64(0), 
             cell_vol
         )
-        assert empty_result == -1.0
+        assert empty_result[0] == -1.0
         
         # 测试全dead粒子
         dead_cell_data = self.create_test_particles(n_particles, inv_gamma_value=0.9, weight_value=1.0)
@@ -277,7 +277,7 @@ class TestDebyeLengthPatch:
             np.int64(0), np.int64(n_particles), 
             cell_vol
         )
-        assert dead_result == -1.0
+        assert dead_result[0] == -1.0
 
     def test_debye_length_patches(self):
         """测试debye_length_patches函数（多patch版本）"""
@@ -288,10 +288,11 @@ class TestDebyeLengthPatch:
         n_particles_per_patch = 20
         
         # 创建多个patch的数据，使用Numba的typed.List
-        bucket_bound_min_list = typed.List()
-        bucket_bound_max_list = typed.List()
-        particle_data_list = typed.List()
-        debye_length_inv_sqare_list = typed.List()
+        bucket_bound_min_list = typed.List() # type: ignore
+        bucket_bound_max_list = typed.List() # type: ignore
+        particle_data_list = typed.List() # type: ignore
+        debye_length_inv_sqare_list = typed.List() # type: ignore
+        total_density_list = typed.List() # type: ignore
         
         for ipatch in range(npatches):
             # 使用create_test_particles创建粒子数据
@@ -315,6 +316,7 @@ class TestDebyeLengthPatch:
             bucket_bound_min_list.append(bucket_bound_min)
             bucket_bound_max_list.append(bucket_bound_max)
             debye_length_inv_sqare_list.append(np.zeros((nx, ny), dtype=np.float64))
+            total_density_list.append(np.zeros((nx, ny), dtype=np.float64))
         
         dx = dy = dz = 1e-6
         cell_vol = dx * dy * dz
@@ -324,7 +326,8 @@ class TestDebyeLengthPatch:
             particle_data_list,
             bucket_bound_min_list, bucket_bound_max_list,
             cell_vol,
-            debye_length_inv_sqare_list
+            debye_length_inv_sqare_list,
+            total_density_list
         )
         
         # 验证所有patch都有合理的结果

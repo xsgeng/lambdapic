@@ -5,7 +5,7 @@ from typing import List
 import numpy as np
 from numba import njit, prange
 from numpy.typing import NDArray
-from scipy.constants import c, epsilon_0, k, pi
+from scipy.constants import c, epsilon_0, k, pi, h
 
 from ..utils.jit_spinner import jit_spinner
 from .utils import CollisionData, ParticleData, boost_to_lab, coulomb_scattering
@@ -122,6 +122,7 @@ def pairing(
                 
             yield ipair, ip_start1 + ip1, shuffled_idx[ip2], w_corr
 
+@jit_spinner
 @njit(parallel=True, cache=True)
 def debye_length_patches(
     part_list: List[ParticleData],
@@ -129,35 +130,42 @@ def debye_length_patches(
     bucket_bound_max_list: List[NDArray[np.int64]],
     cell_vol: float,
     debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    total_density_list: List[NDArray[np.float64]],
+    reset: bool=False
 ):
     for ipatch in prange(len(part_list)):
-        debye_length_patch(
-            part_list[ipatch],
-            bucket_bound_min_list[ipatch], bucket_bound_max_list[ipatch],
-            cell_vol,
-            debye_length_inv_sqare_list[ipatch]
-        )
+        if reset:
+            debye_length_inv_sqare_list[ipatch].fill(0)
+        for icell in range(bucket_bound_min_list[ipatch].size):
+            ip_start = bucket_bound_min_list[ipatch].flat[icell]
+            ip_end   = bucket_bound_max_list[ipatch].flat[icell]
+            inv_d2, n = debye_length_cell(part_list[ipatch], ip_start, ip_end, cell_vol)
+            if n > 0:
+                debye_length_inv_sqare_list[ipatch].flat[icell] += inv_d2
+                total_density_list[ipatch].flat[icell] += n
 
-@njit(inline='always')
+@njit(cache=True)
 def debye_length_patch(
     part: ParticleData,
-    bucket_bound_min: NDArray[np.int64], bucket_bound_max: NDArray[np.int64],
-    cell_vol,
+    bucket_bound_min: NDArray[np.int64],
+    bucket_bound_max: NDArray[np.int64],
+    cell_vol: float,
     debye_length_inv_sqare: NDArray[np.float64],
 ):
     for icell in range(bucket_bound_min.size):
-        ip_start = bucket_bound_min.flat[icell]
-        ip_end   = bucket_bound_max.flat[icell]
-        d = debye_length_cell(part, ip_start, ip_end, cell_vol)
-        if d > 0:
-            debye_length_inv_sqare.flat[icell] += d
+            ip_start = bucket_bound_min.flat[icell]
+            ip_end   = bucket_bound_max.flat[icell]
+            inv_d2, n = debye_length_cell(part, ip_start, ip_end, cell_vol)
+            if n > 0:
+                debye_length_inv_sqare.flat[icell] += inv_d2
+            
 
 @njit(inline='always')
 def debye_length_cell(
     part: ParticleData,
     ip_start: np.int64, ip_end: np.int64,
     cell_vol: float
-) -> float:
+) -> tuple[float, float]:
     density = 0.0
     kT_mc2 = 0.0
 
@@ -191,7 +199,56 @@ def debye_length_cell(
     else:
         debye_length_inv_sqare = -1.0
 
-    return debye_length_inv_sqare
+    return debye_length_inv_sqare, density
+
+@jit_spinner
+@njit(parallel=True, cache=True)
+def constrain_debye_length_patches(
+    debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    total_density_list: List[NDArray[np.float64]],
+):
+    for ipatch in prange(len(debye_length_inv_sqare_list)):
+        for icell in range(debye_length_inv_sqare_list[ipatch].size):
+            inv_d2 = debye_length_inv_sqare_list[ipatch].flat[icell]
+            if inv_d2 <= 0:
+                # will be handled in varying_lnLambda
+                continue
+            
+            d2 = 1/inv_d2
+
+            nmax = total_density_list[ipatch].flat[icell]
+            rmin2 = (4*pi*nmax/3)**(-2/3)
+
+            if d2 < rmin2:
+                debye_length_inv_sqare_list[ipatch].flat[icell] = 1/rmin2
+
+@njit(cache=True)
+def varying_lnLambda(d: CollisionData, debye_length_inv_sqare: np.float64|float) -> float:
+    """
+
+    https://doi.org/10.1063/1.4742167
+
+    $b_{0} = \frac{q_{1}q_{2}}{4\pi\epsilon_{0}c^{2}}\frac{\gamma c}{m_{1}\gamma_{1} + m_{2}\gamma_{2}}\left(\frac{m_{1}\gamma_{1}^{\star}m_{2}\gamma_{2}^{\star}}{p_{1}^{\star 2}} c^{2} + 1\right)^{2} \tag{22}$
+    """
+    m1 = d.m1
+    m2 = d.m2
+    gamma1_com = d.gamma1_com
+    gamma2_com = d.gamma2_com
+    gamma_com = d.gamma_com
+    p1_com = d.p1_com
+
+    q1q2 = abs(d.q1*d.q2)
+
+    b0 = q1q2 / (4*pi*epsilon_0*c**2) * gamma_com / (m1*gamma1_com + m2*gamma2_com) * ((m1*gamma1_com*m2*gamma2_com)/p1_com**2*c**2 + 1)**2
+    bmin = max(h/2/p1_com, b0)
+
+    if debye_length_inv_sqare > 0:
+        lambdaD2 = 1 / debye_length_inv_sqare
+        lnLambda = max(2.0, 0.5*np.log(1 + lambdaD2/bmin**2))
+    else:
+        lnLambda = 2.0
+
+    return lnLambda
 
 @njit(cache=True)
 def self_collision_cell(
@@ -317,13 +374,38 @@ def self_collision_cell(
             uz[ip2] = p2z_new / m / c
             inv_gamma[ip2] = 1/sqrt(ux[ip2]**2 + uy[ip2]**2 + uz[ip2]**2 + 1)
 
-@njit
+@jit_spinner
+@njit(parallel=True, cache=True)
+def inter_collision_patches(
+    part1_list: List[ParticleData], bucket_bound_min1_list: List[NDArray[np.int64]], bucket_bound_max1_list: List[NDArray[np.int64]],
+    part2_list: List[ParticleData], bucket_bound_min2_list: List[NDArray[np.int64]], bucket_bound_max2_list: List[NDArray[np.int64]],
+    npatches: int, 
+    lnLambda: float, debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    cell_vol: float, dt: float,
+    gen_list: List[np.random.Generator]
+):
+    for ipatch in prange(npatches):
+        for icell in range(bucket_bound_min1_list[ipatch].size):
+            ip_start1 = bucket_bound_min1_list[ipatch].flat[icell]
+            ip_end1   = bucket_bound_max1_list[ipatch].flat[icell]
+            ip_start2 = bucket_bound_min2_list[ipatch].flat[icell]
+            ip_end2   = bucket_bound_max2_list[ipatch].flat[icell]
+
+            inter_collision_cell(
+                part1_list[ipatch], ip_start1, ip_end1,
+                part2_list[ipatch], ip_start2, ip_end2,
+                lnLambda, debye_length_inv_sqare_list[ipatch].flat[icell],
+                cell_vol, dt,
+                gen_list[ipatch]
+            )
+
+@njit(inline='always')
 def inter_collision_cell(
-    part1: ParticleData, ip_start1, ip_end1,
-    part2: ParticleData, ip_start2, ip_end2,
-    lnLambda,
-    dx, dy, dz, dt,
-    gen
+    part1: ParticleData, ip_start1: np.int64, ip_end1: np.int64,
+    part2: ParticleData, ip_start2: np.int64, ip_end2: np.int64,
+    lnLambda: float, debye_length_inv_sqare: np.float64|float,
+    cell_vol: float, dt: float,
+    gen: np.random.Generator
 ):
     dead1 = part1.is_dead
     dead2 = part2.is_dead
@@ -354,7 +436,7 @@ def inter_collision_cell(
         d = CollisionData(
             part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], part1.w[ip1],
             part1.m, part1.q,
-            part2.ux[ip1], part2.uy[ip1], part2.uz[ip1], part2.inv_gamma[ip1], part2.w[ip1],
+            part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], part2.w[ip2],
             part2.m, part2.q,
         )
         
@@ -365,8 +447,13 @@ def inter_collision_cell(
         gamma1_com = d.gamma1_com
         gamma2_com = d.gamma2_com
         
-        px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, dx, dy, dz, dt*dt_corr,
-                                                                   lnLambda, gen)
+        if lnLambda > 0:
+            lnLambda_ = lnLambda
+        else:
+            lnLambda_ = varying_lnLambda(d, debye_length_inv_sqare)
+
+        px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, cell_vol, dt*dt_corr,
+                                                                   lnLambda_, gen)
 
         U = gen.uniform()
         if w2_ / w_max > U:
@@ -388,7 +475,7 @@ def inter_collision_cell(
 @jit_spinner
 @njit(parallel=True, cache=True)
 def self_collision_parallel(
-    cell_bound_min, cell_bound_max, 
+    bucket_bound_min, bucket_bound_max, 
     nx, ny, dx, dy, dz, dt,
     ux, uy, uz, inv_gamma, w, dead,
     m, q, lnLambda,
@@ -397,8 +484,8 @@ def self_collision_parallel(
     for icell in prange(nx*ny):
         ix = icell // ny
         iy = icell % ny
-        ip_start = cell_bound_min[ix,iy]
-        ip_end = cell_bound_max[ix,iy]
+        ip_start = bucket_bound_min[ix,iy]
+        ip_end = bucket_bound_max[ix,iy]
         self_collision_cell(
             ux, uy, uz, inv_gamma, w, dead,
             m, q, lnLambda,
@@ -409,7 +496,7 @@ def self_collision_parallel(
 
 @njit(cache=True)
 def self_collision(
-    cell_bound_min, cell_bound_max, 
+    bucket_bound_min, bucket_bound_max, 
     nx, ny, dx, dy, dz, dt,
     ux, uy, uz, inv_gamma, w, dead,
     m, q, lnLambda,
@@ -417,72 +504,12 @@ def self_collision(
 ):
     for ix in range(nx):
         for iy in range(ny):
-            ip_start = cell_bound_min[ix,iy]
-            ip_end = cell_bound_max[ix,iy]
+            ip_start = bucket_bound_min[ix,iy]
+            ip_end = bucket_bound_max[ix,iy]
             self_collision_cell(
                 ux, uy, uz, inv_gamma, w, dead,
                 m, q, lnLambda,
                 ip_start, ip_end,
-                dx, dy, dz, dt,
-                random_gen
-            )
-
-
-@jit_spinner
-@njit(parallel=True, cache=True)
-def inter_collision_parallel(
-    cell_bound_min1, cell_bound_max1, 
-    cell_bound_min2, cell_bound_max2, 
-    nx, ny, dx, dy, dz, dt,
-    ux1, uy1, uz1, inv_gamma1, w1, dead1,
-    ux2, uy2, uz2, inv_gamma2, w2, dead2,
-    m1, q1, m2, q2,
-    lnLambda,
-    random_gen
-):
-    for icell in prange(nx*ny):
-        ix = icell // ny
-        iy = icell % ny
-        
-        ip_start1 = cell_bound_min1[ix,iy]
-        ip_end1 = cell_bound_max1[ix,iy]
-
-        ip_start2 = cell_bound_min2[ix,iy]
-        ip_end2 = cell_bound_max2[ix,iy]
-
-        inter_collision_cell(
-            ux1, uy1, uz1, inv_gamma1, w1, dead1, ip_start1, ip_end1,
-            ux2, uy2, uz2, inv_gamma2, w2, dead2, ip_start2, ip_end2,
-            m1, q1, m2, q2,
-            lnLambda,
-            dx, dy, dz, dt,
-            random_gen
-        )
-
-@njit(cache=True)
-def inter_collision(
-    cell_bound_min1, cell_bound_max1, 
-    cell_bound_min2, cell_bound_max2, 
-    nx, ny, dx, dy, dz, dt,
-    ux1, uy1, uz1, inv_gamma1, w1, dead1,
-    ux2, uy2, uz2, inv_gamma2, w2, dead2,
-    m1, q1, m2, q2,
-    lnLambda,
-    random_gen
-):
-    for ix in range(nx):
-        for iy in range(ny):
-            ip_start1 = cell_bound_min1[ix,iy]
-            ip_end1 = cell_bound_max1[ix,iy]
-
-            ip_start2 = cell_bound_min2[ix,iy]
-            ip_end2 = cell_bound_max2[ix,iy]
-
-            inter_collision_cell(
-                ux1, uy1, uz1, inv_gamma1, w1, dead1, ip_start1, ip_end1,
-                ux2, uy2, uz2, inv_gamma2, w2, dead2, ip_start2, ip_end2,
-                m1, q1, m2, q2,
-                lnLambda,
                 dx, dy, dz, dt,
                 random_gen
             )

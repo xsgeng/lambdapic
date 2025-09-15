@@ -139,7 +139,7 @@ def pack_particle_data(particles: List[ParticlesBase] | ParticlesBase, m: float,
     
 @njit
 def coulomb_scattering(data: CollisionData, 
-                       dx: float, dy: float, dz: float, dt: float, lnLambda: float, 
+                       cell_vol: float, dt: float, lnLambda: float, 
                        gen: np.random.Generator) -> tuple[float, float, float]:
     """
     Coulomb scattering in the center of mass frame.
@@ -175,7 +175,7 @@ def coulomb_scattering(data: CollisionData,
     gamma_com = data.gamma_com
     
     # dt = dt * dt_corr
-    s = w_max/(dx*dy*dz) *dt * (lnLambda * (q1*q2)**2) / (4*pi*epsilon_0**2*c**4 * m1*gamma1 * m2*gamma2) \
+    s = w_max/cell_vol *dt * (lnLambda * (q1*q2)**2) / (4*pi*epsilon_0**2*c**4 * m1*gamma1 * m2*gamma2) \
             *(gamma_com * p1_com)/(m1*gamma1 + m2*gamma2) * (m1*gamma1_com*m2*gamma2_com/p1_com**2 * c**2 + 1)**2
     
     U = gen.uniform()
