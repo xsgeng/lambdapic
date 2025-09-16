@@ -8,7 +8,12 @@ from scipy.constants import c, epsilon_0, pi
 from ..patch.patch import Patches
 from ..sort.particle_sort import ParticleSort2D, ParticleSort3D
 from ..species import Species
-from .cpu import debye_length_patches, constrain_debye_length_patches, inter_collision_patches
+from .cpu import (
+    constrain_debye_length_patches,
+    debye_length_patches,
+    inter_collision_patches,
+    intra_collision_patches,
+)
 from .utils import ParticleData, pack_particle_data
 
 
@@ -81,7 +86,13 @@ class Collision:
     def __call__(self, dt: float) -> Any:
         for (s1, s2) in self.collisions:
             if s1 is s2:
-                ...
+                intra_collision_patches(
+                    self.part_lists[s1.ispec], self.bucket_bound_min_list[s1.ispec], self.bucket_bound_max_list[s1.ispec],
+                    self.lnLambda,
+                    self.debye_length_inv_sqare_list,
+                    self.cell_vol, dt,
+                    self.gen_list
+                )
             else:
                 inter_collision_patches(
                     self.part_lists[s1.ispec], self.bucket_bound_min_list[s1.ispec], self.bucket_bound_max_list[s1.ispec],

@@ -71,7 +71,7 @@ def _setup_sim(nx=16, ny=16, dx=1e-6, dy=1e-6, npatch_x=2, npatch_y=2, ppc=100):
     return sim
 
 
-def _setup_collision(sim: Simulation, lnLambda: float = 2.0) -> Collision:
+def _setup_inter_collision(sim: Simulation, lnLambda: float = 2.0) -> Collision:
     # collision group with both species to enable inter-species collisions
     species = sim.patches.species
     groups = [[species[0], species[1]]]
@@ -84,9 +84,22 @@ def _setup_collision(sim: Simulation, lnLambda: float = 2.0) -> Collision:
     return coll
 
 
-def test_collision_runs_no_nans_and_conserves_energy():
+def _setup_intra_collision(sim: Simulation, ispec: int = 0, lnLambda: float = 2.0) -> Collision:
+    """Setup Collision to perform ONLY intra-species collisions for the chosen species."""
+    species = sim.patches.species
+    groups = [[species[ispec]]]  # only intra for the selected species
+    coll = Collision(groups, sim.patches, sim.sorter, sim.rand_gen)
+
+    coll.lnLambda = lnLambda
+    coll.generate_particle_lists()
+    coll.generate_field_lists()
+    coll.calculate_debye_length()
+    return coll
+
+
+def test_inter_collision_runs_no_nans_and_conserves_energy():
     sim = _setup_sim()
-    coll = _setup_collision(sim, lnLambda=2.0)
+    coll = _setup_inter_collision(sim, lnLambda=2.0)
 
     # Baseline checks
     _assert_no_nans_particles_on_patches(sim, 0)
@@ -106,9 +119,9 @@ def test_collision_runs_no_nans_and_conserves_energy():
     assert np.isclose(E_before, E_after, rtol=1e-10, atol=0.0)
 
 
-def test_collision_alters_momenta_for_inter_species():
+def test_inter_collision_alters_momenta_for_inter_species():
     sim = _setup_sim()
-    coll = _setup_collision(sim, lnLambda=2.0)
+    coll = _setup_inter_collision(sim, lnLambda=2.0)
 
     # Snapshot momenta
     ux0 = [p.particles[0].ux.copy() for p in sim.patches]
@@ -137,3 +150,58 @@ def test_collision_alters_momenta_for_inter_species():
             break
 
     assert changed, "Expected collisions to alter at least one momentum component"
+
+
+def test_intra_collision_runs_no_nans_and_conserves_energy_single_species():
+    sim = _setup_sim()
+    # Only collide species 0 with itself
+    coll = _setup_intra_collision(sim, ispec=0, lnLambda=2.0)
+
+    _assert_no_nans_particles_on_patches(sim, 0)
+    _assert_no_nans_particles_on_patches(sim, 1)
+
+    # Only species 0 should be affected, and its total energy should be conserved
+    E0_before = _total_energy(sim, [0])
+
+    dt = 1e-12
+    coll(dt)
+
+    _assert_no_nans_particles_on_patches(sim, 0)
+    _assert_no_nans_particles_on_patches(sim, 1)
+
+    E0_after = _total_energy(sim, [0])
+    assert np.isclose(E0_before, E0_after, rtol=1e-10, atol=0.0)
+
+
+def test_intra_collision_alters_only_target_species():
+    sim = _setup_sim()
+    # Only collide species 0 with itself
+    coll = _setup_intra_collision(sim, ispec=0, lnLambda=2.0)
+
+    # Snapshot both species' momenta
+    ux0 = [p.particles[0].ux.copy() for p in sim.patches]
+    uy0 = [p.particles[0].uy.copy() for p in sim.patches]
+    uz0 = [p.particles[0].uz.copy() for p in sim.patches]
+
+    ux1 = [p.particles[1].ux.copy() for p in sim.patches]
+    uy1 = [p.particles[1].uy.copy() for p in sim.patches]
+    uz1 = [p.particles[1].uz.copy() for p in sim.patches]
+
+    # Advance intra collisions for species 0 only
+    coll(1e-12)
+
+    # Species 0 should change
+    changed0 = False
+    for ip, p in enumerate(sim.patches):
+        if not np.allclose(p.particles[0].ux, ux0[ip]) or \
+           not np.allclose(p.particles[0].uy, uy0[ip]) or \
+           not np.allclose(p.particles[0].uz, uz0[ip]):
+            changed0 = True
+            break
+    assert changed0, "Expected intra collisions to alter species 0 momentum"
+
+    # Species 1 should remain unchanged (not part of collision group)
+    for ip, p in enumerate(sim.patches):
+        assert np.allclose(p.particles[1].ux, ux1[ip])
+        assert np.allclose(p.particles[1].uy, uy1[ip])
+        assert np.allclose(p.particles[1].uz, uz1[ip])
