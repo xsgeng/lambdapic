@@ -1,5 +1,5 @@
 from math import sqrt
-from typing import List
+from typing import List, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -119,6 +119,11 @@ class ParticleData:
         self.ux, self.uy, self.uz = ux, uy, uz
         self.inv_gamma, self.w, self.is_dead = inv_gamma, w, is_dead
         self.m, self.q = m, q
+
+@overload
+def pack_particle_data(particles: ParticlesBase, m: float, q: float) -> ParticleData: ...
+@overload
+def pack_particle_data(particles: List[ParticlesBase], m: float, q: float) -> List[ParticleData]: ...
 
 def pack_particle_data(particles: List[ParticlesBase] | ParticlesBase, m: float, q: float) -> List[ParticleData] | ParticleData:
     if isinstance(particles, ParticlesBase):
