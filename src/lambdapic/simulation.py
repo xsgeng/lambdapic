@@ -11,6 +11,7 @@ from tqdm.auto import tqdm, trange
 from yaspin import yaspin
 
 from .core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
+from .core.collision.collision import Collision
 from .core.current.deposition import (
     CurrentDeposition,
     CurrentDeposition2D,
@@ -33,7 +34,13 @@ from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
 from .core.species import Electron, Photon, Species
 from .core.utils.logger import configure_logger, logger, rank_log
 from .core.utils.timer import Timer
-from .utils import auto_patch_2d, auto_patch_3d, check_newer_version_on_pypi, get_num_threads, is_version_outdated
+from .utils import (
+    auto_patch_2d,
+    auto_patch_3d,
+    check_newer_version_on_pypi,
+    get_num_threads,
+    is_version_outdated,
+)
 
 
 class SimulationConfig(BaseModel):
@@ -214,6 +221,9 @@ class Simulation:
         
         logger.info("Simulation instance created")
         self.initialized = False
+        # Collision system placeholders; configured via add_collision()
+        self._collision_groups: Optional[Sequence[Sequence[Species]]] = None
+        self.collision: Optional[Collision] = None
         
     def _auto_patch(self):
         if self.npatch_x == 0 or self.npatch_y == 0:
@@ -366,6 +376,10 @@ class Simulation:
         rank_log("Initializing particle sorter", comm)
         self._init_sorter()
         
+        # Initialize collision module if groups were registered
+        rank_log("Initializing collision module", comm)
+        self._init_collision()
+
         self.initialized = True
         logger.success(f"Rank {rank}: Initialization complete")
 
@@ -504,6 +518,65 @@ class Simulation:
         # Assign ispec
         for ispec, s in enumerate(self.species):
             s.ispec = ispec
+
+    def add_collision(self, collision_groups: Sequence[Sequence[Species]]):
+        """
+        Register particle collision groups for the simulation.
+
+        Args:
+            collision_groups: A sequence of groups, where each group is a sequence
+                of Species. All unique pairs within a group (including intra-species)
+                are considered for collisions. For example, [[e1, e1, e2], [ion, ion]] will
+                perform e1<->e1, e1<->e2 collisions, and ion<->ion collisions.
+
+        Notes:
+            - Species in the groups must already be added to the simulation via
+              add_species().
+            - If called after the simulation has already been initialized, this
+              will immediately construct the Collision object.
+        """
+        # Basic validation
+        if not isinstance(collision_groups, Sequence):
+            raise TypeError("collision_groups must be a sequence of species groups")
+
+        # Flatten to validate items and ensure species are known to the simulation
+        flat: list[Species] = []
+        for group in collision_groups:
+            for s in group:
+                if not isinstance(s, Species):
+                    raise TypeError("Collision groups must contain Species instances")
+                flat.append(s)
+
+        # Ensure all species exist in the simulation registry
+        for s in flat:
+            if s not in self.species:
+                raise ValueError(f"Species {getattr(s, 'name', str(s))} not added to simulation")
+
+        # Store groups; actual Collision is created in _init_collision
+        self._collision_groups = collision_groups
+
+        # If already initialized, construct the Collision module now
+        if self.initialized:
+            self._init_collision()
+        return None
+
+    def _init_collision(self) -> None:
+        """Create the Collision module after initialization.
+
+        Requires that patches, sorter, and random generators are ready. This is
+        called during initialize() after sorter setup. If no collision groups were
+        registered, this is a no-op.
+        """
+        # No collision groups configured; nothing to do
+        if not self._collision_groups:
+            self.collision = None
+            return
+
+        # Construct collision module and prepare its lists
+        assert self.rand_gen
+        self.collision = Collision(self._collision_groups, self.patches, self.sorter, self.rand_gen)
+        self.collision.generate_particle_lists()
+        self.collision.generate_field_lists()
     
     def _init_pushers(self):
         """Initialize particle pushers for each species.
@@ -558,14 +631,13 @@ class Simulation:
             self.pairproduction.append(None)
 
     def _init_sorter(self):
-        """Initialize particle sorter for each species.
-        
-        Creates a ParticleSort2D instance for each species, which handles particle
-        sorting and synchronization across patches.
-        """
         self.sorter: list[ParticleSort2D] = []
-        for s in self.patches.species:
-            self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
+        if self._collision_groups:
+            for s in self.patches.species:
+                self.sorter.append(ParticleSort2D(self.patches, s))
+        else:
+            for s in self.patches.species:
+                self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
 
     def _init_random_generator(self) -> None:
         """Create MPI-level generators for each rank.
@@ -641,6 +713,10 @@ class Simulation:
                     self.interpolator.update_particle_lists(ipatch, ispec)
                     self.pusher[ispec].update_particle_lists(ipatch)
                     self.sorter[ispec].update_particle_lists(ipatch)
+
+        if self.collision is not None:
+            self.collision.update_particle_lists()
+
         for r in self.radiation:
             if r is None:
                 continue
@@ -741,14 +817,20 @@ class Simulation:
             with Timer("maxwell first"):
                 stage_callbacks.run('maxwell first')
                 
-
-            if self.current_depositor:
-                self.current_depositor.reset()
             for ispec, s in enumerate(self.patches.species):
                 self.ispec = ispec
 
                 with Timer(f"Sorting {self.species[ispec].name}"):
                     self.sorter[ispec]()
+
+            if self.collision is not None:
+                self.collision.calculate_debye_length()
+                self.collision(self.dt)
+
+            if self.current_depositor:
+                self.current_depositor.reset()
+            for ispec, s in enumerate(self.patches.species):
+                self.ispec = ispec
 
                 if use_unified_pusher[ispec]:
                     with Timer(f"unified pusher for {self.species[ispec].name}"):
@@ -1043,14 +1125,13 @@ class Simulation3D(Simulation):
                 p.add_pml_boundary(PMLZmax(p.fields, thickness=self.cpml_thickness))
 
     def _init_sorter(self):
-        """Initialize particle sorter for each species.
-        
-        Creates a ParticleSort2D instance for each species, which handles particle
-        sorting and synchronization across patches.
-        """
         self.sorter: list[ParticleSort3D] = []
-        for s in self.patches.species:
-            self.sorter.append(ParticleSort3D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly, nz_buckets=1, dz_buckets=self.Lz))
+        if self._collision_groups:
+            for s in self.patches.species:
+                self.sorter.append(ParticleSort3D(self.patches, s))
+        else:
+            for s in self.patches.species:
+                self.sorter.append(ParticleSort3D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly, nz_buckets=1, dz_buckets=self.Lz))
 
     def create_patches(self):
         """Create and initialize all 3D patches for the simulation domain.

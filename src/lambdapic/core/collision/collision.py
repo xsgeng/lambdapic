@@ -1,5 +1,6 @@
 
 from typing import Any, List, Sequence, Tuple
+from itertools import combinations
 
 import numpy as np
 from numba import typed
@@ -29,7 +30,7 @@ class Collision:
         self.sorter = sorter
         self.gen = gen
 
-        self.lnLambda = 0.0
+        self.lnLambda = 2.0
 
         self.cell_vol = self.patches.dx
         if self.patches.dimension >= 2:
@@ -41,12 +42,11 @@ class Collision:
         collisions = set()
         self.collisions: List[Tuple[Species, Species]] = []
         for group in self.collision_groups:
-            for s1 in group:
-                for s2 in group:
-                    if (s1.ispec, s2.ispec) not in collisions:
-                        self.collisions.append((s1, s2))
-                    collisions.add((s1.ispec, s2.ispec))
-
+            for s1, s2 in combinations(group, 2):
+                if (s1.ispec, s2.ispec) not in collisions:
+                    self.collisions.append((s1, s2))
+                collisions.add((s1.ispec, s2.ispec))
+            
     def generate_particle_lists(self) -> None:
         self.part_lists: List[List[ParticleData]] = []
         for s in self.all_species:
@@ -55,6 +55,12 @@ class Collision:
                     pack_particle_data([p.particles[s.ispec] for p in self.patches], s.m, s.q)
                 )
             )
+    
+    def update_particle_lists(self) -> None:
+        for ispec, s in enumerate(self.patches.species):
+            for ipatch, p in enumerate(self.patches):
+                if p.particles[ispec].extended:
+                    self.part_lists[ispec][ipatch] = pack_particle_data(p.particles[ispec], s.m, s.q)
 
     def generate_field_lists(self) -> None:
         self.debye_length_inv_sqare_list = typed.List(# type: ignore
