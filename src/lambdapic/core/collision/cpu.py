@@ -160,7 +160,7 @@ def debye_length_patch(
                 debye_length_inv_sqare.flat[icell] += inv_d2
             
 
-@njit(inline='always')
+@njit(cache=True,inline='always')
 def debye_length_cell(
     part: ParticleData,
     ip_start: np.int64, ip_end: np.int64,
@@ -376,7 +376,7 @@ def inter_collision_cell(
     dead2 = part2.is_dead
 
     m1 = part1.m
-    m2 = part1.m
+    m2 = part2.m
     
     nbuf1 = ip_end1 - ip_start1
     npart1 = nbuf1 - dead1[ip_start1:ip_end1].sum()
