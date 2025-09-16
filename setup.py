@@ -7,6 +7,8 @@ from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 import mpi4py
 
+os.environ['CC'] = os.environ.get('CC', 'mpicc')
+
 include_dirs = [np.get_include(), mpi4py.get_include()]
 extra_compile_args = ['-Xpreprocessor', '-fopenmp', '-O3', '-march=native', '-ftree-vectorize', '-Werror=incompatible-pointer-types']
 extra_link_args = ['-fopenmp']
