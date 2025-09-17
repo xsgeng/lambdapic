@@ -225,7 +225,6 @@ def constrain_debye_length_patches(
 @njit(cache=True)
 def varying_lnLambda(d: CollisionData, debye_length_inv_sqare: np.float64|float) -> float:
     """
-
     https://doi.org/10.1063/1.4742167
 
     $b_{0} = \frac{q_{1}q_{2}}{4\pi\epsilon_{0}c^{2}}\frac{\gamma c}{m_{1}\gamma_{1} + m_{2}\gamma_{2}}\left(\frac{m_{1}\gamma_{1}^{\star}m_{2}\gamma_{2}^{\star}}{p_{1}^{\star 2}} c^{2} + 1\right)^{2} \tag{22}$
@@ -239,7 +238,7 @@ def varying_lnLambda(d: CollisionData, debye_length_inv_sqare: np.float64|float)
 
     q1q2 = abs(d.q1*d.q2)
 
-    b0 = q1q2 / (4*pi*epsilon_0*c**2) * gamma_com / (m1*gamma1_com + m2*gamma2_com) * ((m1*gamma1_com*m2*gamma2_com)/p1_com**2*c**2 + 1)**2
+    b0 = q1q2 / (4*pi*epsilon_0*c**2) * gamma_com / (m1*gamma1_com + m2*gamma2_com) * ((m1*gamma1_com*m2*gamma2_com)/p1_com**2*c**2 + 1)
     bmin = max(h/2/p1_com, b0)
 
     if debye_length_inv_sqare > 0:
