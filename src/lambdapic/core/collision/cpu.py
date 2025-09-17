@@ -170,34 +170,48 @@ def debye_length_cell(
     kT_mc2 = 0.0
 
     is_dead = part.is_dead
-    inv_gamma = part.inv_gamma
     w = part.w
     m = part.m
     q = part.q
+
+    ux_mean, uy_mean, uz_mean = 0.0, 0.0, 0.0
+    w_total = 0.0
     for ip in range(ip_start, ip_end):
         if is_dead[ip]: 
             continue
-        density += w[ip]
+        w_total += w[ip]
+        ux_mean += w[ip] * part.ux[ip]
+        uy_mean += w[ip] * part.uy[ip]
+        uz_mean += w[ip] * part.uz[ip]
 
-        gamma = 1 / inv_gamma[ip]
-        u2 = gamma**2 - 1
+    if w_total <= 0:
+        return -1.0, 0.0
+    
+    density = w_total / cell_vol
+    ux_mean /= w_total
+    uy_mean /= w_total
+    uz_mean /= w_total
+
+    for ip in range(ip_start, ip_end):
+        if is_dead[ip]: 
+            continue
+
+        u2 = ((part.ux[ip] - ux_mean)**2 
+            + (part.uy[ip] - uy_mean)**2 
+            + (part.uz[ip] - uz_mean)**2)
 
         # T = <v*p> / 3
         kT_mc2 += w[ip] * u2 / sqrt(1 + u2) / 3
 
 
-    if density > 0:
-        kT_mc2 /= density
-        density /= cell_vol
+    kT_mc2 /= w_total
 
-        kT = kT_mc2 * m * c**2
+    kT = kT_mc2 * m * c**2
 
-        if kT > 0:
-            debye_length_inv_sqare = density * q**2 / (epsilon_0 * kT)
-        else:
-            debye_length_inv_sqare = math.inf
+    if kT > 0:
+        debye_length_inv_sqare = density * q**2 / (epsilon_0 * kT)
     else:
-        debye_length_inv_sqare = -1.0
+        debye_length_inv_sqare = math.inf
 
     return debye_length_inv_sqare, density
 
