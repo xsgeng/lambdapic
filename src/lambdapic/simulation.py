@@ -824,8 +824,10 @@ class Simulation:
                     self.sorter[ispec]()
 
             if self.collision is not None:
-                self.collision.calculate_debye_length()
-                self.collision(self.dt)
+                with Timer("collision.calculate_debye_length"):
+                    self.collision.calculate_debye_length()
+                with Timer("collision"):
+                    self.collision(self.dt)
 
             if self.current_depositor:
                 self.current_depositor.reset()
