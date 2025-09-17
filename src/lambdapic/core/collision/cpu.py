@@ -296,14 +296,14 @@ def intra_collision_cell(
     # loop pairs
     for ipair, ip1, ip2, w_corr in self_pairing(dead, ip_start, ip_end, gen):
 
-        w1_ = part.w[ip1] * w_corr
-        w2_ = part.w[ip2] * w_corr
-        w_max = max(w1_, w2_)
+        w1_corr = part.w[ip1] * w_corr
+        w2_corr = part.w[ip2] * w_corr
+        w_max = max(w1_corr, w2_corr)
 
         d = CollisionData(
-            part.ux[ip1], part.uy[ip1], part.uz[ip1], part.inv_gamma[ip1], part.w[ip1],
+            part.ux[ip1], part.uy[ip1], part.uz[ip1], part.inv_gamma[ip1], w1_corr,
             m, q,
-            part.ux[ip2], part.uy[ip2], part.uz[ip2], part.inv_gamma[ip2], part.w[ip2],
+            part.ux[ip2], part.uy[ip2], part.uz[ip2], part.inv_gamma[ip2], w2_corr,
             m, q,
         )
 
@@ -323,14 +323,14 @@ def intra_collision_cell(
                                                                    lnLambda_, gen)
 
         U = gen.uniform()
-        if w2_ / w_max > U:
+        if w2_corr / w_max > U:
             px1_new, py1_new, pz1_new = boost_to_lab(
                 px1_com_new, py1_com_new, pz1_com_new, gamma1_com, m, 
                 vx_com, vy_com, vz_com, v_com_square, gamma_com
             )
             part.ux[ip1], part.uy[ip1], part.uz[ip1] = px1_new / m / c, py1_new / m / c, pz1_new / m / c
             part.inv_gamma[ip1] = 1/sqrt(part.ux[ip1]**2 + part.uy[ip1]**2 + part.uz[ip1]**2 + 1)
-        if w1_ / w_max > U:
+        if w1_corr / w_max > U:
             px2_new, py2_new, pz2_new = boost_to_lab(
                 -px1_com_new, -py1_com_new, -pz1_com_new, gamma2_com, m, 
                 vx_com, vy_com, vz_com, v_com_square, gamma_com
@@ -394,14 +394,14 @@ def inter_collision_cell(
         dead1, ip_start1, ip_end1, 
         dead2, ip_start2, ip_end2, gen
     ):
-        w1_ = part1.w[ip1] * w_corr
-        w2_ = part2.w[ip2] * w_corr
-        w_max = max(w1_, w2_)
+        w1_corr = part1.w[ip1] * w_corr
+        w2_corr = part2.w[ip2] * w_corr
+        w_max = max(w1_corr, w2_corr)
         
         d = CollisionData(
-            part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], part1.w[ip1],
+            part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], w1_corr,
             part1.m, part1.q,
-            part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], part2.w[ip2],
+            part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], w2_corr,
             part2.m, part2.q,
         )
         
@@ -421,14 +421,14 @@ def inter_collision_cell(
                                                                    lnLambda_, gen)
 
         U = gen.uniform()
-        if w2_ / w_max > U:
+        if w2_corr / w_max > U:
             px1_new, py1_new, pz1_new = boost_to_lab(
                 px1_com_new, py1_com_new, pz1_com_new, gamma1_com, m1, 
                 vx_com, vy_com, vz_com, v_com_square, gamma_com
             )
             part1.ux[ip1], part1.uy[ip1], part1.uz[ip1] = px1_new / m1 / c, py1_new / m1 / c, pz1_new / m1 / c
             part1.inv_gamma[ip1] = 1/sqrt(part1.ux[ip1]**2 + part1.uy[ip1]**2 + part1.uz[ip1]**2 + 1)
-        if w1_ / w_max > U:
+        if w1_corr / w_max > U:
             px2_new, py2_new, pz2_new = boost_to_lab(
                 -px1_com_new, -py1_com_new, -pz1_com_new, gamma2_com, m2, 
                 vx_com, vy_com, vz_com, v_com_square, gamma_com
