@@ -129,19 +129,19 @@ def debye_length_patches(
     bucket_bound_min_list: List[NDArray[np.int64]],
     bucket_bound_max_list: List[NDArray[np.int64]],
     cell_vol: float,
-    debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    debye_length_inv_square_list: List[NDArray[np.float64]],
     total_density_list: List[NDArray[np.float64]],
     reset: bool=False
 ):
     for ipatch in prange(len(part_list)):
         if reset:
-            debye_length_inv_sqare_list[ipatch].fill(0)
+            debye_length_inv_square_list[ipatch].fill(0)
         for icell in range(bucket_bound_min_list[ipatch].size):
             ip_start = bucket_bound_min_list[ipatch].flat[icell]
             ip_end   = bucket_bound_max_list[ipatch].flat[icell]
             inv_d2, n = debye_length_cell(part_list[ipatch], ip_start, ip_end, cell_vol)
             if n > 0:
-                debye_length_inv_sqare_list[ipatch].flat[icell] += inv_d2
+                debye_length_inv_square_list[ipatch].flat[icell] += inv_d2
                 total_density_list[ipatch].flat[icell] += n
 
 @njit(cache=True)
@@ -150,14 +150,14 @@ def debye_length_patch(
     bucket_bound_min: NDArray[np.int64],
     bucket_bound_max: NDArray[np.int64],
     cell_vol: float,
-    debye_length_inv_sqare: NDArray[np.float64],
+    debye_length_inv_square: NDArray[np.float64],
 ):
     for icell in range(bucket_bound_min.size):
             ip_start = bucket_bound_min.flat[icell]
             ip_end   = bucket_bound_max.flat[icell]
             inv_d2, n = debye_length_cell(part, ip_start, ip_end, cell_vol)
             if n > 0:
-                debye_length_inv_sqare.flat[icell] += inv_d2
+                debye_length_inv_square.flat[icell] += inv_d2
             
 
 @njit(cache=True,inline='always')
@@ -209,21 +209,21 @@ def debye_length_cell(
     kT = kT_mc2 * m * c**2
 
     if kT > 0:
-        debye_length_inv_sqare = density * q**2 / (epsilon_0 * kT)
+        debye_length_inv_square = density * q**2 / (epsilon_0 * kT)
     else:
-        debye_length_inv_sqare = math.inf
+        debye_length_inv_square = math.inf
 
-    return debye_length_inv_sqare, density
+    return debye_length_inv_square, density
 
 @jit_spinner
 @njit(parallel=True, cache=True)
 def constrain_debye_length_patches(
-    debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    debye_length_inv_square_list: List[NDArray[np.float64]],
     total_density_list: List[NDArray[np.float64]],
 ):
-    for ipatch in prange(len(debye_length_inv_sqare_list)):
-        for icell in range(debye_length_inv_sqare_list[ipatch].size):
-            inv_d2 = debye_length_inv_sqare_list[ipatch].flat[icell]
+    for ipatch in prange(len(debye_length_inv_square_list)):
+        for icell in range(debye_length_inv_square_list[ipatch].size):
+            inv_d2 = debye_length_inv_square_list[ipatch].flat[icell]
             if inv_d2 <= 0:
                 # will be handled in varying_lnLambda
                 continue
@@ -234,14 +234,15 @@ def constrain_debye_length_patches(
             rmin2 = (4*pi*nmax/3)**(-2/3)
 
             if d2 < rmin2:
-                debye_length_inv_sqare_list[ipatch].flat[icell] = 1/rmin2
+                debye_length_inv_square_list[ipatch].flat[icell] = 1/rmin2
 
 @njit(cache=True)
-def varying_lnLambda(d: CollisionData, debye_length_inv_sqare: np.float64|float) -> float:
+def varying_lnLambda(d: CollisionData, debye_length_inv_square: np.float64|float) -> float:
     """
     https://doi.org/10.1063/1.4742167
 
-    $b_{0} = \frac{q_{1}q_{2}}{4\pi\epsilon_{0}c^{2}}\frac{\gamma c}{m_{1}\gamma_{1} + m_{2}\gamma_{2}}\left(\frac{m_{1}\gamma_{1}^{\star}m_{2}\gamma_{2}^{\star}}{p_{1}^{\star 2}} c^{2} + 1\right)^{2} \tag{22}$
+    typo square removed
+    $b_{0} = \frac{q_{1}q_{2}}{4\pi\epsilon_{0}c^{2}}\frac{\gamma c}{m_{1}\gamma_{1} + m_{2}\gamma_{2}}\left(\frac{m_{1}\gamma_{1}^{\star}m_{2}\gamma_{2}^{\star}}{p_{1}^{\star 2}} c^{2} + 1\right) \tag{22}$
     """
     m1 = d.m1
     m2 = d.m2
@@ -255,8 +256,8 @@ def varying_lnLambda(d: CollisionData, debye_length_inv_sqare: np.float64|float)
     b0 = q1q2 / (4*pi*epsilon_0*c**2) * gamma_com / (m1*gamma1_com + m2*gamma2_com) * ((m1*gamma1_com*m2*gamma2_com)/p1_com**2*c**2 + 1)
     bmin = max(h/2/p1_com, b0)
 
-    if debye_length_inv_sqare > 0:
-        lambdaD2 = 1 / debye_length_inv_sqare
+    if debye_length_inv_square > 0:
+        lambdaD2 = 1 / debye_length_inv_square
         lnLambda = max(2.0, 0.5*np.log(1 + lambdaD2/bmin**2))
     else:
         lnLambda = 2.0
@@ -270,7 +271,7 @@ def intra_collision_patches(
     part_list: List[ParticleData],
     bucket_bound_min_list: List[NDArray[np.int64]],
     bucket_bound_max_list: List[NDArray[np.int64]],
-    lnLambda: float, debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    lnLambda: float, debye_length_inv_square_list: List[NDArray[np.float64]],
     cell_vol: float, dt: float,
     gen_list: List[np.random.Generator]
 ):
@@ -281,7 +282,7 @@ def intra_collision_patches(
             
             intra_collision_cell(
                 part_list[ipatch], ip_start, ip_end, 
-                lnLambda, debye_length_inv_sqare_list[ipatch].flat[icell], 
+                lnLambda, debye_length_inv_square_list[ipatch].flat[icell], 
                 cell_vol, dt, 
                 gen_list[ipatch]
             )
@@ -290,7 +291,7 @@ def intra_collision_patches(
 @njit(cache=True)
 def intra_collision_cell(
     part: ParticleData, ip_start: np.int64, ip_end: np.int64,
-    lnLambda: float, debye_length_inv_sqare: np.float64|float,
+    lnLambda: float, debye_length_inv_square: np.float64|float,
     cell_vol: float, dt: float,
     gen: np.random.Generator
 ):
@@ -330,7 +331,7 @@ def intra_collision_cell(
         if lnLambda > 0:
             lnLambda_ = lnLambda
         else:
-            lnLambda_ = varying_lnLambda(d, debye_length_inv_sqare)
+            lnLambda_ = varying_lnLambda(d, debye_length_inv_square)
 
         px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, cell_vol, dt*dt_corr,
                                                                    lnLambda_, gen)
@@ -358,7 +359,7 @@ def inter_collision_patches(
     part1_list: List[ParticleData], bucket_bound_min1_list: List[NDArray[np.int64]], bucket_bound_max1_list: List[NDArray[np.int64]],
     part2_list: List[ParticleData], bucket_bound_min2_list: List[NDArray[np.int64]], bucket_bound_max2_list: List[NDArray[np.int64]],
     npatches: int, 
-    lnLambda: float, debye_length_inv_sqare_list: List[NDArray[np.float64]],
+    lnLambda: float, debye_length_inv_square_list: List[NDArray[np.float64]],
     cell_vol: float, dt: float,
     gen_list: List[np.random.Generator]
 ):
@@ -372,7 +373,7 @@ def inter_collision_patches(
             inter_collision_cell(
                 part1_list[ipatch], ip_start1, ip_end1,
                 part2_list[ipatch], ip_start2, ip_end2,
-                lnLambda, debye_length_inv_sqare_list[ipatch].flat[icell],
+                lnLambda, debye_length_inv_square_list[ipatch].flat[icell],
                 cell_vol, dt,
                 gen_list[ipatch]
             )
@@ -381,7 +382,7 @@ def inter_collision_patches(
 def inter_collision_cell(
     part1: ParticleData, ip_start1: np.int64, ip_end1: np.int64,
     part2: ParticleData, ip_start2: np.int64, ip_end2: np.int64,
-    lnLambda: float, debye_length_inv_sqare: np.float64|float,
+    lnLambda: float, debye_length_inv_square: np.float64|float,
     cell_vol: float, dt: float,
     gen: np.random.Generator
 ):
@@ -428,7 +429,7 @@ def inter_collision_cell(
         if lnLambda > 0:
             lnLambda_ = lnLambda
         else:
-            lnLambda_ = varying_lnLambda(d, debye_length_inv_sqare)
+            lnLambda_ = varying_lnLambda(d, debye_length_inv_square)
 
         px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, cell_vol, dt*dt_corr,
                                                                    lnLambda_, gen)

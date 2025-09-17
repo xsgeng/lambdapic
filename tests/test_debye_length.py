@@ -55,20 +55,20 @@ class TestDebyeLengthPatch:
         cell_vol = dx * dy * dz
         
         # 创建输出数组
-        debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
+        debye_length_inv_square = np.zeros((nx, ny), dtype=np.float64)
         
         # 调用函数
         debye_length_patch(
             particle_data,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
-            debye_length_inv_sqare
+            debye_length_inv_square
         )
         
         # 验证结果
-        assert not np.allclose(debye_length_inv_sqare, 0.0)
-        assert debye_length_inv_sqare[0, 0] > 0  # 第一个cell应该有值
-        assert np.all(debye_length_inv_sqare[1:, :] == 0)  # 其他cell应该为0
+        assert not np.allclose(debye_length_inv_square, 0.0)
+        assert debye_length_inv_square[0, 0] > 0  # 第一个cell应该有值
+        assert np.all(debye_length_inv_square[1:, :] == 0)  # 其他cell应该为0
         
     def test_empty_cells(self):
         """测试空cell的情况"""
@@ -84,19 +84,19 @@ class TestDebyeLengthPatch:
         dx = dy = dz = 1e-6
         cell_vol = dx * dy * dz
         
-        debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
+        debye_length_inv_square = np.zeros((nx, ny), dtype=np.float64)
         
         # 调用函数
         debye_length_patch(
             empty_data,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
-            debye_length_inv_sqare
+            debye_length_inv_square
         )
         
         # 验证所有值保持为0（因为没有粒子，函数不会更新数组）
         expected = np.zeros((nx, ny))
-        np.testing.assert_array_equal(debye_length_inv_sqare, expected)
+        np.testing.assert_array_equal(debye_length_inv_square, expected)
         
     def test_dead_particles(self):
         """测试所有粒子都是dead的情况"""
@@ -115,17 +115,17 @@ class TestDebyeLengthPatch:
         dx = dy = dz = 1e-6
         cell_vol = dx * dy * dz
         
-        debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
+        debye_length_inv_square = np.zeros((nx, ny), dtype=np.float64)
         
         debye_length_patch(
             dead_data,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
-            debye_length_inv_sqare
+            debye_length_inv_square
         )
         
         # 验证结果保持为0（因为没有有效粒子，函数不会更新数组）
-        assert debye_length_inv_sqare[0, 0] == 0.0
+        assert debye_length_inv_square[0, 0] == 0.0
         
     def test_uniform_distribution(self):
         """测试粒子均匀分布的情况"""
@@ -147,19 +147,19 @@ class TestDebyeLengthPatch:
         dx = dy = dz = 1e-6
         cell_vol = dx * dy * dz
         
-        debye_length_inv_sqare = np.zeros((nx, ny), dtype=np.float64)
+        debye_length_inv_square = np.zeros((nx, ny), dtype=np.float64)
         
         debye_length_patch(
             uniform_data,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
-            debye_length_inv_sqare
+            debye_length_inv_square
         )
         
         # 验证所有cell都有相同的德拜长度倒数平方
-        expected_value = debye_length_inv_sqare[0, 0]
+        expected_value = debye_length_inv_square[0, 0]
         assert expected_value > 0
-        np.testing.assert_allclose(debye_length_inv_sqare, expected_value)
+        np.testing.assert_allclose(debye_length_inv_square, expected_value)
         
     def test_physical_correctness(self):
         """测试物理正确性：验证计算结果与理论值的一致性"""
@@ -203,17 +203,17 @@ class TestDebyeLengthPatch:
         # 理论德拜长度倒数平方
         lambda_D_inv_sq_theory = density * e**2 / (epsilon_0 * kT)
 
-        debye_length_inv_sqare = np.zeros((1, 1), dtype=np.float64)
+        debye_length_inv_square = np.zeros((1, 1), dtype=np.float64)
 
         debye_length_patch(
             physical_data,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
-            debye_length_inv_sqare
+            debye_length_inv_square
         )
 
         # 验证计算值与理论值数量级一致
-        calculated = debye_length_inv_sqare[0, 0]
+        calculated = debye_length_inv_square[0, 0]
         assert calculated > 0
         ratio = abs(calculated - lambda_D_inv_sq_theory) / lambda_D_inv_sq_theory
         assert ratio < 0.05
@@ -229,17 +229,17 @@ class TestDebyeLengthPatch:
         dx = dy = dz = 1e-6
         cell_vol = dx * dy * dz
         
-        debye_length_inv_sqare = np.zeros((1, 1), dtype=np.float64)
+        debye_length_inv_square = np.zeros((1, 1), dtype=np.float64)
         
         debye_length_patch(
             edge_data,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
-            debye_length_inv_sqare
+            debye_length_inv_square
         )
         
         # 单个粒子也应该有合理的德拜长度
-        assert debye_length_inv_sqare[0, 0] > 0
+        assert debye_length_inv_square[0, 0] > 0
         
     def test_debye_length_cell_directly(self):
         """直接测试debye_length_cell函数"""
@@ -291,7 +291,7 @@ class TestDebyeLengthPatch:
         bucket_bound_min_list = typed.List() # type: ignore
         bucket_bound_max_list = typed.List() # type: ignore
         particle_data_list = typed.List() # type: ignore
-        debye_length_inv_sqare_list = typed.List() # type: ignore
+        debye_length_inv_square_list = typed.List() # type: ignore
         total_density_list = typed.List() # type: ignore
         
         for ipatch in range(npatches):
@@ -315,7 +315,7 @@ class TestDebyeLengthPatch:
             particle_data_list.append(particle_data)
             bucket_bound_min_list.append(bucket_bound_min)
             bucket_bound_max_list.append(bucket_bound_max)
-            debye_length_inv_sqare_list.append(np.zeros((nx, ny), dtype=np.float64))
+            debye_length_inv_square_list.append(np.zeros((nx, ny), dtype=np.float64))
             total_density_list.append(np.zeros((nx, ny), dtype=np.float64))
         
         dx = dy = dz = 1e-6
@@ -326,21 +326,21 @@ class TestDebyeLengthPatch:
             particle_data_list,
             bucket_bound_min_list, bucket_bound_max_list,
             cell_vol,
-            debye_length_inv_sqare_list,
+            debye_length_inv_square_list,
             total_density_list
         )
         
         # 验证所有patch都有合理的结果
         for ipatch in range(npatches):
-            result = debye_length_inv_sqare_list[ipatch]
+            result = debye_length_inv_square_list[ipatch]
             assert np.all(result >= 0)  # 所有值应该非负
             assert np.any(result > 0)   # 至少有一些cell有值
         
         # 验证所有patch的结果应该相同（因为输入相同）
         for ipatch in range(1, npatches):
             np.testing.assert_allclose(
-                debye_length_inv_sqare_list[ipatch],
-                debye_length_inv_sqare_list[0]
+                debye_length_inv_square_list[ipatch],
+                debye_length_inv_square_list[0]
             )
 
 

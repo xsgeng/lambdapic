@@ -63,7 +63,7 @@ class Collision:
                     self.part_lists[ispec][ipatch] = pack_particle_data(p.particles[ispec], s.m, s.q)
 
     def generate_field_lists(self) -> None:
-        self.debye_length_inv_sqare_list = typed.List(# type: ignore
+        self.debye_length_inv_square_list = typed.List(# type: ignore
             [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
         )
         self.total_density_list = typed.List(# type: ignore
@@ -80,12 +80,12 @@ class Collision:
                 self.bucket_bound_min_list[s.ispec],
                 self.bucket_bound_max_list[s.ispec],
                 self.cell_vol,
-                self.debye_length_inv_sqare_list,
+                self.debye_length_inv_square_list,
                 self.total_density_list,
                 reset=s.ispec==0
             )
         constrain_debye_length_patches(
-            self.debye_length_inv_sqare_list,
+            self.debye_length_inv_square_list,
             self.total_density_list
         )
 
@@ -95,7 +95,7 @@ class Collision:
                 intra_collision_patches(
                     self.part_lists[s1.ispec], self.bucket_bound_min_list[s1.ispec], self.bucket_bound_max_list[s1.ispec],
                     self.lnLambda,
-                    self.debye_length_inv_sqare_list,
+                    self.debye_length_inv_square_list,
                     self.cell_vol, dt,
                     self.gen_list
                 )
@@ -105,7 +105,7 @@ class Collision:
                     self.part_lists[s2.ispec], self.bucket_bound_min_list[s2.ispec], self.bucket_bound_max_list[s2.ispec],
                     self.patches.npatches,
                     self.lnLambda,
-                    self.debye_length_inv_sqare_list,
+                    self.debye_length_inv_square_list,
                     self.cell_vol, dt,
                     self.gen_list
                 )
