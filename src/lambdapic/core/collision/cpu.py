@@ -1,6 +1,6 @@
 import math
 from math import sqrt
-from typing import List
+from typing import Generator, List
 
 import numpy as np
 from numba import njit, prange
@@ -65,7 +65,7 @@ def pairing(
     dead1, ip_start1, ip_end1,
     dead2, ip_start2, ip_end2,
     random_gen
-):
+) -> Generator[tuple[int, int, int, float, float], None, None]:
     nbuf1 = ip_end1 - ip_start1
     nbuf2 = ip_end2 - ip_start2
 
@@ -83,6 +83,8 @@ def pairing(
         npairs = npart2
         npairs_not_repeated = npart1
         shuffled_idx = np.arange(nbuf2) + ip_start2
+
+    dt_corr = npairs
 
     random_gen.shuffle(shuffled_idx)
 
@@ -103,7 +105,7 @@ def pairing(
                 w_corr = 1. / ( npart1 // npart2 + 1 )
             else:
                 w_corr = 1. / ( npart1 // npart2 )
-            yield ipair, shuffled_idx[ip1], ip_start2 + ip2, w_corr
+            yield ipair, shuffled_idx[ip1], ip_start2 + ip2, w_corr, dt_corr
     else:
         for ipair in range(npairs):
             for ip2 in range(ip2+1, nbuf2):
@@ -120,7 +122,7 @@ def pairing(
             else:
                 w_corr = 1. / ( npart2 // npart1 )
                 
-            yield ipair, ip_start1 + ip1, shuffled_idx[ip2], w_corr
+            yield ipair, ip_start1 + ip1, shuffled_idx[ip2], w_corr, dt_corr
 
 @jit_spinner
 @njit(parallel=True, cache=True)
@@ -297,8 +299,6 @@ def intra_collision_cell(
 ):
     dead = part.is_dead
 
-    m, q = part.m, part.q
-
     nbuf = ip_end - ip_start
     npart = nbuf - dead[ip_start:ip_end].sum()
     if npart < 2: 
@@ -310,47 +310,14 @@ def intra_collision_cell(
     # loop pairs
     for ipair, ip1, ip2, w_corr in self_pairing(dead, ip_start, ip_end, gen):
 
-        w1_corr = part.w[ip1] * w_corr
-        w2_corr = part.w[ip2] * w_corr
-        w_max = max(w1_corr, w2_corr)
-
-        d = CollisionData(
-            part.ux[ip1], part.uy[ip1], part.uz[ip1], part.inv_gamma[ip1], w1_corr,
-            m, q,
-            part.ux[ip2], part.uy[ip2], part.uz[ip2], part.inv_gamma[ip2], w2_corr,
-            m, q,
+        collision_kernel(
+            part, ip1,
+            part, ip2,
+            lnLambda, debye_length_inv_square, 
+            dt_corr, w_corr,
+            cell_vol, dt, 
+            gen
         )
-
-        vx_com, vy_com, vz_com = d.vx_com, d.vy_com, d.vz_com
-        gamma_com = d.gamma_com
-        v_com_square = d.v_com_square
-        
-        gamma1_com = d.gamma1_com
-        gamma2_com = d.gamma2_com
-        
-        if lnLambda > 0:
-            lnLambda_ = lnLambda
-        else:
-            lnLambda_ = varying_lnLambda(d, debye_length_inv_square)
-
-        px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, cell_vol, dt*dt_corr,
-                                                                   lnLambda_, gen)
-
-        U = gen.uniform()
-        if w2_corr / w_max > U:
-            px1_new, py1_new, pz1_new = boost_to_lab(
-                px1_com_new, py1_com_new, pz1_com_new, gamma1_com, m, 
-                vx_com, vy_com, vz_com, v_com_square, gamma_com
-            )
-            part.ux[ip1], part.uy[ip1], part.uz[ip1] = px1_new / m / c, py1_new / m / c, pz1_new / m / c
-            part.inv_gamma[ip1] = 1/sqrt(part.ux[ip1]**2 + part.uy[ip1]**2 + part.uz[ip1]**2 + 1)
-        if w1_corr / w_max > U:
-            px2_new, py2_new, pz2_new = boost_to_lab(
-                -px1_com_new, -py1_com_new, -pz1_com_new, gamma2_com, m, 
-                vx_com, vy_com, vz_com, v_com_square, gamma_com
-            )
-            part.ux[ip2], part.uy[ip2], part.uz[ip2] = px2_new / m / c, py2_new / m / c, pz2_new / m / c
-            part.inv_gamma[ip2] = 1/sqrt(part.ux[ip2]**2 + part.uy[ip2]**2 + part.uz[ip2]**2 + 1)
             
 
 @jit_spinner
@@ -386,66 +353,67 @@ def inter_collision_cell(
     cell_vol: float, dt: float,
     gen: np.random.Generator
 ):
-    dead1 = part1.is_dead
-    dead2 = part2.is_dead
-
-    m1 = part1.m
-    m2 = part2.m
-    
-    nbuf1 = ip_end1 - ip_start1
-    npart1 = nbuf1 - dead1[ip_start1:ip_end1].sum()
-
-    nbuf2 = ip_end2 - ip_start2
-    npart2 = nbuf2 - dead2[ip_start2:ip_end2].sum()
-    if npart1 == 0 or npart2 == 0: 
-        return
-
-    npairs = max(npart1, npart2)
-    dt_corr = npairs
-
-    # loop pairs
-    for ipair, ip1, ip2, w_corr in pairing(
-        dead1, ip_start1, ip_end1, 
-        dead2, ip_start2, ip_end2, gen
+    for ipair, ip1, ip2, w_corr, dt_corr in pairing(
+        part1.is_dead, ip_start1, ip_end1, 
+        part2.is_dead, ip_start2, ip_end2, gen
     ):
-        w1_corr = part1.w[ip1] * w_corr
-        w2_corr = part2.w[ip2] * w_corr
-        w_max = max(w1_corr, w2_corr)
-        
-        d = CollisionData(
-            part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], w1_corr,
-            part1.m, part1.q,
-            part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], w2_corr,
-            part2.m, part2.q,
+        collision_kernel(
+            part1, ip1,
+            part2, ip2,
+            lnLambda, debye_length_inv_square, 
+            dt_corr, w_corr,
+            cell_vol, dt, 
+            gen
         )
-        
-        vx_com, vy_com, vz_com = d.vx_com, d.vy_com, d.vz_com
-        gamma_com = d.gamma_com
-        v_com_square = d.v_com_square
-        
-        gamma1_com = d.gamma1_com
-        gamma2_com = d.gamma2_com
-        
-        if lnLambda > 0:
-            lnLambda_ = lnLambda
-        else:
-            lnLambda_ = varying_lnLambda(d, debye_length_inv_square)
 
-        px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, cell_vol, dt*dt_corr,
-                                                                   lnLambda_, gen)
+@njit(inline='always', cache=True)
+def collision_kernel(
+    part1, ip1,
+    part2, ip2,
+    lnLambda, debye_length_inv_square, 
+    dt_corr, w_corr,
+    cell_vol, dt, 
+    gen, 
+):
+    m1, m2 = part1.m, part2.m
+    w1_corr = part1.w[ip1] * w_corr
+    w2_corr = part2.w[ip2] * w_corr
+    w_max = max(w1_corr, w2_corr)
+        
+    d = CollisionData(
+        part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], w1_corr,
+        part1.m, part1.q,
+        part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], w2_corr,
+        part2.m, part2.q,
+    )
+        
+    vx_com, vy_com, vz_com = d.vx_com, d.vy_com, d.vz_com
+    gamma_com = d.gamma_com
+    v_com_square = d.v_com_square
+        
+    gamma1_com = d.gamma1_com
+    gamma2_com = d.gamma2_com
+        
+    if lnLambda > 0:
+        lnLambda_ = lnLambda
+    else:
+        lnLambda_ = varying_lnLambda(d, debye_length_inv_square)
 
-        U = gen.uniform()
-        if w2_corr / w_max > U:
-            px1_new, py1_new, pz1_new = boost_to_lab(
-                px1_com_new, py1_com_new, pz1_com_new, gamma1_com, m1, 
-                vx_com, vy_com, vz_com, v_com_square, gamma_com
-            )
-            part1.ux[ip1], part1.uy[ip1], part1.uz[ip1] = px1_new / m1 / c, py1_new / m1 / c, pz1_new / m1 / c
-            part1.inv_gamma[ip1] = 1/sqrt(part1.ux[ip1]**2 + part1.uy[ip1]**2 + part1.uz[ip1]**2 + 1)
-        if w1_corr / w_max > U:
-            px2_new, py2_new, pz2_new = boost_to_lab(
-                -px1_com_new, -py1_com_new, -pz1_com_new, gamma2_com, m2, 
-                vx_com, vy_com, vz_com, v_com_square, gamma_com
-            )
-            part2.ux[ip2], part2.uy[ip2], part2.uz[ip2] = px2_new / m2 / c, py2_new / m2 / c, pz2_new / m2 / c
-            part2.inv_gamma[ip2] = 1/sqrt(part2.ux[ip2]**2 + part2.uy[ip2]**2 + part2.uz[ip2]**2 + 1)
+    px1_com_new, py1_com_new, pz1_com_new = coulomb_scattering(d, cell_vol, dt*dt_corr,
+                                                               lnLambda_, gen)
+
+    U = gen.uniform()
+    if w2_corr / w_max > U:
+        px1_new, py1_new, pz1_new = boost_to_lab(
+            px1_com_new, py1_com_new, pz1_com_new, gamma1_com, m1, 
+            vx_com, vy_com, vz_com, v_com_square, gamma_com
+        )
+        part1.ux[ip1], part1.uy[ip1], part1.uz[ip1] = px1_new / m1 / c, py1_new / m1 / c, pz1_new / m1 / c
+        part1.inv_gamma[ip1] = 1/sqrt(part1.ux[ip1]**2 + part1.uy[ip1]**2 + part1.uz[ip1]**2 + 1)
+    if w1_corr / w_max > U:
+        px2_new, py2_new, pz2_new = boost_to_lab(
+            -px1_com_new, -py1_com_new, -pz1_com_new, gamma2_com, m2, 
+            vx_com, vy_com, vz_com, v_com_square, gamma_com
+        )
+        part2.ux[ip2], part2.uy[ip2], part2.uz[ip2] = px2_new / m2 / c, py2_new / m2 / c, pz2_new / m2 / c
+        part2.inv_gamma[ip2] = 1/sqrt(part2.ux[ip2]**2 + part2.uy[ip2]**2 + part2.uz[ip2]**2 + 1)
