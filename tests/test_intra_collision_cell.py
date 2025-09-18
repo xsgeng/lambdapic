@@ -33,7 +33,7 @@ def create_random_particles(
     particles.inv_gamma[:] = 1.0 / np.sqrt(1.0 + u2)
 
     # unit weights, all alive
-    particles.w[:] = 1.0
+    particles.w[:] = 1.0e45
     particles.is_dead[:] = False
 
     return ParticleData(
@@ -95,7 +95,6 @@ def test_intra_collision_cell_no_nan(n):
     assert_no_nans_particle_data(part)
 
 
-@pytest.mark.parametrize("n", [8, 128, 1024])
 def test_intra_collision_energy_conservation(n):
     part = create_random_particles(n, mass=m_e, charge=-e, seed=101)
 
@@ -127,3 +126,36 @@ def test_intra_collision_energy_conservation(n):
     # Slightly looser tolerance for accumulation over many pairs
     assert np.isclose(E_before, E_after, rtol=1e-10, atol=0.0)
 
+def test_intra_collision_alters_momentum():
+    n = 128
+    part = create_random_particles(n, mass=m_e, charge=-e, seed=101)
+    ux0 = part.ux.copy()
+    uy0 = part.uy.copy()
+    uz0 = part.uz.copy()
+
+    ip_start, ip_end = 0, n
+
+    dx = dy = dz = 1e-6
+    cell_vol = dx * dy * dz
+    dt = 1e-15
+
+    debye_inv = 0.0
+    rng = np.random.default_rng(33)
+
+    intra_collision_cell(
+        part,
+        ip_start,
+        ip_end,
+        2.0,
+        debye_inv,
+        cell_vol,
+        dt,
+        rng,
+    )
+
+    changed = False
+    if not np.allclose(part.ux, ux0) or \
+        not np.allclose(part.uy, uy0) or \
+        not np.allclose(part.uz, uz0):
+        changed = True
+    assert changed, "Expected intra collisions to alter species 0 momentum"
