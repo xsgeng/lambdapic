@@ -30,7 +30,7 @@ class Collision:
         self.sorter = sorter
         self.gen = gen
 
-        self.lnLambda = 2.0
+        self.lnLambda = 0.0
 
         self.cell_vol = self.patches.dx
         if self.patches.dimension >= 2:
