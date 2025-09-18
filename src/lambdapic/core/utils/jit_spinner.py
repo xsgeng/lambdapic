@@ -1,5 +1,8 @@
 from functools import wraps
 from yaspin import yaspin
+from mpi4py import MPI
+
+rank = MPI.COMM_WORLD.Get_rank()
 
 def jit_spinner(func=None, *, spinner_text=None):
     """
@@ -13,6 +16,9 @@ def jit_spinner(func=None, *, spinner_text=None):
         @jit_with_spinner(spinner_text="Custom compiling message...")
     """
     def decorator(jit_func):
+        if rank > 0:
+            return jit_func
+        
         compiled = False
         text = spinner_text or f"Compiling numba function {jit_func.__name__}..."
         
