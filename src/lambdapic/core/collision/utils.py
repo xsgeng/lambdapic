@@ -142,7 +142,7 @@ def pack_particle_data(particles: List[ParticlesBase] | ParticlesBase, m: float,
     else:
         raise ValueError("particles must be a ParticlesBase instance or a list of ParticlesBase instances.")
     
-@njit
+@njit(inline='always', cache=True)
 def coulomb_scattering(data: CollisionData, 
                        cell_vol: float, dt: float, lnLambda: float, 
                        gen: np.random.Generator) -> tuple[float, float, float]:
@@ -201,7 +201,7 @@ def coulomb_scattering(data: CollisionData,
     
 
 
-@njit
+@njit(inline='always', cache=True)
 def rotate_momentum(
     px: float, py: float, pz: float, p: float, p_perp: float,
     cosX: float, sinX: float, phi: float
@@ -221,7 +221,7 @@ def rotate_momentum(
     return px_new, py_new, pz_new
 
 
-@njit(cache=True)
+@njit(inline='always', cache=True)
 def boost_to_lab(
     px_com: float, py_com: float, pz_com: float, gamma_com_particle: float, m: float, # of the particle
     vx_com: float, vy_com: float, vz_com: float, v_com_square: float, gamma_com: float, # of the COM frame
