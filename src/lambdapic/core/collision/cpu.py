@@ -12,7 +12,7 @@ from .utils import CollisionData, ParticleData, boost_to_lab, coulomb_scattering
 
 
 @njit
-def self_pairing(dead, ip_start, ip_end, random_gen):
+def self_pairing(dead, ip_start, ip_end, random_gen) -> Generator[tuple[int, int, int, float, float], None, None]:
     nbuf = ip_end - ip_start
     npart = nbuf - dead[ip_start:ip_end].sum()
     if npart < 2:
@@ -22,6 +22,7 @@ def self_pairing(dead, ip_start, ip_end, random_gen):
     random_gen.shuffle(idx)
 
     npairs = (npart + 1) // 2
+    dt_corr = 2*npairs - 1
 
     even = (npart % 2) == 0
     odd = not even
@@ -58,7 +59,7 @@ def self_pairing(dead, ip_start, ip_end, random_gen):
             elif ipair == npairs - 1:
                 w_corr = 0.5
             
-        yield ipair, idx[ip1], idx[ip2], w_corr
+        yield ipair, idx[ip1], idx[ip2], w_corr, dt_corr
 
 @njit
 def pairing(
@@ -301,18 +302,55 @@ def intra_collision_cell(
 
     nbuf = ip_end - ip_start
     npart = nbuf - dead[ip_start:ip_end].sum()
-    if npart < 2: 
+    if npart < 2:
         return
 
-    npairs = (npart + 1 ) // 2
+    shuffled_idx = np.arange(nbuf) + ip_start
+    gen.shuffle(shuffled_idx)
+
+    npairs = (npart + 1) // 2
     dt_corr = 2*npairs - 1
 
-    # loop pairs
-    for ipair, ip1, ip2, w_corr in self_pairing(dead, ip_start, ip_end, gen):
+    even = (npart % 2) == 0
+    odd = not even
 
+    ip1 = -1
+    ip2 = -1
+    for ipair in range(npairs):
+        for ip1 in range(ip2+1, nbuf):
+            if not dead[shuffled_idx[ip1]]:
+                break
+        # even
+        if even:
+            for ip2 in range(ip1+1, nbuf):
+                if not dead[shuffled_idx[ip2]]:
+                    break
+        # odd
+        else:
+            # before last pair
+            if ipair < npairs - 1:
+                for ip2 in range(ip1+1, nbuf):
+                    if not dead[shuffled_idx[ip2]]:
+                        break
+            # last pair
+            else:
+                for ip2 in range(ip1):
+                    if not dead[shuffled_idx[ip2]]:
+                        break
+
+        # the first pariticle is splitted into two pairs
+        w_corr = 1.0
+        if odd:
+            if ipair == 0:
+                w_corr = 0.5
+            elif ipair == npairs - 1:
+                w_corr = 0.5
+
+        ip1_ = shuffled_idx[ip1]
+        ip2_ = shuffled_idx[ip2]
         collision_kernel(
-            part, ip1,
-            part, ip2,
+            part, ip1_,
+            part, ip2_,
             lnLambda, debye_length_inv_square, 
             dt_corr, w_corr,
             cell_vol, dt, 
@@ -345,7 +383,7 @@ def inter_collision_patches(
                 gen_list[ipatch]
             )
 
-@njit(inline='always')
+@njit(cache=True)
 def inter_collision_cell(
     part1: ParticleData, ip_start1: np.int64, ip_end1: np.int64,
     part2: ParticleData, ip_start2: np.int64, ip_end2: np.int64,
@@ -353,18 +391,78 @@ def inter_collision_cell(
     cell_vol: float, dt: float,
     gen: np.random.Generator
 ):
-    for ipair, ip1, ip2, w_corr, dt_corr in pairing(
-        part1.is_dead, ip_start1, ip_end1, 
-        part2.is_dead, ip_start2, ip_end2, gen
-    ):
-        collision_kernel(
-            part1, ip1,
-            part2, ip2,
-            lnLambda, debye_length_inv_square, 
-            dt_corr, w_corr,
-            cell_vol, dt, 
-            gen
-        )
+    dead1 = part1.is_dead
+    dead2 = part2.is_dead
+
+    nbuf1 = ip_end1 - ip_start1
+    nbuf2 = ip_end2 - ip_start2
+
+    npart1 = nbuf1 - dead1[ip_start1:ip_end1].sum()
+    npart2 = nbuf2 - dead2[ip_start2:ip_end2].sum()
+
+    if npart1 == 0 or npart2 == 0:
+        return
+
+    if npart1 >= npart2:
+        npairs = npart1
+        npairs_not_repeated = npart2
+        shuffled_idx = np.arange(nbuf1) + ip_start1
+    else:
+        npairs = npart2
+        npairs_not_repeated = npart1
+        shuffled_idx = np.arange(nbuf2) + ip_start2
+
+    dt_corr = npairs
+
+    gen.shuffle(shuffled_idx)
+
+    # indices will be offsetted by ip_start later
+    ip1 = -1
+    ip2 = -1
+    if npart1 >= npart2:
+        for ipair in range(npairs):
+            for ip1 in range(ip1+1, nbuf1):
+                if not dead1[shuffled_idx[ip1]]:
+                    break
+            if ipair % npart2 == 0:
+                ip2 = -1
+            for ip2 in range((ip2+1) % nbuf2, nbuf2):
+                if not dead2[ip_start2+ip2]:
+                    break
+            if (ipair % npairs_not_repeated) < (npairs % npairs_not_repeated):
+                w_corr = 1. / ( npart1 // npart2 + 1 )
+            else:
+                w_corr = 1. / ( npart1 // npart2 )
+            
+            ip1_ = shuffled_idx[ip1]
+            ip2_ = ip_start2 + ip2
+            collision_kernel(part1, ip1_, 
+                             part2, ip2_, 
+                             lnLambda, debye_length_inv_square, 
+                             dt_corr, w_corr, cell_vol, dt, gen)
+    else:
+        for ipair in range(npairs):
+            for ip2 in range(ip2+1, nbuf2):
+                if not dead2[shuffled_idx[ip2]]:
+                    break
+            if ipair % npart1 == 0:
+                ip1 = -1
+            for ip1 in range((ip1+1) % nbuf1, nbuf1):
+                if not dead1[ip_start1 + ip1]:
+                    break
+                    
+            if (ipair % npairs_not_repeated) < (npairs % npairs_not_repeated):
+                w_corr = 1. / ( npart2 // npart1 + 1 )
+            else:
+                w_corr = 1. / ( npart2 // npart1 )
+            
+            ip1_ = ip_start1 + ip1
+            ip2_ = shuffled_idx[ip2]
+            collision_kernel(part1, ip1_, 
+                             part2, ip2_, 
+                             lnLambda, debye_length_inv_square, 
+                             dt_corr, w_corr, cell_vol, dt, gen)
+
 
 @njit(inline='always', cache=True)
 def collision_kernel(
@@ -386,6 +484,10 @@ def collision_kernel(
         part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], w2_corr,
         part2.m, part2.q,
     )
+
+    # at rest
+    if d.p1_com == 0:
+        return
         
     vx_com, vy_com, vz_com = d.vx_com, d.vy_com, d.vz_com
     gamma_com = d.gamma_com
