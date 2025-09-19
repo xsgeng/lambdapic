@@ -1,5 +1,5 @@
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 from itertools import combinations
 
 import numpy as np
@@ -21,7 +21,17 @@ from .utils import ParticleData, pack_particle_data
 
 class Collision(PickleableTypedList):
     """
+    Particle collision module for PIC simulations.
     
+    Handles both intra-species and inter-species collisions using
+    a binary collision model with Coulomb scattering.
+
+    Parameters:
+        collision_groups (Sequence[Sequence[Species]]): A list of groups of species that can collide with each other. Example: [[s1, s1, s2, s3]].
+            s1 will collide with it self, and s1, s2, and s3 will collide with each other. 
+        patches (Patches): The patches object containing the simulation domain.
+        sorter (Sequence[ParticleSort2D]): The particle sorter object.
+        gen (np.random.Generator): The random number generator object.
     """
     def __init__(self, collision_groups: Sequence[Sequence[Species]], patches: Patches, sorter: Sequence[ParticleSort2D], gen: np.random.Generator):
         self.collision_groups = collision_groups
@@ -41,12 +51,16 @@ class Collision(PickleableTypedList):
 
 
         collisions = set()
-        self.collisions: List[Tuple[Species, Species]] = []
+        self.collisions: List[tuple[int, int]] = []
+        # Track enabled/disabled state for each collision pair
+        self._enabled: Dict[tuple[int, int], bool] = {}
         for group in self.collision_groups:
             for s1, s2 in combinations(group, 2):
-                if (s1.ispec, s2.ispec) not in collisions:
-                    self.collisions.append((s1, s2))
-                collisions.add((s1.ispec, s2.ispec))
+                pair = (s1.ispec, s2.ispec) if s1.ispec < s2.ispec else (s2.ispec, s1.ispec)
+                if pair not in collisions:
+                    self.collisions.append(pair)
+                    self._enabled[pair] = True
+                collisions.add(pair)
             
     def generate_particle_lists(self) -> None:
         self.part_lists: List[List[ParticleData]] = []
@@ -91,10 +105,15 @@ class Collision(PickleableTypedList):
         )
 
     def __call__(self, dt: float) -> Any:
-        for (s1, s2) in self.collisions:
-            if s1 is s2:
+        for pair in self.collisions:
+            if not self._enabled[pair]:
+                continue
+
+            ispec1, ispec2 = pair
+            if ispec1 == ispec2:
+                ispec = ispec1
                 intra_collision_patches(
-                    self.part_lists[s1.ispec], self.bucket_bound_min_list[s1.ispec], self.bucket_bound_max_list[s1.ispec],
+                    self.part_lists[ispec], self.bucket_bound_min_list[ispec], self.bucket_bound_max_list[ispec],
                     self.lnLambda,
                     self.debye_length_inv_square_list,
                     self.cell_vol, dt,
@@ -102,8 +121,8 @@ class Collision(PickleableTypedList):
                 )
             else:
                 inter_collision_patches(
-                    self.part_lists[s1.ispec], self.bucket_bound_min_list[s1.ispec], self.bucket_bound_max_list[s1.ispec],
-                    self.part_lists[s2.ispec], self.bucket_bound_min_list[s2.ispec], self.bucket_bound_max_list[s2.ispec],
+                    self.part_lists[ispec1], self.bucket_bound_min_list[ispec1], self.bucket_bound_max_list[ispec1],
+                    self.part_lists[ispec2], self.bucket_bound_min_list[ispec2], self.bucket_bound_max_list[ispec2],
                     self.patches.npatches,
                     self.lnLambda,
                     self.debye_length_inv_square_list,

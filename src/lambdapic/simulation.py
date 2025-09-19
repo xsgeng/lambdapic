@@ -523,12 +523,14 @@ class Simulation:
         """
         Register particle collision groups for the simulation.
 
-        Args:
-            collision_groups: A sequence of groups, where each group is a sequence
-                of Species. All unique pairs within a group (including intra-species)
-                are considered for collisions. For example, [[e1, e1, e2], [ion, ion]] will
-                perform e1<->e1, e1<->e2 collisions, and ion<->ion collisions.
+        Parameters:
+            collision_groups: A sequence of groups, where each group is a sequence of Species. 
+                All unique pairs within a group (including intra-species) are considered for collisions. 
 
+        Example:
+            - [[e1, e1, e2, e3], [ion, ion]] will perform e1<->e1, e1<->e2, e1<->e3, e2<->e3 collisions, and ion<->ion collisions.
+            - [[e1, e1], [e1, ion], [e2, ion], [ion, ion]]. This is manually specifying all collision pairs.
+            
         Notes:
             - Species in the groups must already be added to the simulation via
               add_species().
