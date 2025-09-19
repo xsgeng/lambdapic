@@ -104,6 +104,20 @@ class Collision(PickleableTypedList):
             self.total_density_list
         )
 
+    def enable(self, collision: Tuple[Species, Species]) -> None:
+        s1, s2 = collision
+        pair = (s1.ispec, s2.ispec) if s1.ispec < s2.ispec else (s2.ispec, s1.ispec)
+        if pair not in self.collisions:
+            raise ValueError(f"Collision pair {collision} not found")
+        self._enabled[pair] = True
+
+    def disable(self, collision: Tuple[Species, Species]) -> None:
+        s1, s2 = collision
+        pair = (s1.ispec, s2.ispec) if s1.ispec < s2.ispec else (s2.ispec, s1.ispec)
+        if pair not in self.collisions:
+            raise ValueError(f"Collision pair {collision} not found")
+        self._enabled[pair] = False
+    
     def __call__(self, dt: float) -> Any:
         for pair in self.collisions:
             if not self._enabled[pair]:
