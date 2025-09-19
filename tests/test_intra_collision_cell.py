@@ -94,7 +94,7 @@ def test_intra_collision_cell_no_nan(n):
 
     assert_no_nans_particle_data(part)
 
-
+@pytest.mark.parametrize("n", [8, 128, 1024])
 def test_intra_collision_energy_conservation(n):
     part = create_random_particles(n, mass=m_e, charge=-e, seed=101)
 
