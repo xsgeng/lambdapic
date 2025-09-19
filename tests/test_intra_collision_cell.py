@@ -11,6 +11,7 @@ def create_random_particles(
     n_particles: int,
     mass: float = m_e,
     charge: float = -e,
+    dead_fraction: float = 0.0,
     seed: int = 1234,
 ) -> ParticleData:
     """Create a ParticleData with random momenta and consistent inv_gamma."""
@@ -32,9 +33,8 @@ def create_random_particles(
     # inv_gamma = 1/sqrt(1+u^2)
     particles.inv_gamma[:] = 1.0 / np.sqrt(1.0 + u2)
 
-    # unit weights, all alive
     particles.w[:] = 1.0e45
-    particles.is_dead[:] = False
+    particles.is_dead[:] = np.random.uniform(size=n_particles) < dead_fraction
 
     return ParticleData(
         x=particles.x,
@@ -64,10 +64,15 @@ def assert_no_nans_particle_data(p: ParticleData):
         assert np.all(np.isfinite(arr))
 
 
+@pytest.fixture(params=[0.0, 0.2, 1.0])
+def dead_fraction(request):
+    return request.param
+
+
 @pytest.mark.parametrize("n", [8, 128, 1024])
-def test_intra_collision_cell_no_nan(n):
+def test_intra_collision_cell_no_nan(n, dead_fraction):
     # One species, identical mass/charge for all particles
-    part = create_random_particles(n, mass=m_e, charge=-e, seed=1)
+    part = create_random_particles(n, mass=m_e, charge=-e, dead_fraction=dead_fraction, seed=1)
 
     # Bounds cover all particles in a single cell
     ip_start, ip_end = 0, n
@@ -95,8 +100,8 @@ def test_intra_collision_cell_no_nan(n):
     assert_no_nans_particle_data(part)
 
 @pytest.mark.parametrize("n", [8, 128, 1024])
-def test_intra_collision_energy_conservation(n):
-    part = create_random_particles(n, mass=m_e, charge=-e, seed=101)
+def test_intra_collision_energy_conservation(n, dead_fraction):
+    part = create_random_particles(n, mass=m_e, charge=-e, dead_fraction=dead_fraction, seed=101)
 
     ip_start, ip_end = 0, n
 
@@ -128,7 +133,8 @@ def test_intra_collision_energy_conservation(n):
 
 def test_intra_collision_alters_momentum():
     n = 128
-    part = create_random_particles(n, mass=m_e, charge=-e, seed=101)
+    # Ensure all alive to test that momentum changes occur
+    part = create_random_particles(n, mass=m_e, charge=-e, dead_fraction=0.0, seed=101)
     ux0 = part.ux.copy()
     uy0 = part.uy.copy()
     uz0 = part.uz.copy()
@@ -159,3 +165,46 @@ def test_intra_collision_alters_momentum():
         not np.allclose(part.uz, uz0):
         changed = True
     assert changed, "Expected intra collisions to alter species 0 momentum"
+
+
+def test_intra_collision_respects_dead_flags(dead_fraction):
+    n = 256
+    part = create_random_particles(n, mass=m_e, charge=-e, dead_fraction=dead_fraction, seed=2024)
+
+    ip_start, ip_end = 0, n
+
+    dx = dy = dz = 1e-6
+    cell_vol = dx * dy * dz
+    dt = 1e-15
+
+    # Snapshot state of dead particles before collisions
+    dead_idx = np.where(part.is_dead)[0]
+    ux_d = part.ux[dead_idx].copy()
+    uy_d = part.uy[dead_idx].copy()
+    uz_d = part.uz[dead_idx].copy()
+    ig_d = part.inv_gamma[dead_idx].copy()
+    w_d = part.w[dead_idx].copy()
+
+    debye_inv = 0.0
+    rng = np.random.default_rng(99)
+
+    intra_collision_cell(
+        part,
+        ip_start,
+        ip_end,
+        2.0,
+        debye_inv,
+        cell_vol,
+        dt,
+        rng,
+    )
+
+    # Dead particles must be unchanged by collisions
+    assert np.array_equal(part.ux[dead_idx], ux_d)
+    assert np.array_equal(part.uy[dead_idx], uy_d)
+    assert np.array_equal(part.uz[dead_idx], uz_d)
+    assert np.array_equal(part.inv_gamma[dead_idx], ig_d)
+    assert np.array_equal(part.w[dead_idx], w_d)
+
+    # General sanity: no NaNs anywhere
+    assert_no_nans_particle_data(part)
