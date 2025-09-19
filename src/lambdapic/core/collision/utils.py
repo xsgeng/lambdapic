@@ -97,15 +97,15 @@ class CollisionData:
 @jitclass
 class ParticleData:
     """Data class for particle properties."""
-    x: numba.float64[:]
-    y: numba.float64[:]
-    z: numba.float64[:]
-    ux: numba.float64[:]
-    uy: numba.float64[:]
-    uz: numba.float64[:]
-    inv_gamma: numba.float64[:]
-    w: numba.float64[:]
-    is_dead: numba.types.bool_[:]
+    x: numba.float64[:] # type: ignore
+    y: numba.float64[:] # type: ignore
+    z: numba.float64[:] # type: ignore
+    ux: numba.float64[:] # type: ignore
+    uy: numba.float64[:] # type: ignore
+    uz: numba.float64[:] # type: ignore
+    inv_gamma: numba.float64[:] # type: ignore
+    w: numba.float64[:] # type: ignore
+    is_dead: numba.types.bool_[:] # type: ignore
     m: float
     q: float
 
@@ -247,3 +247,218 @@ def boost_to_lab(
     pz = pz_com + vz_com * (fac * vcom_dot_p + m*gamma_com_particle*gamma_com)
     
     return px, py, pz
+
+
+@jitclass
+class IntraPairingIterator:
+    """Iterator for generating intra-species collision pairs.
+
+    Produces pairs of particle indices within a single buffer, respecting dead flags,
+    along with per-pair weight correction and a constant dt correction factor.
+
+    Usage pattern inside njit code:
+        it = IntraPairingIterator(dead, ip_start, ip_end, gen)
+        while it.has_next():
+            ipair, ip1, ip2, w_corr, dt_corr = it.next()
+            ...
+    """
+    dead: numba.types.bool_[:] # type: ignore
+    idx: numba.int64[:] # type: ignore
+    ip_start: numba.int64 # type: ignore
+    ip_end: numba.int64 # type: ignore
+    nbuf: numba.int64 # type: ignore
+    npart: numba.int64 # type: ignore
+    npairs: numba.int64 # type: ignore
+    dt_corr: numba.int64 # type: ignore
+    even: numba.types.boolean # type: ignore
+    ip1: numba.int64 # type: ignore
+    ip2: numba.int64 # type: ignore
+    ipair: numba.int64 # type: ignore
+
+    def __init__(self, dead: NDArray[np.bool_], ip_start: np.int64, ip_end: np.int64, gen: np.random.Generator) -> None:
+        self.dead = dead
+        self.ip_start = ip_start
+        self.ip_end = ip_end
+        self.nbuf = ip_end - ip_start
+        # count live particles
+        self.npart = self.nbuf - self.dead[ip_start:ip_end].sum()
+        if self.npart >= 2:
+            self.npairs = (self.npart + 1) // 2
+            self.dt_corr = 2 * self.npairs - 1
+            self.even = (self.npart % 2) == 0
+        else:
+            self.npairs = 0
+            self.dt_corr = 0
+            self.even = True
+        nalloc = self.nbuf if self.nbuf > 0 else 1
+        self.idx = np.arange(nalloc, dtype=np.int64) + ip_start
+        gen.shuffle(self.idx)
+        self.ip1 = -1
+        self.ip2 = -1
+        self.ipair = 0
+
+    def has_next(self) -> bool:
+        return self.ipair < self.npairs
+
+    def next(self) -> tuple[int, int, int, float, float]:
+        # find ip1 (first live after previous ip2)
+        for j in range(self.ip2 + 1, self.nbuf):
+            if not self.dead[self.idx[j]]:
+                self.ip1 = j
+                break
+        # find ip2
+        if self.even:
+            for j in range(self.ip1 + 1, self.nbuf):
+                if not self.dead[self.idx[j]]:
+                    self.ip2 = j
+                    break
+        else:
+            if self.ipair < self.npairs - 1:
+                for j in range(self.ip1 + 1, self.nbuf):
+                    if not self.dead[self.idx[j]]:
+                        self.ip2 = j
+                        break
+            else:
+                for j in range(0, self.ip1):
+                    if not self.dead[self.idx[j]]:
+                        self.ip2 = j
+                        break
+
+        # weight correction for odd case
+        w_corr = 1.0
+        if not self.even:
+            if self.ipair == 0 or self.ipair == self.npairs - 1:
+                w_corr = 0.5
+
+        ip1_abs = self.idx[self.ip1]
+        ip2_abs = self.idx[self.ip2]
+        dt_corr_f = float(self.dt_corr)
+        ipair_ret = self.ipair
+        self.ipair += 1
+        return ipair_ret, ip1_abs, ip2_abs, w_corr, dt_corr_f
+
+
+@jitclass
+class InterPairingIterator:
+    """Iterator for generating inter-species collision pairs.
+
+    Chooses one side to be shuffled and iterates the other cyclically to avoid bias,
+    reproducing the original pairing() semantics including dt and weight corrections.
+
+    Usage:
+        it = InterPairingIterator(dead1, ip_start1, ip_end1, dead2, ip_start2, ip_end2, gen)
+        while it.has_next():
+            ipair, ip1, ip2, w_corr, dt_corr = it.next()
+            ...
+    """
+    dead1: numba.types.bool_[:] # type: ignore
+    dead2: numba.types.bool_[:] # type: ignore
+    ip_start1: numba.int64 # type: ignore
+    ip_end1: numba.int64 # type: ignore
+    ip_start2: numba.int64 # type: ignore
+    ip_end2: numba.int64 # type: ignore
+    nbuf1: numba.int64 # type: ignore
+    nbuf2: numba.int64 # type: ignore
+    npart1: numba.int64 # type: ignore
+    npart2: numba.int64 # type: ignore
+    npairs: numba.int64 # type: ignore
+    npairs_not_repeated: numba.int64 # type: ignore
+    dt_corr: numba.int64 # type: ignore
+    shuffled_idx: numba.int64[:] # type: ignore
+    ip1: numba.int64 # type: ignore
+    ip2: numba.int64 # type: ignore
+    ipair: numba.int64 # type: ignore
+
+    def __init__(
+        self,
+        dead1: NDArray[np.bool_], ip_start1: np.int64, ip_end1: np.int64,
+        dead2: NDArray[np.bool_], ip_start2: np.int64, ip_end2: np.int64,
+        gen: np.random.Generator
+    ) -> None:
+        self.dead1 = dead1
+        self.dead2 = dead2
+        self.ip_start1 = ip_start1
+        self.ip_end1 = ip_end1
+        self.ip_start2 = ip_start2
+        self.ip_end2 = ip_end2
+        self.nbuf1 = ip_end1 - ip_start1
+        self.nbuf2 = ip_end2 - ip_start2
+        self.npart1 = self.nbuf1 - self.dead1[ip_start1:ip_end1].sum()
+        self.npart2 = self.nbuf2 - self.dead2[ip_start2:ip_end2].sum()
+
+        if self.npart1 >= self.npart2:
+            self.npairs = self.npart1
+            self.npairs_not_repeated = self.npart2
+            nalloc = self.nbuf1 if self.nbuf1 > 0 else 1
+            self.shuffled_idx = np.arange(nalloc, dtype=np.int64) + ip_start1
+        else:
+            self.npairs = self.npart2
+            self.npairs_not_repeated = self.npart1
+            nalloc = self.nbuf2 if self.nbuf2 > 0 else 1
+            self.shuffled_idx = np.arange(nalloc, dtype=np.int64) + ip_start2
+        
+        gen.shuffle(self.shuffled_idx)
+
+        if self.npart1 == 0 or self.npart2 == 0:
+            self.npairs = 0
+            self.npairs_not_repeated = 0
+            self.dt_corr = 0
+        else:
+            self.dt_corr = self.npairs
+
+        self.ip1 = -1
+        self.ip2 = -1
+        self.ipair = 0
+
+    def has_next(self) -> bool:
+        return self.ipair < self.npairs
+
+    def next(self) -> tuple[int, int, int, float, float]:
+        ip1_abs = -1
+        ip2_abs = -1
+        if self.npart1 >= self.npart2:
+            # advance ip1 on shuffled side 1
+            for j in range(self.ip1 + 1, self.nbuf1):
+                if not self.dead1[self.shuffled_idx[j]]:
+                    self.ip1 = j
+                    break
+            # advance ip2 on side 2, cyclic blocks of npart2
+            if (self.ipair % self.npart2) == 0:
+                self.ip2 = -1
+            for j in range((self.ip2 + 1) % self.nbuf2, self.nbuf2):
+                if not self.dead2[self.ip_start2 + j]:
+                    self.ip2 = j
+                    break
+            ip1_abs = self.shuffled_idx[self.ip1]
+            ip2_abs = self.ip_start2 + self.ip2
+
+            # weight correction
+            if (self.ipair % self.npairs_not_repeated) < (self.npairs % self.npairs_not_repeated):
+                w_corr = 1.0 / (self.npart1 // self.npart2 + 1)
+            else:
+                w_corr = 1.0 / (self.npart1 // self.npart2)
+        else:
+            # advance ip2 on shuffled side 2
+            for j in range(self.ip2 + 1, self.nbuf2):
+                if not self.dead2[self.shuffled_idx[j]]:
+                    self.ip2 = j
+                    break
+            # advance ip1 on side 1, cyclic blocks of npart1
+            if (self.ipair % self.npart1) == 0:
+                self.ip1 = -1
+            for j in range((self.ip1 + 1) % self.nbuf1, self.nbuf1):
+                if not self.dead1[self.ip_start1 + j]:
+                    self.ip1 = j
+                    break
+            ip1_abs = self.ip_start1 + self.ip1
+            ip2_abs = self.shuffled_idx[self.ip2]
+
+            if (self.ipair % self.npairs_not_repeated) < (self.npairs % self.npairs_not_repeated):
+                w_corr = 1.0 / (self.npart2 // self.npart1 + 1)
+            else:
+                w_corr = 1.0 / (self.npart2 // self.npart1)
+
+        dt_corr_f = float(self.dt_corr)
+        ipair_ret = self.ipair
+        self.ipair += 1
+        return ipair_ret, ip1_abs, ip2_abs, w_corr, dt_corr_f

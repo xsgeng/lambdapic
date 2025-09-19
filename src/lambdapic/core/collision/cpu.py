@@ -8,7 +8,14 @@ from numpy.typing import NDArray
 from scipy.constants import c, epsilon_0, k, pi, h
 
 from ..utils.jit_spinner import jit_spinner
-from .utils import CollisionData, ParticleData, boost_to_lab, coulomb_scattering
+from .utils import (
+    CollisionData,
+    InterPairingIterator,
+    IntraPairingIterator,
+    ParticleData,
+    boost_to_lab,
+    coulomb_scattering,
+)
 
 
 @njit
@@ -298,63 +305,17 @@ def intra_collision_cell(
     cell_vol: float, dt: float,
     gen: np.random.Generator
 ):
-    dead = part.is_dead
-
-    nbuf = ip_end - ip_start
-    npart = nbuf - dead[ip_start:ip_end].sum()
-    if npart < 2:
-        return
-
-    shuffled_idx = np.arange(nbuf) + ip_start
-    gen.shuffle(shuffled_idx)
-
-    npairs = (npart + 1) // 2
-    dt_corr = 2*npairs - 1
-
-    even = (npart % 2) == 0
-    odd = not even
-
-    ip1 = -1
-    ip2 = -1
-    for ipair in range(npairs):
-        for ip1 in range(ip2+1, nbuf):
-            if not dead[shuffled_idx[ip1]]:
-                break
-        # even
-        if even:
-            for ip2 in range(ip1+1, nbuf):
-                if not dead[shuffled_idx[ip2]]:
-                    break
-        # odd
-        else:
-            # before last pair
-            if ipair < npairs - 1:
-                for ip2 in range(ip1+1, nbuf):
-                    if not dead[shuffled_idx[ip2]]:
-                        break
-            # last pair
-            else:
-                for ip2 in range(ip1):
-                    if not dead[shuffled_idx[ip2]]:
-                        break
-
-        # the first pariticle is splitted into two pairs
-        w_corr = 1.0
-        if odd:
-            if ipair == 0:
-                w_corr = 0.5
-            elif ipair == npairs - 1:
-                w_corr = 0.5
-
-        ip1_ = shuffled_idx[ip1]
-        ip2_ = shuffled_idx[ip2]
+    it = IntraPairingIterator(part.is_dead, ip_start, ip_end, gen)
+    # if fewer than 2, iterator will have no pairs
+    while it.has_next():
+        ipair, ip1_, ip2_, w_corr, dt_corr = it.next()
         collision_kernel(
             part, ip1_,
             part, ip2_,
-            lnLambda, debye_length_inv_square, 
+            lnLambda, debye_length_inv_square,
             dt_corr, w_corr,
-            cell_vol, dt, 
-            gen
+            cell_vol, dt,
+            gen,
         )
             
 
@@ -391,77 +352,18 @@ def inter_collision_cell(
     cell_vol: float, dt: float,
     gen: np.random.Generator
 ):
-    dead1 = part1.is_dead
-    dead2 = part2.is_dead
-
-    nbuf1 = ip_end1 - ip_start1
-    nbuf2 = ip_end2 - ip_start2
-
-    npart1 = nbuf1 - dead1[ip_start1:ip_end1].sum()
-    npart2 = nbuf2 - dead2[ip_start2:ip_end2].sum()
-
-    if npart1 == 0 or npart2 == 0:
-        return
-
-    if npart1 >= npart2:
-        npairs = npart1
-        npairs_not_repeated = npart2
-        shuffled_idx = np.arange(nbuf1) + ip_start1
-    else:
-        npairs = npart2
-        npairs_not_repeated = npart1
-        shuffled_idx = np.arange(nbuf2) + ip_start2
-
-    dt_corr = npairs
-
-    gen.shuffle(shuffled_idx)
-
-    # indices will be offsetted by ip_start later
-    ip1 = -1
-    ip2 = -1
-    if npart1 >= npart2:
-        for ipair in range(npairs):
-            for ip1 in range(ip1+1, nbuf1):
-                if not dead1[shuffled_idx[ip1]]:
-                    break
-            if ipair % npart2 == 0:
-                ip2 = -1
-            for ip2 in range((ip2+1) % nbuf2, nbuf2):
-                if not dead2[ip_start2+ip2]:
-                    break
-            if (ipair % npairs_not_repeated) < (npairs % npairs_not_repeated):
-                w_corr = 1. / ( npart1 // npart2 + 1 )
-            else:
-                w_corr = 1. / ( npart1 // npart2 )
-            
-            ip1_ = shuffled_idx[ip1]
-            ip2_ = ip_start2 + ip2
-            collision_kernel(part1, ip1_, 
-                             part2, ip2_, 
-                             lnLambda, debye_length_inv_square, 
-                             dt_corr, w_corr, cell_vol, dt, gen)
-    else:
-        for ipair in range(npairs):
-            for ip2 in range(ip2+1, nbuf2):
-                if not dead2[shuffled_idx[ip2]]:
-                    break
-            if ipair % npart1 == 0:
-                ip1 = -1
-            for ip1 in range((ip1+1) % nbuf1, nbuf1):
-                if not dead1[ip_start1 + ip1]:
-                    break
-                    
-            if (ipair % npairs_not_repeated) < (npairs % npairs_not_repeated):
-                w_corr = 1. / ( npart2 // npart1 + 1 )
-            else:
-                w_corr = 1. / ( npart2 // npart1 )
-            
-            ip1_ = ip_start1 + ip1
-            ip2_ = shuffled_idx[ip2]
-            collision_kernel(part1, ip1_, 
-                             part2, ip2_, 
-                             lnLambda, debye_length_inv_square, 
-                             dt_corr, w_corr, cell_vol, dt, gen)
+    it = InterPairingIterator(part1.is_dead, ip_start1, ip_end1,
+                              part2.is_dead, ip_start2, ip_end2, gen)
+    while it.has_next():
+        ipair, ip1_, ip2_, w_corr, dt_corr = it.next()
+        collision_kernel(
+            part1, ip1_,
+            part2, ip2_,
+            lnLambda, debye_length_inv_square,
+            dt_corr, w_corr,
+            cell_vol, dt,
+            gen,
+        )
 
 
 @njit(inline='always', cache=True)
