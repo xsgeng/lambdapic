@@ -9,6 +9,7 @@ from scipy.constants import c, epsilon_0, pi
 from ..patch.patch import Patches
 from ..sort.particle_sort import ParticleSort2D, ParticleSort3D
 from ..species import Species
+from ..utils.pickle_list import PickleableTypedList
 from .cpu import (
     constrain_debye_length_patches,
     debye_length_patches,
@@ -18,7 +19,7 @@ from .cpu import (
 from .utils import ParticleData, pack_particle_data
 
 
-class Collision:
+class Collision(PickleableTypedList):
     """
     
     """
