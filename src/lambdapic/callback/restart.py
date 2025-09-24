@@ -11,10 +11,45 @@ from .callback import Callback
 
 
 class RestartDump(Callback):
-    """Callback to dump restart checkpoints per rank.
+    """Callback that persists per-rank restart checkpoints for later replay.
 
-    Creates a directory per checkpoint with a manifest and one shard per rank:
-      - <out_dir>/ckpt_<itime>/rank_<rank>.pkl
+    The callback runs during the Maxwell solver's second stage and captures one
+    shard per MPI rank inside ``out_dir/ckpt_<itime>/``. Each shard stores the
+    full ``Simulation`` state so a subsequent :meth:`RestartDump.load` call can
+    resume execution on the same rank topology.
+
+    Parameters
+    ----------
+    out_dir : str | Path
+        Root directory that will hold checkpoint folders.
+    interval : int | float | Callable
+        Dump cadence; accepts step counts, wall-clock seconds, or a predicate
+        callable that mirrors the base callback interval semantics.
+    keep : int | None
+        Number of most recent checkpoints to retain. When set, rank 0 trims
+        older directories after a successful dump.
+    dump_signals : Sequence[int] | bool
+        POSIX signals that trigger an immediate checkpoint; ``True`` registers
+        ``SIGINT`` and ``SIGTERM``, ``False`` disables signal-triggered dumps.
+
+    Attributes
+    ----------
+    stage : str
+        Simulation stage where the callback executes.
+
+    Examples
+    --------
+    >>> sim = Simulation2D(...)
+    >>> sim.run(callbacks=[RestartDump('checkpoints', interval=100)])
+    # To restart the simulation, before calling the sim.run
+    # replace the sim instance with the loaded 
+    >>> sim = RestartDump.load('checkpoints/ckpt_000100')
+    >>> sim.run(callbacks=...)  # Continue from checkpoint
+
+    Note
+    ----
+    Setting ``dump_signals`` allows automatic checkpointing when simulation is stopped by
+    time limit of job scheduler like slurm.
     """
 
     stage = "maxwell second"
@@ -94,9 +129,9 @@ class RestartDump(Callback):
     def load(ckpt_dir: Union[str, Path], comm=None) -> Union[Simulation, Simulation3D]:
         """Load a Simulation from a RestartDump checkpoint directory.
 
-        Args:
-            ckpt_dir: Path to a single checkpoint directory (ckpt_xxxxxx).
-            comm: Optional MPI communicator to use.
+        Parameters:
+            ckpt_dir(str|Path): Path to a single checkpoint directory (ckpt_xxxxxx).
+            comm(mpi4py.MPI.Comm): Optional MPI communicator to use.
 
         Returns:
             Simulation or Simulation3D instance restored to the checkpoint state.
