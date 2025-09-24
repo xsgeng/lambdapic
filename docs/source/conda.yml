@@ -2,6 +2,7 @@ name: lambdapic
 dependencies:
   - python==3.12
   - mpi4py
+  - mpich
   - h5py
   - numpy
   - numba
