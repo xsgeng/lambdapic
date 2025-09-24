@@ -7,13 +7,13 @@ from scipy.constants import c, e, epsilon_0, mu_0
 from lambdapic.core.particles import SpinParticles
 
 from ..patch import Patches
-
-from .cpu import boris_push_patches, push_position_patches_2d, photon_push_patches
+from ..utils.pickle_list import PickleableTypedList
+from .cpu import boris_push_patches, photon_push_patches, push_position_patches_2d
 from .unified.unified_pusher_2d import unified_boris_pusher_cpu_2d
 from .unified.unified_pusher_3d import unified_boris_pusher_cpu_3d
 
 
-class PusherBase:
+class PusherBase(PickleableTypedList):
     def __init__(self, patches: Patches, ispec: int) -> None:
         """
         Construct from patches.

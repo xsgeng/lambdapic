@@ -3,6 +3,7 @@ from numba import typed
 
 from ..patch import Patches
 from ..species import Electron, Photon, Positron, Species
+from ..utils.pickle_list import PickleableTypedList
 from .cpu import (
     create_pair_patches_2d,
     create_pair_patches_3d,
@@ -13,7 +14,7 @@ from .cpu import (
 )
 
 
-class PairProductionBase:
+class PairProductionBase(PickleableTypedList):
     """
     Radiation class handles creation of photons.
 

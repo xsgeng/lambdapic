@@ -15,7 +15,8 @@ dependencies = [
     "yaspin",
     "packaging",
     "requests",
-    "typer"
+    "typer",
+    "dill"
 ]
 requires-python = ">=3.10"
 

@@ -767,6 +767,14 @@ class Simulation:
         if callbacks is None:
             callbacks = []
         stage_callbacks = SimulationCallbacks(callbacks, self)
+
+        # check restart
+        restart_cb = None
+        for cb in callbacks:
+            if hasattr(cb, "__class__") and cb.__class__.__name__ == "RestartDump":
+                restart_cb = cb
+                break
+
         # check unified pusher
         stages_in_pusher = {
             "push position first",
@@ -791,10 +799,11 @@ class Simulation:
                 logger.info(f"New version available: {current_version} -> {latest_version}. Upgrade with `pip install --upgrade --upgrade-strategy=only-if-needed lambdapic`")
         
         # handle simulation steps
-        nsteps_ = self._handle_nsteps(nsteps, sim_time)
+        nsteps_total = self._handle_nsteps(nsteps, sim_time)
             
         self.mpi.comm.Barrier()
-        for self.istep in trange(nsteps_, disable=self.mpi.rank>0, position=1):
+        for self.istep in trange(nsteps_total-self.itime, total=nsteps_total, initial=self.itime, 
+                                 disable=self.mpi.rank>0, position=1):
             
             # start of simulation stages
             with Timer('Callbacks: start stage'):
@@ -947,7 +956,12 @@ class Simulation:
             with Timer("Callbacks: maxwell second stage"):
                 stage_callbacks.run('maxwell second')
         
+            if restart_cb and restart_cb._dump_requested:
+                restart_cb._call(self)
+                return
+            
             self.itime += 1
+
 
             if stop_callback():
                 return "stop by callback"
@@ -960,20 +974,20 @@ class Simulation:
         # Determine number of steps to run based on nsteps or sim_time
         elif nsteps is None and sim_time is None:
             if self.nsteps is not None:
-                nsteps_ = self.nsteps
+                nsteps_total = self.nsteps
             elif self.sim_time is not None:
                 # Calculate nsteps from simulation time
-                nsteps_ = int(self.sim_time / self.dt)
+                nsteps_total = int(self.sim_time / self.dt)
             else:
                 raise ValueError("Must provide either nsteps or sim_time, either in Simulation or as an argument to run()")
         elif sim_time is not None and nsteps is None:
             # Calculate nsteps from simulation time parameter
-            nsteps_ = int(sim_time / self.dt)
+            nsteps_total = int(sim_time / self.dt)
         elif nsteps is not None and sim_time is None:
-            nsteps_ = nsteps
+            nsteps_total = nsteps
         else:
             raise RuntimeError("This should never be reached")
-        return nsteps_
+        return nsteps_total
 
 Simulation2D = Simulation
 

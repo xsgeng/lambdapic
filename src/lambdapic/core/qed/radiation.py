@@ -1,8 +1,9 @@
 
 from numba import typed
 
-from lambdapic.core.particles import QEDParticles
+from ..particles import QEDParticles
 
+from ..utils.pickle_list import PickleableTypedList
 from ..patch import Patches
 from ..species import Electron, Photon, Species
 from .cpu import (
@@ -15,7 +16,7 @@ from .cpu import (
 )
 
 
-class RadiationBase:
+class RadiationBase(PickleableTypedList):
     """
     Radiation class handles creation of photons.
 

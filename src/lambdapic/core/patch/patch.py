@@ -383,38 +383,10 @@ class Patches:
         return p
 
     def update_lists(self):
-        """ 
-        Gather all the properties in each patch to the numba list.
-
-        Numba jitted functions cannot accept list of objects as input.
-        For parallel execution, it is the only option now.
-        
-        Not needed for GPU kernels since the kernel calls are asynchronous.
-
-        this update is expensive. 
-        """
-        particle_lists = []
-        for ispec, s in enumerate(self.species):
-            particle_lists.append({})
-            lists = particle_lists[ispec]
-            lists["npart"] = typed.List([p.particles[ispec].npart for p in self.patches])
-            lists["is_dead"] = typed.List([p.particles[ispec].is_dead for p in self.patches])
-
-            for attr in self[0].particles[ispec].attrs:
-                lists[attr] = typed.List([getattr(p.particles[ispec], attr) for p in self.patches])
-
-        self.particle_lists = particle_lists
-
+        pass
 
     def update_particle_lists(self, ipatch):
-        plists = self.particle_lists
-        patch = self[ipatch]
-        for ispec, s in enumerate(self.species):
-            plists[ispec]["npart"][ipatch] = patch.particles[ispec].npart
-            plists[ispec]["is_dead"][ipatch] = patch.particles[ispec].is_dead
-
-            for attr in patch.particles[ispec].attrs:
-                plists[ispec][attr][ipatch] = getattr(patch.particles[ispec], attr)
+        pass
 
     def init_rect_neighbor_index_2d(self, npatch_x: int, npatch_y: int, *,
                                     boundary_conditions: dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], 

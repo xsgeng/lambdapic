@@ -208,6 +208,11 @@ class ParticlesBase:
         """
         return np.logical_not(self.is_dead)
 
+    def __setstate__(self, state):
+        for attr in state['attrs']:
+            state[attr] = state[attr].copy()
+        state['is_dead'] = state['is_dead'].copy()
+        self.__dict__.update(state)
 
 class QEDParticles(ParticlesBase):
     """Particle class used for QED processes. With additional attributes below:

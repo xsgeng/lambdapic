@@ -3,6 +3,8 @@ import numpy as np
 from numba import typed
 from scipy.constants import c, e, epsilon_0, mu_0
 
+from ..utils.pickle_list import PickleableTypedList
+
 from ..boundary.cpml import (PMLX, PMLY, PMLZ, update_bfield_cpml_patches_2d,
                              update_efield_cpml_patches_2d,
                              update_bfield_cpml_patches_3d,
@@ -13,7 +15,7 @@ from .cpu import (update_bfield_patches_2d, update_bfield_patches_3d,
                   update_efield_patches_2d, update_efield_patches_3d)
 
 
-class MaxwellSolver:
+class MaxwellSolver(PickleableTypedList):
     def __init__(self, patches: Patches) -> None:
         """
         Initialize Maxwell solver from Patches.

@@ -34,6 +34,13 @@ SaveParticlesToHDF5
 
 .. autoclass:: lambdapic.callback.hdf5.SaveParticlesToHDF5
 
+RestartDump
+------------
+
+Callback that dumps simulation checkpoints using dill pickling. Checkpoints can be reloaded using :any:`RestartDump.load`.
+
+.. autoclass:: lambdapic.callback.restart.RestartDump
+
 MovingWindow
 ------------
 
