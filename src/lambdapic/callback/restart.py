@@ -113,6 +113,9 @@ class RestartDump(Callback):
             sim = pickle.load(f)
 
         sim.update_lists()
+
+        # inc by 1, since restart is called before itime inc
+        sim.itime += 1
         comm.Barrier()
 
         logger.info(f"Rank {rank}: Checkpoint loaded from {ckpt_dir}, itime={sim.itime}")
