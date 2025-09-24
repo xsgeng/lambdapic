@@ -767,6 +767,14 @@ class Simulation:
         if callbacks is None:
             callbacks = []
         stage_callbacks = SimulationCallbacks(callbacks, self)
+
+        # check restart
+        restart_cb = None
+        for cb in callbacks:
+            if hasattr(cb, "__class__") and cb.__class__.__name__ == "RestartDump":
+                restart_cb = cb
+                break
+
         # check unified pusher
         stages_in_pusher = {
             "push position first",
@@ -948,6 +956,10 @@ class Simulation:
                 stage_callbacks.run('maxwell second')
         
             self.itime += 1
+
+            if restart_cb and restart_cb._dump_requested:
+                restart_cb._call(self)
+                return
 
             if stop_callback():
                 return "stop by callback"
