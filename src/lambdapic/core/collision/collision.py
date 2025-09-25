@@ -84,16 +84,30 @@ class Collision(PickleableTypedList):
         self.total_density_list = typed.List(# type: ignore
             [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
         )
-        self.bucket_bound_min_list = [typed.List(s.bucket_bound_min_list) for s in self.sorter] # type: ignore
-        self.bucket_bound_max_list = [typed.List(s.bucket_bound_max_list) for s in self.sorter] # type: ignore
+        self.bucket_bound_min_lists = [typed.List(s.bucket_bound_min_list) for s in self.sorter] # type: ignore
+        self.bucket_bound_max_lists = [typed.List(s.bucket_bound_max_list) for s in self.sorter] # type: ignore
         self.gen_list = typed.List(self.gen.spawn(self.patches.npatches)) # type: ignore
+
+    def __getstate__(self) -> Dict:
+        state = super().__getstate__()
+
+        # these cannot be pickled
+        del state['part_lists']
+        del state['bucket_bound_min_lists']
+        del state['bucket_bound_max_lists']
+        return state
+    
+    def __setstate__(self, state: Dict) -> None:
+        super().__setstate__(state)
+        self.generate_particle_lists()
+        self.generate_field_lists()
 
     def calculate_debye_length(self) -> None:
         for s in self.all_species:
             debye_length_patches(
                 self.part_lists[s.ispec],
-                self.bucket_bound_min_list[s.ispec],
-                self.bucket_bound_max_list[s.ispec],
+                self.bucket_bound_min_lists[s.ispec],
+                self.bucket_bound_max_lists[s.ispec],
                 self.cell_vol,
                 self.debye_length_inv_square_list,
                 self.total_density_list,
@@ -127,7 +141,7 @@ class Collision(PickleableTypedList):
             if ispec1 == ispec2:
                 ispec = ispec1
                 intra_collision_patches(
-                    self.part_lists[ispec], self.bucket_bound_min_list[ispec], self.bucket_bound_max_list[ispec],
+                    self.part_lists[ispec], self.bucket_bound_min_lists[ispec], self.bucket_bound_max_lists[ispec],
                     self.lnLambda,
                     self.debye_length_inv_square_list,
                     self.cell_vol, dt,
@@ -135,8 +149,8 @@ class Collision(PickleableTypedList):
                 )
             else:
                 inter_collision_patches(
-                    self.part_lists[ispec1], self.bucket_bound_min_list[ispec1], self.bucket_bound_max_list[ispec1],
-                    self.part_lists[ispec2], self.bucket_bound_min_list[ispec2], self.bucket_bound_max_list[ispec2],
+                    self.part_lists[ispec1], self.bucket_bound_min_lists[ispec1], self.bucket_bound_max_lists[ispec1],
+                    self.part_lists[ispec2], self.bucket_bound_min_lists[ispec2], self.bucket_bound_max_lists[ispec2],
                     self.patches.npatches,
                     self.lnLambda,
                     self.debye_length_inv_square_list,
