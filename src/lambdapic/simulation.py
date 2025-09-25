@@ -986,7 +986,7 @@ class Simulation:
             # Calculate nsteps from simulation time parameter
             nsteps_total = int(sim_time / self.dt)
         elif nsteps is not None and sim_time is None:
-            nsteps_total = nsteps
+            nsteps_total = nsteps + self.itime
         else:
             raise RuntimeError("This should never be reached")
         return nsteps_total
