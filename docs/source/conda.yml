@@ -3,6 +3,7 @@ dependencies:
   - python==3.12
   - mpi4py
   - mpich
+  - c-compiler
   - h5py
   - numpy
   - numba
