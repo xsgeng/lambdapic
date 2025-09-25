@@ -10,6 +10,7 @@ from scipy.constants import c, epsilon_0, k, pi, h
 from ..utils.jit_spinner import jit_spinner
 from .utils import (
     CollisionData,
+    collision_data,
     InterPairingIterator,
     IntraPairingIterator,
     ParticleData,
@@ -380,7 +381,7 @@ def collision_kernel(
     w2_corr = part2.w[ip2] * w_corr
     w_max = max(w1_corr, w2_corr)
         
-    d = CollisionData(
+    d = collision_data(
         part1.ux[ip1], part1.uy[ip1], part1.uz[ip1], part1.inv_gamma[ip1], w1_corr,
         part1.m, part1.q,
         part2.ux[ip2], part2.uy[ip2], part2.uz[ip2], part2.inv_gamma[ip2], w2_corr,

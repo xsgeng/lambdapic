@@ -1,124 +1,80 @@
+from collections import namedtuple
 from math import sqrt
 from typing import List, overload
 
-import numpy as np
-from numpy.typing import NDArray
-from numba import njit, prange
 import numba
+import numpy as np
+from numba import njit, prange
 from numba.experimental import jitclass
+from numpy.typing import NDArray
 from scipy.constants import c, epsilon_0, pi
 
 from ..particles import ParticlesBase
 from ..utils.jit_spinner import jit_spinner
 
-@jitclass
-class CollisionData:
-    """Data class for collision parameters."""
-    px1: float
-    py1: float
-    pz1: float
-    gamma1: float
-    vx1: float
-    vy1: float
-    vz1: float
-    m1: float
-    q1: float
-    w1: float
+CollisionData = namedtuple(
+    'CollisionData',
+    [
+        'px1', 'py1', 'pz1', 'gamma1', 'vx1', 'vy1', 'vz1', 'm1', 'q1', 'w1',
+        'px2', 'py2', 'pz2', 'gamma2', 'vx2', 'vy2', 'vz2', 'm2', 'q2', 'w2',
+        'vx_com', 'vy_com', 'vz_com', 'gamma_com', 'v_com_square',
+        'px1_com', 'py1_com', 'pz1_com', 'p1_com', 'p_perp',
+        'gamma1_com', 'gamma2_com'
+    ]
+)
 
-    px2: float
-    py2: float
-    pz2: float
-    gamma2: float
-    vx2: float
-    vy2: float
-    vz2: float
-    m2: float
-    q2: float
-    w2: float
+@njit(inline='always', cache=True)
+def collision_data(
+    ux1: float, uy1: float, uz1: float, inv_gamma1: float, w1: float,
+    m1: float, q1: float, 
+    ux2: float, uy2: float, uz2: float, inv_gamma2: float, w2: float,
+    m2: float, q2: float
+) -> CollisionData:
     
-    vx_com: float
-    vy_com: float
-    vz_com: float
-    gamma_com: float
-    v_com_square: float
+    px1, py1, pz1, gamma1 = ux1*m1*c, uy1*m1*c, uz1*m1*c, 1/inv_gamma1
+    px2, py2, pz2, gamma2 = ux2*m2*c, uy2*m2*c, uz2*m2*c, 1/inv_gamma2
     
-    px1_com: float
-    py1_com: float
-    pz1_com: float
-    p1_com: float
-    p_perp: float
+    vx1 = ux1 * inv_gamma1 * c
+    vy1 = uy1 * inv_gamma1 * c
+    vz1 = uz1 * inv_gamma1 * c
     
-    gamma1_com: float
-    gamma2_com: float
+    vx2 = ux2 * inv_gamma2 * c
+    vy2 = uy2 * inv_gamma2 * c
+    vz2 = uz2 * inv_gamma2 * c
     
-    def __init__(
-        self,
-        ux1: float, uy1: float, uz1: float, inv_gamma1: float, w1: float,
-        m1: float, q1: float, 
-        ux2: float, uy2: float, uz2: float, inv_gamma2: float, w2: float,
-        m2: float, q2: float
-    ) -> None:
-        self.px1, self.py1, self.pz1, self.gamma1 = ux1*m1*c, uy1*m1*c, uz1*m1*c, 1/inv_gamma1
-        self.m1, self.q1, self.w1 = m1, q1, w1
-        
-        self.px2, self.py2, self.pz2, self.gamma2 = ux2*m2*c, uy2*m2*c, uz2*m2*c, 1/inv_gamma2
-        self.m2, self.q2, self.w2 = m2, q2, w2
-        
-        self.vx1 = ux1 * inv_gamma1 * c
-        self.vy1 = uy1 * inv_gamma1 * c
-        self.vz1 = uz1 * inv_gamma1 * c
-        
-        self.vx2 = ux2 * inv_gamma2 * c
-        self.vy2 = uy2 * inv_gamma2 * c
-        self.vz2 = uz2 * inv_gamma2 * c
-        
-        # speed of COM
-        self.vx_com = vx_com = (self.px1 + self.px2) / (self.gamma1*m1 + self.gamma2*m2)
-        self.vy_com = vy_com = (self.py1 + self.py2) / (self.gamma1*m1 + self.gamma2*m2)
-        self.vz_com = vz_com = (self.pz1 + self.pz2) / (self.gamma1*m1 + self.gamma2*m2)
-        v_com_square = vx_com**2 + vy_com**2 + vz_com**2
-        self.gamma_com = gamma_com = 1.0 / sqrt(1 - v_com_square/c**2 )
-        self.v_com_square = v_com_square = vx_com**2 + vy_com**2 + vz_com**2
-        
-        fac = (gamma_com-1)/v_com_square if v_com_square > 0 else 0.0
-        self.px1_com = self.px1 + (fac * (self.vx1*vx_com + self.vy1*vy_com + self.vz1*vz_com) - gamma_com) * m1*self.gamma1*vx_com
-        self.py1_com = self.py1 + (fac * (self.vx1*vx_com + self.vy1*vy_com + self.vz1*vz_com) - gamma_com) * m1*self.gamma1*vy_com
-        self.pz1_com = self.pz1 + (fac * (self.vx1*vx_com + self.vy1*vy_com + self.vz1*vz_com) - gamma_com) * m1*self.gamma1*vz_com
-        self.p1_com = sqrt(self.px1_com**2 + self.py1_com**2 + self.pz1_com**2)
-        
-        # p2_com = -p1_com
-        
-        self.gamma1_com = (1 - (vx_com*self.vx1 + vy_com*self.vy1 + vz_com*self.vz1) / c**2) * gamma_com*self.gamma1
-        self.gamma2_com = (1 - (vx_com*self.vx2 + vy_com*self.vy2 + vz_com*self.vz2) / c**2) * gamma_com*self.gamma2
-        
-        self.p_perp = sqrt(self.px1_com**2 + self.py1_com**2)
+    # speed of COM
+    vx_com = (px1 + px2) / (gamma1*m1 + gamma2*m2)
+    vy_com = (py1 + py2) / (gamma1*m1 + gamma2*m2)
+    vz_com = (pz1 + pz2) / (gamma1*m1 + gamma2*m2)
+    v_com_square = vx_com**2 + vy_com**2 + vz_com**2
+    gamma_com = 1.0 / sqrt(1 - v_com_square/c**2 )
+    v_com_square = vx_com**2 + vy_com**2 + vz_com**2
+    
+    fac = (gamma_com-1)/v_com_square if v_com_square > 0 else 0.0
+    px1_com = px1 + (fac * (vx1*vx_com + vy1*vy_com + vz1*vz_com) - gamma_com) * m1*gamma1*vx_com
+    py1_com = py1 + (fac * (vx1*vx_com + vy1*vy_com + vz1*vz_com) - gamma_com) * m1*gamma1*vy_com
+    pz1_com = pz1 + (fac * (vx1*vx_com + vy1*vy_com + vz1*vz_com) - gamma_com) * m1*gamma1*vz_com
+    p1_com = sqrt(px1_com**2 + py1_com**2 + pz1_com**2)
+    
+    # p2_com = -p1_com
+    
+    gamma1_com = (1 - (vx_com*vx1 + vy_com*vy1 + vz_com*vz1) / c**2) * gamma_com*gamma1
+    gamma2_com = (1 - (vx_com*vx2 + vy_com*vy2 + vz_com*vz2) / c**2) * gamma_com*gamma2
+    
+    p_perp = sqrt(px1_com**2 + py1_com**2)
 
+    return CollisionData(
+        px1, py1, pz1, gamma1, vx1, vy1, vz1, m1, q1, w1,
+        px2, py2, pz2, gamma2, vx2, vy2, vz2, m2, q2, w2,
+        vx_com, vy_com, vz_com, gamma_com, v_com_square,
+        px1_com, py1_com, pz1_com, p1_com, p_perp,
+        gamma1_com, gamma2_com
+    )
 
-@jitclass
-class ParticleData:
-    """Data class for particle properties."""
-    x: numba.float64[:] # type: ignore
-    y: numba.float64[:] # type: ignore
-    z: numba.float64[:] # type: ignore
-    ux: numba.float64[:] # type: ignore
-    uy: numba.float64[:] # type: ignore
-    uz: numba.float64[:] # type: ignore
-    inv_gamma: numba.float64[:] # type: ignore
-    w: numba.float64[:] # type: ignore
-    is_dead: numba.types.bool_[:] # type: ignore
-    m: float
-    q: float
-
-    def __init__(
-        self,
-        x: NDArray[np.float64], y: NDArray[np.float64], z: NDArray[np.float64], 
-        ux: NDArray[np.float64], uy: NDArray[np.float64], uz: NDArray[np.float64], inv_gamma: NDArray[np.float64],
-        w: NDArray[np.float64], is_dead: NDArray[np.bool_], m: float, q: float
-    ) -> None:
-        self.x, self.y, self.z = x, y, z
-        self.ux, self.uy, self.uz = ux, uy, uz
-        self.inv_gamma, self.w, self.is_dead = inv_gamma, w, is_dead
-        self.m, self.q = m, q
+ParticleData = namedtuple(
+    'ParticleData',
+    [ 'x', 'y', 'z', 'ux', 'uy', 'uz', 'inv_gamma', 'w', 'is_dead', 'm', 'q' ]
+)
 
 @overload
 def pack_particle_data(particles: ParticlesBase, m: float, q: float) -> ParticleData: ...
