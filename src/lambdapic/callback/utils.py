@@ -479,9 +479,14 @@ class MovingWindow:
         self._update_patch_info(sim)
         self._fill_particles(sim, new_patches)
 
+        # reset fields and pml data
         for p in new_patches:
             for attr in p.fields.attrs:
                 getattr(p.fields, attr).fill(0.0)
+            for pml in p.pml_boundary:
+                for k in pml.__dict__:
+                    if k.startswith('psi'):
+                        pml.__dict__[k].fill(0.0)
 
         for sorter in sim.sorter:
             sorter.generate_field_lists()
