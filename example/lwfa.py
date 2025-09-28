@@ -1,19 +1,25 @@
-import faulthandler
-from pathlib import Path
-
-import h5py
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LinearSegmentedColormap
-from numpy import vectorize
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
-from lambdapic import Electron, Proton, Simulation, Species, callback
-from lambdapic.callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5
-from lambdapic.callback.laser import GaussianLaser2D, SimpleLaser2D
-from lambdapic.callback.utils import MovingWindow, get_fields
-
-faulthandler.enable()
+from lambdapic import (
+    Electron,
+    ExtractSpeciesDensity,
+    MovingWindow,
+    PlotFields,
+    Proton,
+    SaveFieldsToHDF5,
+    SaveSpeciesDensityToHDF5,
+    SimpleLaser2D,
+    Simulation,
+    Species,
+    c,
+    callback,
+    e,
+    epsilon_0,
+    get_fields,
+    m_e,
+    pi,
+)
 
 um = 1e-6
 l0 = 0.8 * um
@@ -60,7 +66,8 @@ sim = Simulation(
     dy=dy,
     npatch_x=10,
     npatch_y=10,
-    nsteps=2001,
+    dt_cfl=0.99,
+    sim_time=100e-15
 )
 
 ele = Electron(density=density(ne), ppc=10)
@@ -69,71 +76,20 @@ carbon = Species(name="C", charge=6, mass=12*1800, density=density(ne/8), ppc=1)
 
 sim.add_species([ele, carbon, proton])
 
-@callback(interval=100)
-def plot_results(sim: Simulation):
-    it = sim.itime
-    if sim.mpi.rank > 0:
-        return
-    
-    nx_moved = int(movingwindow.patch_this_shift // dx)
-    s = np.s_[nx_moved:nx_moved+(sim.npatch_x-1)*sim.nx_per_patch, :]
-    
-    with h5py.File(f'lwfa/{ele.name}_t{sim.itime:06d}.h5', 'r', locking=False) as f:
-        nele = f['density'][s]
-
-    with h5py.File(f'lwfa/fields_t{sim.itime:06d}.h5', 'r', locking=False) as f:
-        ey = f['ey'][s] * e / (m_e * c * omega0)
-        
-    bwr_alpha = LinearSegmentedColormap(
-        'bwr_alpha', 
-        dict( 
-            red=[ (0, 0, 0), (0.5, 1, 1), (1, 1, 1) ], 
-            green=[ (0, 0.5, 0), (0.5, 1, 1), (1, 0, 0) ], 
-            blue=[ (0, 1, 1), (0.5, 1, 1), (1, 0, 0) ], 
-            alpha = [ (0, 1, 1), (0.5, 0, 0), (1, 1, 1) ]
-        )
-    )
-    fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
-
-    extent = [
-        movingwindow.total_shift,
-        movingwindow.total_shift + Lx*(sim.npatch_x-1)/sim.npatch_x,
-        0,
-        Ly
-    ]
-
-    h1 = ax.imshow(
-        nele.T/nc, 
-        extent=extent,
-        origin='lower',
-        cmap='Grays',
-        vmax=ne/nc*2,
-        vmin=0,
-    )
-    h2 = ax.imshow(
-        ey.T, 
-        extent=extent,
-        origin='lower',
-        cmap=bwr_alpha,
-        vmax=laser.a0,
-        vmin=-laser.a0,
-    )
-    fig.colorbar(h1)
-    fig.colorbar(h2)
-
-    figdir = Path('lwfa')
-    if not figdir.exists():
-        figdir.mkdir()
-
-    fig.savefig(figdir/f'{it:04d}.png', dpi=300)
-    plt.close()
-
+interval = 10e-15
 if __name__ == "__main__":
     sim.run(2001, callbacks=[
             movingwindow,
-            laser, 
-            SaveFieldsToHDF5('lwfa/fields', 100, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
-            SaveSpeciesDensityToHDF5(ele, 'lwfa/', 100),
-            plot_results, # plot after saving hdf5
+            laser,
+            n_ele := ExtractSpeciesDensity(sim, ele, interval),
+            PlotFields(
+                [
+                    dict(field=n_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=ne/nc*2), 
+                    dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
+                ],
+                prefix='lwfa', interval=interval,
+            ),
+            SaveFieldsToHDF5('lwfa/fields', interval, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'jx', 'jy', 'rho']),
+            SaveSpeciesDensityToHDF5(proton, 'lwfa/', interval),
         ]
     )
