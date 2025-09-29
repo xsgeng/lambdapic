@@ -16,6 +16,7 @@ dependencies = [
     "packaging",
     "requests",
     "typer",
+    "threadpoolctl",
     "dill"
 ]
 requires-python = ">=3.10"
