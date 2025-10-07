@@ -91,5 +91,13 @@ def analyze_timers(
     typer.echo(f"{'TOTAL':<45} {total_time:>12.1f} {'':>15} {'100.0%':>15}")
 
 
+@app.command("mcp")
+def mcp() -> None:
+    """Start the LambdaPIC Model Context Protocol server."""
+    from lambdapic.cli.mcp import run as run_mcp_server
+
+    run_mcp_server()
+
+
 if __name__ == "__main__":
     app()
