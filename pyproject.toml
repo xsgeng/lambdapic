@@ -12,6 +12,7 @@ dependencies = [
     "mpi4py",
     "pymetis",
     "h5py",
+    "matplotlib",
     "yaspin",
     "packaging",
     "requests",
