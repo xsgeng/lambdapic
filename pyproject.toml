@@ -18,8 +18,7 @@ dependencies = [
     "requests",
     "typer",
     "threadpoolctl",
-    "dill",
-    "mcp[cli]"
+    "dill"
 ]
 requires-python = ">=3.10"
 
@@ -45,7 +44,12 @@ test = [
     "pytest-mpi>=0.6",
     "pytest-cov>=4.0",
     "pytest-xdist>=3.0",
-    "codecov>=2.0"
+    "codecov>=2.0",
+    "mcp[cli]"
+]
+
+mcp = [
+    "mcp[cli]"
 ]
 
 [project.scripts]

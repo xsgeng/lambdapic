@@ -94,7 +94,16 @@ def analyze_timers(
 @app.command("mcp")
 def mcp() -> None:
     """Start the LambdaPIC Model Context Protocol server."""
-    from lambdapic.cli.mcp import run as run_mcp_server
+    try:
+        from .mcp import run as run_mcp_server
+    except ModuleNotFoundError as e:
+        typer.secho(
+            "MCP support requires optional dependencies. "
+            "Install them with `pip install \"lambdapic[mcp]\"`.",
+            fg="red",
+            err=True,
+        )
+        raise e
 
     run_mcp_server()
 
