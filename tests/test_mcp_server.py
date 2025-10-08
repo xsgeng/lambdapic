@@ -3,6 +3,7 @@ import anyio
 from lambdapic.cli.mcp import (
     DocumentationIndex,
     get_doc,
+    get_code,
     list_callbacks,
     list_simulations,
     mcp_app,
@@ -35,7 +36,15 @@ def test_documentation_index_finds_callbacks():
 
 def test_fastmcp_registers_expected_tools():
     tools = {tool.name for tool in mcp_app._tool_manager.list_tools()}
-    assert {"list_simulations", "list_callbacks", "get_doc"} <= tools
+    assert {"list_simulations", "list_callbacks", "get_doc", "get_code"} <= tools
+
+
+def test_documentation_index_returns_source():
+    index = DocumentationIndex()
+
+    source = index.get_source("lambdapic.simulation.Simulation")
+    assert source is not None
+    assert "class Simulation(" in source or "class Simulation:" in source
 
 
 def test_list_simulations_tool_text_contains_known_class():
@@ -53,6 +62,11 @@ def test_list_callbacks_tool_text_contains_known_callback():
 def test_get_doc_tool_returns_docstring():
     text = get_doc("lambdapic.simulation.Simulation")
     assert "Particle-In-Cell" in text
+
+
+def test_get_code_tool_returns_source():
+    text = get_code("lambdapic.simulation.Simulation")
+    assert "class Simulation(" in text or "class Simulation:" in text
 
 
 def test_manual_resource_available_and_readable():

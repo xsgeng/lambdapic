@@ -31,6 +31,7 @@ class DocumentationIndex:
     simulations: List[DocRecord] = field(default_factory=list)
     callbacks: List[DocRecord] = field(default_factory=list)
     docs: Dict[str, str] = field(default_factory=dict)
+    sources: Dict[str, str] = field(default_factory=dict)
     import_errors: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -38,6 +39,8 @@ class DocumentationIndex:
 
     def refresh(self) -> None:
         """Re-scan LambdaPIC for simulations and callbacks."""
+        self.docs.clear()
+        self.sources.clear()
         self.simulations = self._discover_simulations()
         self.callbacks = self._discover_callbacks()
 
@@ -157,6 +160,29 @@ class DocumentationIndex:
         self.docs[symbol] = doc
         return doc
 
+    def get_source(self, symbol: str) -> Optional[str]:
+        """Return the source code for a fully-qualified symbol name."""
+        if symbol in self.sources:
+            return self.sources[symbol]
+
+        module_name, _, attr_name = symbol.rpartition(".")
+        if not module_name:
+            return None
+
+        try:
+            module = importlib.import_module(module_name)
+            attr = getattr(module, attr_name)
+        except Exception:
+            return None
+
+        try:
+            source = inspect.getsource(attr)
+        except (OSError, TypeError):
+            return None
+
+        self.sources[symbol] = source
+        return source
+
 
 def _format_import_notes(import_errors: Dict[str, str]) -> List[str]:
     lines: List[str] = []
@@ -201,44 +227,30 @@ mcp_app = FastMCP(
     name="LambdaPIC Manual",
     instructions=(
         "LambdaPIC MCP documentation server. "
-        "Tools: list_simulations, list_callbacks, get_doc. "
+        "Tools: list_simulations, list_callbacks, get_doc, get_code. "
         "Resource: doc://lambdapic/manual for quickstart guidance."
     ),
 )
 
 
 @mcp_app.tool()
-def list_simulations(refresh: bool = False) -> str:
+def list_simulations() -> str:
     """
     List available simulation classes and their summaries.
-
-    Parameters
-    ----------
-    refresh:
-        Re-scan LambdaPIC modules before listing.
     """
-    if refresh:
-        doc_index.refresh()
     return _render_simulation_index(doc_index)
 
 
 @mcp_app.tool()
-def list_callbacks(refresh: bool = False) -> str:
+def list_callbacks() -> str:
     """
     List available callbacks with their stages and summaries.
-
-    Parameters
-    ----------
-    refresh:
-        Re-scan LambdaPIC modules before listing.
     """
-    if refresh:
-        doc_index.refresh()
     return _render_callback_index(doc_index)
 
 
 @mcp_app.tool()
-def get_doc(symbol: str, refresh: bool = False) -> str:
+def get_doc(symbol: str) -> str:
     """
     Retrieve the docstring for the requested LambdaPIC symbol.
 
@@ -246,17 +258,31 @@ def get_doc(symbol: str, refresh: bool = False) -> str:
     ----------
     symbol:
         Fully qualified Python name, for example ``lambdapic.simulation.Simulation``.
-    refresh:
-        Re-scan LambdaPIC modules before resolving the symbol.
     """
     if not symbol:
         raise ValueError("symbol must be a non-empty string")
-    if refresh:
-        doc_index.refresh()
     doc = doc_index.get_doc(symbol)
     if not doc:
         return f"No documentation found for '{symbol}'."
     return f"{symbol}\n\n{doc}"
+
+
+@mcp_app.tool()
+def get_code(symbol: str) -> str:
+    """
+    Retrieve the source code for the requested LambdaPIC symbol.
+
+    Parameters
+    ----------
+    symbol:
+        Fully qualified Python name, for example ``lambdapic.simulation.Simulation``.
+    """
+    if not symbol:
+        raise ValueError("symbol must be a non-empty string")
+    source = doc_index.get_source(symbol)
+    if not source:
+        return f"No source code found for '{symbol}'."
+    return f"{symbol}\n\n{source}"
 
 
 @mcp_app.resource(
@@ -274,7 +300,8 @@ def read_manual() -> str:
         ## Getting Started
         1. `pip install -e .[test]`
         2. `make build_inplace` to build C extensions
-        3. Explore classes with `list_simulations()` and callbacks with `list_callbacks()`
+        3. Optional MCP tooling: `pip install -e .[mcp]`
+        4. Explore classes with `list_simulations()` and callbacks with `list_callbacks()`
 
         ## Authoring a Simulation Script
         ```python
@@ -321,5 +348,6 @@ __all__ = [
     "list_simulations",
     "list_callbacks",
     "get_doc",
+    "get_code",
     "run",
 ]
