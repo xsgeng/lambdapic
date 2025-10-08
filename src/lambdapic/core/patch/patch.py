@@ -16,10 +16,6 @@ from ..patch.cpu import (
     get_num_macro_particles_3d,
 )
 from ..species import Electron, Photon, Species
-from .sync_fields2d import sync_currents_2d, sync_guard_fields_2d
-from .sync_fields3d import sync_currents_3d, sync_guard_fields_3d
-
-from . import sync_particles_2d, sync_particles_3d
 
 from enum import IntEnum, auto
 
@@ -605,6 +601,8 @@ class Patches:
 
 
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
+        from .sync_fields2d import sync_guard_fields_2d
+        from .sync_fields3d import sync_guard_fields_3d
         if self.dimension == 2:
             sync_guard_fields_2d(
                 [p.fields for p in self.patches],
@@ -622,6 +620,8 @@ class Patches:
         
 
     def sync_currents(self):
+        from .sync_fields2d import sync_currents_2d
+        from .sync_fields3d import sync_currents_3d
         if self.dimension == 2:
             sync_currents_2d(
                 [p.fields for p in self.patches],
@@ -636,6 +636,7 @@ class Patches:
             )
         
     def sync_particles(self) -> None:
+        from . import sync_particles_2d, sync_particles_3d
         if self.dimension == 2:
             for ispec, s in enumerate(self.species):
 

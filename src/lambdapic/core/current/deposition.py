@@ -1,8 +1,6 @@
 from deprecated import deprecated
 
 from ..patch import Patches
-from .cpu2d import current_deposition_cpu_2d
-from .cpu3d import current_deposition_cpu_3d
 
 
 class CurrentDeposition:
@@ -157,6 +155,7 @@ class CurrentDeposition2D(CurrentDeposition):
 
 
     def __call__(self, ispec:int, dt: float) -> None:
+        from .cpu2d import current_deposition_cpu_2d
         if self.q[ispec] != 0:
             current_deposition_cpu_2d(
                 [p.fields for p in self.patches],
@@ -187,6 +186,7 @@ class CurrentDeposition3D(CurrentDeposition):
             self.z_list.append([p.particles[ispec].z for p in self.patches])
 
     def __call__(self, ispec:int, dt: float) -> None:
+        from .cpu3d import current_deposition_cpu_3d
         if self.q[ispec] != 0:
             current_deposition_cpu_3d(
                 [p.fields for p in self.patches],
