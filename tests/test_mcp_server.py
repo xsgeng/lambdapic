@@ -67,19 +67,3 @@ def test_get_doc_tool_returns_docstring():
 def test_get_code_tool_returns_source():
     text = get_code("lambdapic.simulation.Simulation")
     assert "class Simulation(" in text or "class Simulation:" in text
-
-
-def test_manual_resource_available_and_readable():
-    manual_uri = "doc://lambdapic/manual"
-    resources = {str(resource.uri): resource for resource in mcp_app._resource_manager.list_resources()}
-    assert manual_uri in resources
-
-    async def _read():
-        resource = await mcp_app._resource_manager.get_resource(manual_uri)
-        assert resource is not None
-        content = await resource.read()
-        return content
-
-    content = anyio.run(_read)
-    assert "LambdaPIC MCP Manual" in content
-    assert "Authoring a Simulation Script" in content

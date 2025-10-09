@@ -227,8 +227,8 @@ mcp_app = FastMCP(
     name="LambdaPIC Manual",
     instructions=(
         "LambdaPIC MCP documentation server. "
-        "Tools: list_simulations, list_callbacks, get_doc, get_code. "
-        "Resource: doc://lambdapic/manual for quickstart guidance."
+        "Tools: list_simulations, list_callbacks, get_doc, get_code, read_manual. "
+        "Use read_manual() for a quickstart guide."
     ),
 )
 
@@ -254,10 +254,8 @@ def get_doc(symbol: str) -> str:
     """
     Retrieve the docstring for the requested LambdaPIC symbol.
 
-    Parameters
-    ----------
-    symbol:
-        Fully qualified Python name, for example ``lambdapic.simulation.Simulation``.
+    Parameters:
+        symbol (str): Fully qualified Python name, for example ``lambdapic.simulation.Simulation``.
     """
     if not symbol:
         raise ValueError("symbol must be a non-empty string")
@@ -271,11 +269,10 @@ def get_doc(symbol: str) -> str:
 def get_code(symbol: str) -> str:
     """
     Retrieve the source code for the requested LambdaPIC symbol.
+    Use with caution. Only when `get_doc` is insufficient.
 
-    Parameters
-    ----------
-    symbol:
-        Fully qualified Python name, for example ``lambdapic.simulation.Simulation``.
+    Parameters:
+        symbol (str): Fully qualified Python name, for example ``lambdapic.simulation.Simulation``.
     """
     if not symbol:
         raise ValueError("symbol must be a non-empty string")
@@ -285,53 +282,17 @@ def get_code(symbol: str) -> str:
     return f"{symbol}\n\n{source}"
 
 
-@mcp_app.resource(
-    "doc://lambdapic/manual",
-    title="LambdaPIC Quickstart Manual",
-    description="Overview, setup steps, and scripting tips for LambdaPIC users.",
-    mime_type="text/markdown",
-)
+@mcp_app.tool()
 def read_manual() -> str:
-    """Provide a concise manual for authoring LambdaPIC simulations."""
-    return textwrap.dedent(
-        """
-        # LambdaPIC MCP Manual
-
-        ## Getting Started
-        1. `pip install -e .[test]`
-        2. `make build_inplace` to build C extensions
-        3. Optional MCP tooling: `pip install -e .[mcp]`
-        4. Explore classes with `list_simulations()` and callbacks with `list_callbacks()`
-
-        ## Authoring a Simulation Script
-        ```python
-        from lambdapic import Simulation, Electron, callback
-
-        sim = Simulation(
-            nx=128, ny=128,
-            dx=1e-7, dy=1e-7,
-            npatch_x=4, npatch_y=4,
-            nsteps=500,
-        )
-
-        @callback(stage="maxwell second", interval=50)
-        def monitor_fields(sim):
-            ex, ey = sim.get_fields(["ex", "ey"])
-            # Insert analysis or diagnostics here
-
-        sim.add_species(Electron(...))
-        sim.run(callbacks=[monitor_fields])
-        ```
-
-        ## Useful Symbols
-        - `lambdapic.simulation.Simulation`: base 2D PIC driver
-        - `lambdapic.simulation.Simulation3D`: 3D variant
-        - `lambdapic.callback.hdf5.SaveFieldsToHDF5`: persist fields
-        - `lambdapic.callback.utils.MovingWindow`: sliding-window extraction
-
-        Use `get_doc("fully.qualified.Symbol")` for detailed signatures.
-        """
-    ).strip()
+    """
+    Provide a comprehensive manual for AI agents to understand LambdaPIC.
+    Contains detailed examples, best practices, and troubleshooting guides.
+    READ THIS FIRST.
+    """
+    from pathlib import Path
+    manual_path = Path(__file__).parent / "mcp_manual.md"
+    with open(manual_path, 'r', encoding='utf-8') as f:
+        return f.read()
 
 
 def run() -> None:
@@ -349,5 +310,6 @@ __all__ = [
     "list_callbacks",
     "get_doc",
     "get_code",
+    "read_manual",
     "run",
 ]
