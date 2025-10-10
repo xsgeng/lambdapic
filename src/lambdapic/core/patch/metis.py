@@ -1,10 +1,11 @@
 from typing import Optional
-import pymetis
+
 import numpy as np
 from numpy.typing import NDArray
 from .patch import Patches
 
 def compute_rank(patches: Patches, nrank: int, weights: NDArray[np.int64], rank_prev: Optional[NDArray[np.int64]]=None) -> tuple[list[int], list[int]]:
+    import pymetis
     assert all(np.array([p.index for p in patches]) == np.arange(len(patches))), "patch index must be 1..., n-1"
     adjacency_list = [p.neighbor_index[p.neighbor_index >= 0] for p in patches]
 

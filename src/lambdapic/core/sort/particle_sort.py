@@ -4,8 +4,6 @@ import numpy as np
 from lambdapic.core.species import Species
 from ..patch import Patches
 
-from .cpu2d import sort_particles_patches_2d
-from .cpu3d import sort_particles_patches_3d
 
 class ParticleSort2D:
     """
@@ -154,6 +152,7 @@ class ParticleSort2D:
         self.y0s = [p.y0 - p.dy/2 for p in self.patches]
         
     def __call__(self) -> None:
+        from .cpu2d import sort_particles_patches_2d
         self._update_particle_lists()
         sort_particles_patches_2d(
             self.x_list, self.y_list, self.is_dead_list, self.attrs_list,
@@ -279,6 +278,7 @@ class ParticleSort3D(ParticleSort2D):
         self.z0s = [p.z0 - p.dz/2 for p in self.patches]
         
     def __call__(self) -> None:
+        from .cpu3d import sort_particles_patches_3d
         self._update_particle_lists()
         sort_particles_patches_3d(
             self.x_list, self.y_list, self.z_list, self.is_dead_list, self.attrs_list,

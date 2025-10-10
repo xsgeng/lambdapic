@@ -4,9 +4,6 @@ from scipy.constants import c, e, epsilon_0, mu_0
 
 from ..patch import Patches
 
-from .cpu2d import interpolation_patches_2d
-from .cpu3d import interpolation_patches_3d
-
 
 class FieldInterpolation:
     """
@@ -147,6 +144,7 @@ class FieldInterpolation2D(FieldInterpolation):
         self.y0s = [p.y0 for p in self.patches]
 
     def __call__(self, ispec: int) -> None:
+        from .cpu2d import interpolation_patches_2d
         interpolation_patches_2d(
             [p.particles[ispec] for p in self.patches],
             [p.fields for p in self.patches],
@@ -169,6 +167,7 @@ class FieldInterpolation3D(FieldInterpolation2D):
         pass
 
     def __call__(self, ispec: int) -> None:
+        from .cpu3d import interpolation_patches_3d
         interpolation_patches_3d(
             [p.particles[ispec] for p in self.patches],
             [p.fields for p in self.patches],

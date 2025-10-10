@@ -9,8 +9,6 @@ from lambdapic.core.particles import SpinParticles
 from ..patch import Patches
 from ..utils.pickle_list import PickleableTypedList
 from .cpu import boris_push_patches, photon_push_patches, push_position_patches_2d
-from .unified.unified_pusher_2d import unified_boris_pusher_cpu_2d
-from .unified.unified_pusher_3d import unified_boris_pusher_cpu_3d
 
 
 class PusherBase(PickleableTypedList):
@@ -113,6 +111,8 @@ class PusherBase(PickleableTypedList):
 
 class BorisPusher(PusherBase):
     def __call__(self, dt: float, unified: bool=False) -> None:
+        from .unified.unified_pusher_2d import unified_boris_pusher_cpu_2d
+        from .unified.unified_pusher_3d import unified_boris_pusher_cpu_3d
         if unified:
             if self.patches.dimension == 2:
                 unified_boris_pusher_cpu_2d(

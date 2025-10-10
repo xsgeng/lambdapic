@@ -1,13 +1,10 @@
-import numpy as np
-from mpi4py import MPI
-from numba import prange
 from typing import List, Optional, Tuple
 
-from ..particles import ParticlesBase
-from ..patch.patch import Patch2D, Patches, Boundary2D
-from ..fields import Fields2D
+import numpy as np
+from mpi4py import MPI
 
-from . import sync_particles_2d, sync_fields2d, sync_fields3d, sync_particles_3d
+from ..patch.patch import Patches
+
 
 class MPIManager:
     """Handles MPI communication between different Patches instances"""
@@ -67,6 +64,7 @@ class MPIManager2D(MPIManager):
         self.dy = patches.dy
 
     def sync_particles(self, ispec: int):
+        from . import sync_particles_2d
         if self.size == 1:
             return
         particles_list = [p.particles[ispec] for p in self.patches]
@@ -97,6 +95,7 @@ class MPIManager2D(MPIManager):
         )
 
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
+        from . import sync_fields2d
         if self.size == 1:
             return
         sync_fields2d.sync_guard_fields_2d(
@@ -129,6 +128,7 @@ class MPIManager3D(MPIManager):
         self.dz = patches.dz
 
     def sync_particles(self, ispec: int):
+        from . import sync_particles_3d
         if self.size == 1:
             return
         particles_list = [p.particles[ispec] for p in self.patches]
@@ -159,6 +159,7 @@ class MPIManager3D(MPIManager):
         )
 
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
+        from . import sync_fields3d
         if self.size == 1:
             return
        
