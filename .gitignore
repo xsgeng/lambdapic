@@ -41,6 +41,13 @@ dist/
 .aider*
 .env
 
+*.npz
+*.pkl
 *.h5
 .coverage*
 *.log
+
+benchmark/
+
+__*/
+*.txt
