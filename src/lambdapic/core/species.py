@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 from scipy.constants import e, m_e, m_p
 
 from .particles import ParticlesBase, QEDParticles, SpinParticles, SpinQEDParticles
+from .utils.enable_mixin import EnableMixin
 
 Profile = Callable[[float, float, float], float] | Callable[[float, float], float]
 
@@ -44,7 +45,7 @@ class SpeciesConfig(BaseModel):
 
 
 @dataclass(kw_only=True)    
-class Species:
+class Species(EnableMixin):
     """Base Species class
         
     Parameters:

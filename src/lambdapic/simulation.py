@@ -829,6 +829,8 @@ class Simulation:
                 stage_callbacks.run('maxwell first')
                 
             for ispec, s in enumerate(self.patches.species):
+                if not s.is_enabled():
+                    continue
                 self.ispec = ispec
 
                 with Timer(f"Sorting {self.species[ispec].name}"):
@@ -843,6 +845,8 @@ class Simulation:
             if self.current_depositor:
                 self.current_depositor.reset()
             for ispec, s in enumerate(self.patches.species):
+                if not s.is_enabled():
+                    continue
                 self.ispec = ispec
 
                 if use_unified_pusher[ispec]:
@@ -910,6 +914,8 @@ class Simulation:
             # before photons are created, so the photons are created
             # at t+dt. It will be fixed later.
             for ispec, s in enumerate(self.patches.species):
+                if not s.is_enabled():
+                    continue
                 with Timer(f'create photons for {self.species[ispec].name}'):
                     if self.radiation[ispec] is not None:
                         # creating photons involves two species
