@@ -3,9 +3,10 @@ from numba import njit, prange, typed, types
 from scipy.constants import c, e, epsilon_0, mu_0
 
 from ..patch import Patches
+from ..utils.enable_mixin import EnableMixin, if_enabled
 
 
-class FieldInterpolation:
+class FieldInterpolation(EnableMixin):
     """
     Field interpolation class.
 
@@ -143,6 +144,7 @@ class FieldInterpolation2D(FieldInterpolation):
         super().generate_field_lists()
         self.y0s = [p.y0 for p in self.patches]
 
+    @if_enabled
     def __call__(self, ispec: int) -> None:
         from .cpu2d import interpolation_patches_2d
         interpolation_patches_2d(
@@ -166,6 +168,7 @@ class FieldInterpolation3D(FieldInterpolation2D):
     def generate_field_lists(self) -> None:
         pass
 
+    @if_enabled
     def __call__(self, ispec: int) -> None:
         from .cpu3d import interpolation_patches_3d
         interpolation_patches_3d(

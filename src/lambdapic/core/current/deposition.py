@@ -1,9 +1,10 @@
 from deprecated import deprecated
 
 from ..patch import Patches
+from ..utils.enable_mixin import EnableMixin, if_enabled
 
 
-class CurrentDeposition:
+class CurrentDeposition(EnableMixin):
     """
     Current deposition class.
 
@@ -153,7 +154,7 @@ class CurrentDeposition2D(CurrentDeposition):
         super().generate_field_lists()
         self.y0s = [p.y0 for p in self.patches]
 
-
+    @if_enabled
     def __call__(self, ispec:int, dt: float) -> None:
         from .cpu2d import current_deposition_cpu_2d
         if self.q[ispec] != 0:
@@ -185,6 +186,7 @@ class CurrentDeposition3D(CurrentDeposition):
             self.y_list.append([p.particles[ispec].y for p in self.patches])
             self.z_list.append([p.particles[ispec].z for p in self.patches])
 
+    @if_enabled
     def __call__(self, ispec:int, dt: float) -> None:
         from .cpu3d import current_deposition_cpu_3d
         if self.q[ispec] != 0:
