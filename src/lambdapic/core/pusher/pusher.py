@@ -8,10 +8,11 @@ from lambdapic.core.particles import SpinParticles
 
 from ..patch import Patches
 from ..utils.pickle_list import PickleableTypedList
+from ..utils.enable_mixin import EnableMixin, if_enabled
 from .cpu import boris_push_patches, photon_push_patches, push_position_patches_2d
 
 
-class PusherBase(PickleableTypedList):
+class PusherBase(PickleableTypedList,EnableMixin):
     def __init__(self, patches: Patches, ispec: int) -> None:
         """
         Construct from patches.
@@ -95,6 +96,7 @@ class PusherBase(PickleableTypedList):
         self.is_dead_list[ipatch] = particles.is_dead
 
 
+    @if_enabled
     def push_position(self, dt: float):
         if self.dimension == 2:
             push_position_patches_2d(
@@ -104,12 +106,12 @@ class PusherBase(PickleableTypedList):
                 self.npatches, dt,
             )
 
-
     def __call__(self, dt: float) -> None:
         raise NotImplementedError
     
 
 class BorisPusher(PusherBase):
+    @if_enabled
     def __call__(self, dt: float, unified: bool=False) -> None:
         from .unified.unified_pusher_2d import unified_boris_pusher_cpu_2d
         from .unified.unified_pusher_3d import unified_boris_pusher_cpu_3d
@@ -135,22 +137,6 @@ class BorisPusher(PusherBase):
                 self.npatches, self.q, self.m, dt
             )
 
-class UnifiedBorisPusher2D(PusherBase):
-    def __call__(self, dt: float) -> None:
-        unified_boris_pusher_cpu_2d(
-            [p.particles[self.ispec] for p in self.patches],
-            [p.fields for p in self.patches],
-            self.npatches, dt, self.q, self.m
-        )
-
-class UnifiedBorisPusher3D(PusherBase):
-    def __call__(self, dt: float) -> None:
-        unified_boris_pusher_cpu_3d(
-            [p.particles[self.ispec] for p in self.patches],
-            [p.fields for p in self.patches],
-            self.npatches, dt, self.q, self.m
-        )
-
 
 class PhotonPusher(PusherBase):
     def __call__(self, dt: float):
@@ -174,5 +160,6 @@ class BorisTBMTPusher(PusherBase):
         self.sz_list[ipatch] = particles.sz
 
 
+    @if_enabled
     def __call__(self, dt: float) -> None:
         ...
