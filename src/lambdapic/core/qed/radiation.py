@@ -2,10 +2,10 @@
 from numba import typed
 
 from ..particles import QEDParticles
-
-from ..utils.pickle_list import PickleableTypedList
 from ..patch import Patches
 from ..species import Electron, Photon, Species
+from ..utils.enable_mixin import EnableMixin, if_enabled
+from ..utils.pickle_list import PickleableTypedList
 from .cpu import (
     create_photon_patches_2d,
     create_photon_patches_3d,
@@ -16,7 +16,7 @@ from .cpu import (
 )
 
 
-class RadiationBase(PickleableTypedList):
+class RadiationBase(PickleableTypedList,EnableMixin):
     """
     Radiation class handles creation of photons.
 
@@ -183,6 +183,7 @@ class NonlinearComptonLCFA(RadiationBase):
                     self.update_particle_lists(ipatch)
                     break # if one species is extended, all species are updated
 
+    @if_enabled
     def event(self, dt: float) -> None:
         from .optical_depth import (
             _integral_photon_prob_along_delta,
@@ -197,6 +198,7 @@ class NonlinearComptonLCFA(RadiationBase):
         )
 
 
+    @if_enabled
     def create_particles(self, extra_buff=0.25) -> None:
         # extend photons
         num_photons_extend = get_particle_extension_size_patches(
@@ -225,6 +227,7 @@ class NonlinearComptonLCFA(RadiationBase):
                 self.npatches
             )
 
+    @if_enabled
     def reaction(self) -> None:
         photon_recoil_patches(
             self.ux_list, self.uy_list, self.uz_list, self.inv_gamma_list,
@@ -260,11 +263,14 @@ class ContinuousRadiation(RadiationBase):
         self.generate_particle_lists()
 
 
+    @if_enabled
     def event(self, dt: float) -> None:
         pass
 
+    @if_enabled
     def create_particles(self, extra_buff=0.25) -> None:
         pass
 
+    @if_enabled
     def reaction(self) -> None:
         ...

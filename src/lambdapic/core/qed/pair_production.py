@@ -4,6 +4,7 @@ from numba import typed
 from ..patch import Patches
 from ..species import Electron, Photon, Positron, Species
 from ..utils.pickle_list import PickleableTypedList
+from ..utils.enable_mixin import EnableMixin, if_enabled
 from .cpu import (
     create_pair_patches_2d,
     create_pair_patches_3d,
@@ -14,7 +15,7 @@ from .cpu import (
 )
 
 
-class PairProductionBase(PickleableTypedList):
+class PairProductionBase(PickleableTypedList,EnableMixin):
     """
     Radiation class handles creation of photons.
 
@@ -214,6 +215,7 @@ class NonlinearPairProductionLCFA(PairProductionBase):
                     self.update_particle_lists(ipatch)
                     break # if one species is extended, all species are updated
 
+    @if_enabled
     def event(self, dt: float) -> None:
         from .optical_depth import (
             _integral_pair_prob_along_delta,
@@ -228,6 +230,7 @@ class NonlinearPairProductionLCFA(PairProductionBase):
         )
 
 
+    @if_enabled
     def create_particles(self, extra_buff=0.25) -> None:
         # extend pairs
         num_ele_extend = get_particle_extension_size_patches(
@@ -268,5 +271,6 @@ class NonlinearPairProductionLCFA(PairProductionBase):
                 self.npatches
             )
 
+    @if_enabled
     def reaction(self) -> None:
         remove_photon_patches(self.event_list, self.is_dead_list, self.npatches)
