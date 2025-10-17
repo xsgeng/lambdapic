@@ -222,6 +222,7 @@ class SaveSpeciesDensityToHDF5(Callback):
             
         if self.ispec_target == 0:
             if sim.ispec == 0:
+                sim.sync_currents()
                 density = self._compute_density(sim)
                 if sim.dimension == 2:
                     self._write_2d(sim, density, filename)
@@ -229,10 +230,12 @@ class SaveSpeciesDensityToHDF5(Callback):
                     self._write_3d(sim, density, filename)
         else:
             if sim.ispec == self.ispec_target - 1:
+                sim.sync_currents()
                 self.prev_rho = []
                 for p in sim.patches:
                     self.prev_rho.append(p.fields.rho.copy())
             elif sim.ispec == self.ispec_target:
+                sim.sync_currents()
                 density = self._compute_density(sim)
                 if sim.dimension == 2:
                     self._write_2d(sim, density, filename)

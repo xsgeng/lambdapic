@@ -844,6 +844,7 @@ class Simulation:
 
             if self.current_depositor:
                 self.current_depositor.reset()
+            self.current_synced = False
             for ispec, s in enumerate(self.patches.species):
                 if not s.is_enabled():
                     continue
@@ -897,14 +898,12 @@ class Simulation:
                     if self.current_depositor:
                         with Timer(f"Current deposition for {self.species[ispec].name}"):
                             self.current_depositor(ispec, self.dt)
+                    self.current_synced = False
                         
-                with Timer("sync_currents"):
-                    self.patches.sync_currents()
-                with Timer("mpi.sync_currents"):
-                    self.mpi.sync_currents()
-                    
                 with Timer("Callbacks: current deposition stage"):
                     stage_callbacks.run('current deposition')
+
+            self.sync_currents()
 
             # set ispec to None out of species loop
             self.ispec = None
@@ -975,6 +974,16 @@ class Simulation:
                 return "stop by callback"
         
         self.mpi.comm.Barrier()
+
+    def sync_currents(self):
+        if self.current_synced:
+            return
+        with Timer("sync_currents"):
+            self.patches.sync_currents()
+        with Timer("mpi.sync_currents"):
+            self.mpi.sync_currents()
+
+        self.current_synced = True
 
     def _handle_nsteps(self, nsteps, sim_time):
         if nsteps is not None and sim_time is not None:
