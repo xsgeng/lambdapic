@@ -21,7 +21,7 @@ class DummyController(EnableMixin):
 
 
 def test_enabled_method_behaves_as_descriptor():
-    with pytest.raises(TypeError):
+    with pytest.raises(AttributeError):
         DummyController.record
 
 
