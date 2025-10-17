@@ -38,6 +38,17 @@ def _check_inverval(interval: int|float|Callable) -> None:
         if interval < 1:
             raise ValueError(f"Invalid interval: {interval}. Must be greater than 0 if it is an integer")
         
+def _interval_triggered(sim: Simulation, interval: int|float|Callable) -> bool:
+    if callable(interval):
+        if not interval(sim):
+            return False
+    elif isinstance(interval, int):
+        if sim.itime % interval != 0:
+            return False
+    elif isinstance(interval, float):
+        if sim.time % interval >= sim.dt:
+            return False
+    return True
 
 def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> Callable:
     """
@@ -79,15 +90,9 @@ def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> C
         @wraps(func)
         def wrapper(*args, **kwargs):
             sim = args[-1]
-            if callable(interval):
-                if not interval(sim):
-                    return
-            elif isinstance(interval, int):
-                if sim.itime % interval != 0:
-                    return
-            elif isinstance(interval, float):
-                if sim.time % interval >= sim.dt:
-                    return
+            
+            if not _interval_triggered(sim, interval):
+                return
             
             if sim.mpi.rank == 0:
                 with yaspin(text=f"Running callback: {func.__name__}") as sp:
@@ -114,18 +119,11 @@ class Callback:
     interval: int | float | Callable
     stage: str
     
-    def __call__(self, sim: Simulation) -> None:
+    def __call__(self, sim: Simulation):
         _check_inverval(self.interval)
 
-        if callable(self.interval):
-            if not self.interval(sim):
-                return
-        elif isinstance(self.interval, int):
-            if sim.itime % self.interval != 0:
-                return
-        elif isinstance(self.interval, float):
-            if sim.time % self.interval >= sim.dt:
-                return
+        if not _interval_triggered(sim, self.interval):
+            return
         
         if sim.mpi.rank == 0:
             with yaspin(text=f"Running callback: {self.__class__.__name__}") as sp:
@@ -139,5 +137,5 @@ class Callback:
 
         return ret
 
-    def _call(self, sim: Simulation) -> None:
+    def _call(self, sim: Simulation):
         raise NotImplementedError
