@@ -357,6 +357,7 @@ class Simulation:
         
         rank_log("Filling particles", comm)
         self.patches.fill_particles(self.rand_gen)
+        self.patches.sync_particles()
 
         rank_log("Initializing Maxwell solver", comm)
         self._init_maxwell_solver()

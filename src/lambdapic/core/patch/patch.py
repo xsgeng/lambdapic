@@ -5,6 +5,8 @@ import numpy as np
 from numpy.typing import NDArray
 from numba import njit, typed
 
+from ..boundary.utils import get_pml, has_pml
+
 from ..boundary.cpml import PML, PMLX, PMLY
 
 from ..fields import Fields, Fields2D
@@ -102,22 +104,48 @@ class Patch:
 
     @property
     def xmin(self):
-        return self.x0
+        xmin = self.x0
+        if pml := get_pml(self.pml_boundary, 'xmin'):
+            # NOTE: on the left of xmin pml, there should not be a patch.
+            # changing the xmin of patch with pml is not a problem.
+            # so as other pml patches
+            return xmin + pml.thickness * self.dx
+        return xmin
+    
     @property
     def xmax(self):
-        return self.x0 + (self.nx-1) * self.dx
+        xmax = self.x0 + (self.nx-1) * self.dx
+        if pml := get_pml(self.pml_boundary, 'xmax'):
+            return xmax - pml.thickness * self.dx
+        return xmax
+
     @property
     def ymin(self):
-        return self.y0
+        ymin = self.y0
+        if pml := get_pml(self.pml_boundary, 'ymin'):
+            return ymin + pml.thickness * self.dy
+        return ymin
+    
     @property
     def ymax(self):
-        return self.y0 + (self.ny-1) * self.dy
+        ymax = self.y0 + (self.ny-1) * self.dy
+        if pml := get_pml(self.pml_boundary, 'ymax'):
+            return ymax - pml.thickness * self.dy
+        return ymax
+
     @property
     def zmin(self):
-        return self.z0
+        zmin = self.z0
+        if pml := get_pml(self.pml_boundary, 'zmin'):
+            return zmin + pml.thickness * self.dz
+        return zmin
+    
     @property
     def zmax(self):
-        return self.z0 + (self.nz-1) * self.dz
+        zmax = self.z0 + (self.nz-1) * self.dz
+        if pml := get_pml(self.pml_boundary, 'zmax'):
+            return zmax - pml.thickness * self.dz
+        return zmax
 
     def add_particles(self, particles: ParticlesBase) -> None:
         self.particles.append(particles)
