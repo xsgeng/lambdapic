@@ -854,6 +854,7 @@ class Simulation:
                 if use_unified_pusher[ispec]:
                     with Timer(f"unified pusher for {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt, unified=True)
+                    self.current_synced = False
                 else:
                     # position from t to t+0.5dt
                     with Timer('push_position'):
