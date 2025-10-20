@@ -107,6 +107,7 @@ class MPIManager2D(MPIManager):
         )
 
     def sync_currents(self):
+        from . import sync_fields2d
         if self.size == 1:
             return
         sync_fields2d.sync_currents_2d(
