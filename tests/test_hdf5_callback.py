@@ -94,7 +94,8 @@ def test_hdf5_particles_callback_2d(tmp_path):
         dy=0.1,
         npatch_x=2,
         npatch_y=2,
-        dt_cfl=0.95
+        dt_cfl=0.95,
+        boundary_conditions={'xmin': 'periodic', 'xmax': 'periodic', 'ymin': 'periodic', 'ymax': 'periodic'}
     )
     
     # Add electron species

@@ -26,6 +26,7 @@ class Test2D(unittest.TestCase):
             dy=dy,
             npatch_x=npatch_x,
             npatch_y=npatch_y,
+            boundary_conditions={'xmin': 'periodic', 'xmax': 'periodic', 'ymin': 'periodic', 'ymax': 'periodic'}
         )
         
         ele = Electron(density=lambda x, y: 1, ppc=8)
@@ -99,6 +100,7 @@ class Test3D(unittest.TestCase):
             npatch_x=npatch_x,
             npatch_y=npatch_y,
             npatch_z=npatch_z,
+            boundary_conditions={'xmin': 'periodic', 'xmax': 'periodic', 'ymin': 'periodic', 'ymax': 'periodic', 'zmin': 'periodic', 'zmax': 'periodic'}
         )
         
         ele = Electron(density=lambda x, y, z: 1, ppc=8)
