@@ -1,7 +1,8 @@
-import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-from lambdapic.callback.callback import callback, SimulationStage
+import pytest
+
+from lambdapic.callback.callback import callback
 from lambdapic.simulation import Simulation, SimulationCallbacks
 
 @pytest.fixture
@@ -10,7 +11,15 @@ def mock_sim():
     sim = Mock()
     sim.patches = []
     sim.itime = 0
+    sim.time = 0.0
+    sim.dt = 0.1
+    sim.dt_old = sim.dt
+    sim.mpi = Mock()
     sim.mpi.rank = 0
+    sim.mpi.comm = Mock()
+    sim.mpi.comm.Barrier = Mock()
+    sim.STAGES = Simulation.STAGES
+    sim.DEFAULT_STAGE = Simulation.DEFAULT_STAGE
     return sim
 
 @pytest.fixture
@@ -21,8 +30,13 @@ def mock_sim_with_time():
     sim.itime = 0
     sim.time = 0.0
     sim.dt = 0.1  # Default time step
+    sim.dt_old = sim.dt
+    sim.mpi = Mock()
     sim.mpi.rank = 0
+    sim.mpi.comm = Mock()
     sim.mpi.comm.Barrier = Mock()
+    sim.STAGES = Simulation.STAGES
+    sim.DEFAULT_STAGE = Simulation.DEFAULT_STAGE
     return sim
 
 @pytest.mark.unit
@@ -44,20 +58,14 @@ class TestCallback:
         result = test_func(mock_sim)
         assert result == "test_result"
         
-    def test_callback_default_stage(self, mock_sim):
-        """Test that callback uses default stage when none specified."""
-        @callback()
+    def test_invalid_stage(self, mock_sim):
+        """Test that callbacks with unknown stages are rejected during registration."""
+        @callback(stage="invalid_stage")
         def test_func(sim):
             pass
-            
-        assert test_func.stage == "maxwell second"
-        
-    def test_invalid_stage(self, mock_sim):
-        """Test that callback raises error for invalid stage."""
-        with pytest.raises(ValueError):
-            @callback(stage="invalid_stage")
-            def test_func(sim):
-                pass
+
+        with pytest.raises(ValueError, match="Invalid stage 'invalid_stage'"):
+            SimulationCallbacks([test_func], mock_sim)
                 
     def test_callback_execution(self, mock_sim):
         """Test that callback can be executed both directly and via execute()."""

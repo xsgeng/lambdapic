@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Literal, Optional, Sequence
+from typing import Callable, ClassVar, Dict, List, Literal, Optional, Sequence
 
 import mpi4py
 import numpy as np
@@ -157,6 +157,23 @@ class Simulation:
     random_seed: Optional[int] = field(default=None)
     comm: Optional[mpi4py.MPI.Comm] = field(default=None)
 
+    STAGES: ClassVar[list[str]] = [
+        "start",
+        "maxwell first",
+        "push position first",
+        "interpolator",
+        "qed",
+        "push momentum",
+        "push position second",
+        "current deposition",
+        "qed create particles",
+        "_laser",
+        "maxwell second",
+    ]
+    DEFAULT_STAGE: ClassVar[str] = "maxwell second"
+
+    stages: list[str] = field(init=False)
+
     _auto_patch_factor: int = field(default=4, init=False)
 
     def _validate(self):
@@ -197,6 +214,7 @@ class Simulation:
         return config
     
     def __post_init__(self,) -> None:
+        self.stages = list(self.STAGES)
         self._auto_patch()
 
         config = self._validate()
@@ -224,7 +242,7 @@ class Simulation:
         # Collision system placeholders; configured via add_collision()
         self._collision_groups: Optional[Sequence[Sequence[Species]]] = None
         self.collision: Optional[Collision] = None
-        
+
     def _auto_patch(self):
         if self.npatch_x == 0 or self.npatch_y == 0:
             num_threades = get_num_threads()
@@ -1225,25 +1243,34 @@ class Simulation3D(Simulation):
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
     
-    def __init__(self, callbacks: Sequence[Callable[[Simulation], None]], simulation):
+    def __init__(self, callbacks: Sequence[Callable[[Simulation], None]], simulation: Simulation):
         """Initialize the callback manager.
         
         Args:
             callbacks: List of callback objects
             simulation: The simulation instance to pass to callbacks
         """
-        from .callback.callback import SimulationStage, callback
+        from .callback.callback import callback
 
-        self.simulation = simulation
-        stage_callbacks = {stage: [] for stage in SimulationStage.all_stages()}
+        if not hasattr(simulation, "STAGES") or not hasattr(simulation, "DEFAULT_STAGE"):
+            raise AttributeError("Simulation class does not define STAGES or DEFAULT_STAGE")
         
+        self.simulation = simulation
+        self.stages = simulation.STAGES
+        stage_callbacks = {stage: [] for stage in self.stages}
+        default_stage = simulation.DEFAULT_STAGE
+
+
         if callbacks:
             for cb in callbacks:
                 if hasattr(cb, 'stage'):
-                    stage_callbacks[cb.stage].append(cb)
+                    stage = cb.stage or default_stage
+                    if stage not in self.stages:
+                        raise ValueError(f"Invalid stage '{stage}'")
+                    stage_callbacks[stage].append(cb)
                 else:
                     # Wrap plain functions as callbacks with default stage
-                    wrapped = callback()(cb)
+                    wrapped = callback(stage=default_stage)(cb)
                     stage_callbacks[wrapped.stage].append(wrapped)
 
         self.stage_callbacks = stage_callbacks

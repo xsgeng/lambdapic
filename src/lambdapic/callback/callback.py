@@ -1,53 +1,38 @@
-from enum import Enum
-from functools import update_wrapper, wraps
-from typing import Any, Callable, Optional, Union
+from functools import wraps
+from typing import Callable, Optional
 
 from yaspin import yaspin
 
-from ..core.utils import logger
 from ..core.utils.timer import Timer
 from ..simulation import Simulation
 
-class SimulationStage(str, Enum):
-    """Enumeration of possible simulation stages for callbacks."""
-    START = "start"
-    MAXWELL_FIRST = "maxwell first"
-    PUSH_POSITION_FIRST = "push position first"
-    INTERPOLATOR = "interpolator"
-    QED = "qed"
-    PUSH_MOMENTUM = "push momentum"
-    PUSH_POSITION_SECOND = "push position second"
-    CURRENT_DEPOSITION = "current deposition"
-    QED_CREATE_PARTICLEs = "qed create particles"
-    LASER = "_laser"
-    MAXWELL_SECOND = "maxwell second"
-
-    @classmethod
-    def all_stages(cls) -> list[str]:
-        """Get a list of all available stages."""
-        return [stage.value for stage in cls]
-
-def _check_inverval(interval: int|float|Callable) -> None:
+def _validate_interval(interval: int | float | Callable) -> None:
     if not isinstance(interval, (int, float, Callable)):
-            raise TypeError(f"Invalid interval: {interval}. Must be int, float, or Callable")
-        
+        raise TypeError(f"Invalid interval: {interval}. Must be int, float, or Callable")
+
     if isinstance(interval, float):
         if interval <= 0 or interval >= 1:
             raise ValueError(f"Invalid interval: {interval}. Must be between 0 and 1s if it is a float")
-    if isinstance(interval, int):
-        if interval < 1:
-            raise ValueError(f"Invalid interval: {interval}. Must be greater than 0 if it is an integer")
-        
-def _interval_triggered(sim: Simulation, interval: int|float|Callable) -> bool:
+    if isinstance(interval, int) and interval < 1:
+        raise ValueError(f"Invalid interval: {interval}. Must be greater than 0 if it is an integer")
+
+
+def _interval_triggered(sim: Simulation, interval: int | float | Callable) -> bool:
     if callable(interval):
-        if not interval(sim):
-            return False
-    elif isinstance(interval, int):
-        if sim.itime % interval != 0:
-            return False
-    elif isinstance(interval, float):
-        if sim.time % interval >= sim.dt:
-            return False
+        return bool(interval(sim))
+
+    if isinstance(interval, int):
+        return sim.itime % interval == 0
+
+    if isinstance(interval, float):
+        time_value = getattr(sim, "time", None)
+        if time_value is None:
+            raise AttributeError(
+                "Simulation instance must provide `time` when using float interval callbacks."
+            )
+
+        return (time_value % interval) < sim.dt
+
     return True
 
 def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> Callable:
@@ -59,8 +44,7 @@ def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> C
     
     Args:
         stage: The simulation stage at which this callback should be executed.
-               Must be one of the values defined in SimulationStage.
-               Defaults to "maxwell second" if not specified.
+               Defaults to ``Simulation.default_callback_stage()`` when not specified.
         interval (int|float|Callable): if int, The number of iterations between calls to the callback function.
 
             if float, The time interval in seconds between calls to the callback function.
@@ -80,12 +64,7 @@ def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> C
         ...         patch.fields.ex *= 1.1  # Amplify Ex field by 10%
     """
     def decorator(func: Callable) -> Callable:
-        stage_value = "maxwell second" if stage is None else stage
-        
-        if stage_value not in SimulationStage.all_stages():
-            raise ValueError(f"Invalid stage: {stage_value}. Must be one of: {SimulationStage.all_stages()}")
-        
-        _check_inverval(interval)
+        _validate_interval(interval)
         
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -107,7 +86,7 @@ def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> C
             return ret
         
         # Add stage attribute and execute method
-        wrapper.stage = stage_value
+        wrapper.stage = stage
         
         return wrapper
     
@@ -120,7 +99,7 @@ class Callback:
     stage: str
     
     def __call__(self, sim: Simulation):
-        _check_inverval(self.interval)
+        _validate_interval(self.interval)
 
         if not _interval_triggered(sim, self.interval):
             return

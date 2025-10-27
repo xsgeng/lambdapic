@@ -32,7 +32,7 @@ Examples of `get_doc` calls:
   - `p.fields`: grid arrays with guard cells (see Data Structures)
   - `p.particles[ispec]`: particles for each species (see Data Structures)
   - `p.index`, `p.ipatch_x`, `p.ipatch_y[, p.ipatch_z]`, `p.x0`, `p.y0[, p.z0]`
-- Execution stages (callbacks hook here; see `SimulationStage`):
+- Execution stages (callbacks hook here; see `Simulation.STAGES` or customize `sim.stages`):
   - `start` → `maxwell first` → species loop: `push position first` → `interpolator` → `qed` → `push momentum` → `push position second` → `current deposition` → post‑species: `qed create particles` → `_laser` → `maxwell second`
 - Discovery: use `list_simulations()` then `get_doc('lambdapic.simulation.Simulation')` for full constructor/options.
 
@@ -62,7 +62,7 @@ Two styles are supported and discovered by `list_callbacks()`:
 
 - Function callbacks via decorator:
   - Use `@callback(stage: str='maxwell second', interval: int|float|Callable = 1)`.
-  - Stages are enumerated in `SimulationStage` (use `get_doc('lambdapic.callback.callback.SimulationStage')`).
+  - Stages default to `Simulation.STAGES`; override `sim.stages` for per-simulation customization.
     - Use `start`, `maxwell second` in most cases. Use `current deposition` for per-species operations.
   - Interval semantics:
     - `int > 0`: call every N steps
