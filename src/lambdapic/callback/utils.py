@@ -757,8 +757,9 @@ class SetTemperature(Callback):
         temperature (float): Temperature in units of eV.
         interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
     """
-    stage: str = "start"
+    DEFAULT_STAGE = "init"
     def __init__(self, species: Species, temperature: float|int|List[float|int], interval: Union[int, float, Callable]|None = None) -> None:
+        self.stage = self.DEFAULT_STAGE
         self.species = species
 
         if isinstance(temperature, (float, int)):
@@ -893,7 +894,7 @@ class LoadParticles(Callback):
             Controls memory usage during loading. Default is 10,000 particles per batch.
             
     Example:
-        >>> # Load electrons from an HDF5 file at simulation start
+        >>> # Load electrons from an HDF5 file after simulation initialization
         >>> load_ele = LoadParticles(ele, "particles.h5")
         >>> sim.run(1000, callbacks=[load_ele])
         
@@ -902,9 +903,9 @@ class LoadParticles(Callback):
         - Particles are automatically distributed to patches based on their spatial coordinates
         - Batch processing reduces memory usage for large particle datasets
     """
-    stage: str = "start"
+    DEFAULT_STAGE = "init"
     def __init__(self, species: Species, file: str|Path, interval: Union[int, float, Callable]|None = None) -> None:
-        
+        self.stage = self.DEFAULT_STAGE
         self.species = species
         self.file = file
 

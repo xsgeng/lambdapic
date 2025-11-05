@@ -35,11 +35,12 @@ class SaveFieldsToHDF5(Callback):
             Available: ['ex','ey','ez','bx','by','bz','jx','jy','jz','rho']. 
             If None, saves all components.
     """
-    stage="maxwell_2"
+    DEFAULT_STAGE = "end"
     def __init__(self, 
                  prefix: Union[str, Path]='', 
                  interval: Union[int, float, Callable] = 100,
                  components: Optional[List[str]] = None) -> None:
+        self.stage = self.DEFAULT_STAGE
         self.prefix = Path(prefix)
         self.interval = interval
 
@@ -379,12 +380,13 @@ class SaveParticlesToHDF5(Callback):
         attrs (Optional[List[str]], optional): List of particle attributes to save.
             If None, saves all attributes.
     """
-    stage="maxwell_2"
+    DEFAULT_STAGE = "end"
     def __init__(self,
                  species: Species,
                  prefix: Union[str, Path]='',
                  interval: Union[int, float, Callable] = 100,
                  attrs: Optional[List[str]] = None) -> None:
+        self.stage = self.DEFAULT_STAGE
         self.prefix = Path(prefix)
         self.prefix.mkdir(parents=True, exist_ok=True)
 
