@@ -158,6 +158,7 @@ class Simulation:
     comm: Optional[mpi4py.MPI.Comm] = field(default=None)
 
     STAGES: ClassVar[list[str]] = [
+        "init", # called only once after initialize()
         "start",
         "maxwell_1",
         "_push_position_1",
@@ -168,9 +169,10 @@ class Simulation:
         "current_deposition",
         "qed_create_particles",
         "_laser",
-        "maxwell_2",
+        "maxwell_2", "end", # aliases
+        "final" # called only once after simulation exits
     ]
-    DEFAULT_STAGE: ClassVar[str] = "maxwell_2"
+    DEFAULT_STAGE: ClassVar[str] = "end"
 
     stages: list[str] = field(init=False)
 
@@ -782,12 +784,15 @@ class Simulation:
             5. Particle synchronization between patches
             6. Callback execution at defined stages
         """
-        if not self.initialized:
-            self.initialize()
-        
         if callbacks is None:
             callbacks = []
         stage_callbacks = SimulationCallbacks(callbacks, self)
+
+        if not self.initialized:
+            self.initialize()
+        
+        with Timer('Callbacks: init stage'):
+            stage_callbacks.run('init')
 
         # check restart
         restart_cb = None
@@ -983,6 +988,7 @@ class Simulation:
 
             with Timer("Callbacks: maxwell_2 stage"):
                 stage_callbacks.run('maxwell_2')
+                stage_callbacks.run('end')
         
             if restart_cb and restart_cb._dump_requested:
                 restart_cb._call(self)
@@ -995,6 +1001,9 @@ class Simulation:
                 return "stop by callback"
         
         self.mpi.comm.Barrier()
+
+        with Timer("Callbacks: final stage"):
+            stage_callbacks.run('final')
 
     def sync_currents(self):
         if self.current_synced:

@@ -130,8 +130,8 @@ class TestCallback:
         callbacks = SimulationCallbacks([plain_func], mock_sim)
         
         # Plain function should be wrapped and assigned to default stage
-        assert any(cb.stage == "maxwell_2" 
-                 for cb in callbacks.stage_callbacks["maxwell_2"])
+        assert any(cb.stage == mock_sim.DEFAULT_STAGE
+                 for cb in callbacks.stage_callbacks[mock_sim.DEFAULT_STAGE])
 
     def test_class_method_callback(self, mock_sim):
         """Test that callback can handle class methods."""
