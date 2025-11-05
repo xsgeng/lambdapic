@@ -44,7 +44,7 @@ class TestCallback:
         
     def test_callback_decorator(self, mock_sim):
         """Test that callback works as a decorator."""
-        @callback(stage="maxwell first")
+        @callback(stage="maxwell_1")
         def test_func(sim):
             return "test_result"
             
@@ -52,7 +52,7 @@ class TestCallback:
         assert test_func.__name__ == "test_func"
         
         # Test stage is properly set
-        assert test_func.stage == "maxwell first"
+        assert test_func.stage == "maxwell_1"
         
         # Test function is still callable
         result = test_func(mock_sim)
@@ -83,9 +83,9 @@ class TestCallback:
         """Test that callbacks integrate properly with SimulationCallbacks."""
         executed_stages = []
         
-        @callback(stage="maxwell first")
+        @callback(stage="maxwell_1")
         def callback1(sim):
-            executed_stages.append("maxwell first")
+            executed_stages.append("maxwell_1")
             
         @callback(stage="start")
         def callback2(sim):
@@ -98,12 +98,12 @@ class TestCallback:
         callbacks.run("start")
         assert executed_stages == ["start"]
         
-        callbacks.run("maxwell first")
-        assert executed_stages == ["start", "maxwell first"]
+        callbacks.run("maxwell_1")
+        assert executed_stages == ["start", "maxwell_1"]
         
         # Test stage with no callbacks doesn't affect execution
         callbacks.run("interpolator")
-        assert executed_stages == ["start", "maxwell first"]
+        assert executed_stages == ["start", "maxwell_1"]
         
     def test_multiple_callbacks_same_stage(self, mock_sim):
         """Test that multiple callbacks can be registered for the same stage."""
@@ -130,13 +130,13 @@ class TestCallback:
         callbacks = SimulationCallbacks([plain_func], mock_sim)
         
         # Plain function should be wrapped and assigned to default stage
-        assert any(cb.stage == "maxwell second" 
-                 for cb in callbacks.stage_callbacks["maxwell second"])
+        assert any(cb.stage == "maxwell_2" 
+                 for cb in callbacks.stage_callbacks["maxwell_2"])
 
     def test_class_method_callback(self, mock_sim):
         """Test that callback can handle class methods."""
         class TestClass:
-            @callback(stage="maxwell first")
+            @callback(stage="maxwell_1")
             def class_method(self, sim):
                 return "class_method_result"
 
@@ -146,7 +146,7 @@ class TestCallback:
         assert testclass.class_method.__name__ == "class_method"
         
         # Test stage is properly set
-        assert testclass.class_method.stage == "maxwell first"
+        assert testclass.class_method.stage == "maxwell_1"
         
         # Test class method is still callable
         result = testclass.class_method(mock_sim)
@@ -155,13 +155,13 @@ class TestCallback:
 
     def test_lambda_callback(self, mock_sim):
         """Test that callback can handle lambda functions."""
-        lambda_func = callback(stage="maxwell first")(lambda sim: "lambda_result")
+        lambda_func = callback(stage="maxwell_1")(lambda sim: "lambda_result")
         
         # Test lambda function metadata is preserved
         assert lambda_func.__name__ == "<lambda>"
         
         # Test stage is properly set
-        assert lambda_func.stage == "maxwell first"
+        assert lambda_func.stage == "maxwell_1"
         
         # Test lambda function is still callable
         result = lambda_func(mock_sim)

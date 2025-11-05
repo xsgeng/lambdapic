@@ -35,7 +35,7 @@ class SaveFieldsToHDF5(Callback):
             Available: ['ex','ey','ez','bx','by','bz','jx','jy','jz','rho']. 
             If None, saves all components.
     """
-    stage="maxwell second"
+    stage="maxwell_2"
     def __init__(self, 
                  prefix: Union[str, Path]='', 
                  interval: Union[int, float, Callable] = 100,
@@ -194,7 +194,7 @@ class SaveSpeciesDensityToHDF5(Callback):
         interval (Union[int, float, Callable], optional): Number of timesteps between saves, or a 
             function(sim) -> bool that determines when to save. Defaults to 100.
     """
-    stage = "current deposition"
+    stage = "current_deposition"
     def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, float, Callable] = 100):
         self.species = species
         self.prefix = Path(prefix)
@@ -379,7 +379,7 @@ class SaveParticlesToHDF5(Callback):
         attrs (Optional[List[str]], optional): List of particle attributes to save.
             If None, saves all attributes.
     """
-    stage="maxwell second"
+    stage="maxwell_2"
     def __init__(self,
                  species: Species,
                  prefix: Union[str, Path]='',

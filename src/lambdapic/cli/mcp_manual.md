@@ -33,22 +33,22 @@ Examples of `get_doc` calls:
   - `p.particles[ispec]`: particles for each species (see Data Structures)
   - `p.index`, `p.ipatch_x`, `p.ipatch_y[, p.ipatch_z]`, `p.x0`, `p.y0[, p.z0]`
 - Execution stages (callbacks hook here; see `Simulation.STAGES` or customize `sim.stages`):
-  - `start` → `maxwell first` → species loop: `push position first` → `interpolator` → `qed` → `push momentum` → `push position second` → `current deposition` → post‑species: `qed create particles` → `_laser` → `maxwell second`
+  - `start` → `maxwell_1` → species loop: `push_position_1` → `interpolator` → `qed` → `push_momentum` → `push_position_2` → `current_deposition` → post‑species: `qed_create_particles` → `_laser` → `maxwell_2`
 - Discovery: use `list_simulations()` then `get_doc('lambdapic.simulation.Simulation')` for full constructor/options.
 
 ## Stage Selection Cheat Sheet
 
 - `start`: diagnostics that read fields/particles before updates.
-- `maxwell first`: observe/modify fields after first half‑step.
-- `push position first`: per‑species work after positions move by 0.5·dt.
+- `maxwell_1`: observe/modify fields after first half‑step.
+- `push_position_1`: per‑species work after positions move by 0.5·dt.
 - `interpolator`: modify per‑particle fields before momentum push.
 - `qed`: radiation/pair production related instrumentation.
-- `push momentum`: momentum‑space diagnostics or tweaks.
-- `push position second`: per‑species work after momentum push.
-- `current deposition`: observe/modify deposited currents; density extractions.
-- `qed create particles`: react to new particles created.
+- `push_momentum`: momentum‑space diagnostics or tweaks.
+- `push_position_2`: per‑species work after momentum push.
+- `current_deposition`: observe/modify deposited currents; density extractions.
+- `qed_create_particles`: react to new particles created.
 - `_laser`: laser injection stage.
-- `maxwell second`: diagnostics after second half‑step field update.
+- `maxwell_2`: diagnostics after second half‑step field update.
 
 ## Units
 
@@ -61,9 +61,9 @@ Examples of `get_doc` calls:
 Two styles are supported and discovered by `list_callbacks()`:
 
 - Function callbacks via decorator:
-  - Use `@callback(stage: str='maxwell second', interval: int|float|Callable = 1)`.
+  - Use `@callback(stage: str='maxwell_2', interval: int|float|Callable = 1)`.
   - Stages default to `Simulation.STAGES`; override `sim.stages` for per-simulation customization.
-    - Use `start`, `maxwell second` in most cases. Use `current deposition` for per-species operations.
+    - Use `start`, `maxwell_2` in most cases. Use `current_deposition` for per-species operations.
   - Interval semantics:
     - `int > 0`: call every N steps
     - `0 < float < 1`: call by physical time interval in seconds
@@ -202,7 +202,7 @@ def sum_ek(sim):
   - Alive mask and IDs: `alive = part.is_alive`; `ids = part.id` (uint64 view).
   - Interpolated fields at particles: `part.ex_part, part.ey_part, ...`.
 - Species‑loop stages:
-  - During `push position first`, `interpolator`, `qed`, `push momentum`, `push position second`, `current deposition` callbacks, `sim.ispec` holds the current species index being processed.
+  - During `push_position_1`, `interpolator`, `qed`, `push_momentum`, `push_position_2`, `current_deposition` callbacks, `sim.ispec` holds the current species index being processed.
   - After the species loop, `sim.ispec` is reset to `None`.
 - Global assembly:
   - Use `get_fields(sim, [...])` to assemble rank‑0 global 2D/3D slices safely; other ranks return `None`.
@@ -251,7 +251,7 @@ Common targets to inspect:
 
 ## Short Tips
 
-- Stage choice: field diagnostics often fit `start` or `maxwell second`; momentum‑space diagnostics fit after `push momentum`; field modification fits `interpolator`.
+- Stage choice: field diagnostics often fit `start` or `maxwell_2`; momentum‑space diagnostics fit after `push_momentum`; field modification fits `interpolator`.
 - Interval choice: prefer `int` step intervals for deterministic scheduling; use `Callable(sim)` for cross‑stage conditions (e.g., run at end of species loop).
 - MPI hygiene: aggregate on rank 0; do not perform matplotlib/HDF5 write on worker ranks.
 - Guard cells: exclude guards for physics integrals; include guards only for stencil ops.

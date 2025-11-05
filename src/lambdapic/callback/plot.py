@@ -50,7 +50,7 @@ class PlotFields(Callback):
         ...     extract_ne,
         ...     PlotFields(field_configs, prefix='plots', interleval=100)])
     """
-    stage = "maxwell second"
+    stage = "maxwell_2"
 
     def __init__(self,
                  field_configs: List[Dict],

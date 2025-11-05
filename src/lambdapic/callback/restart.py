@@ -52,7 +52,7 @@ class RestartDump(Callback):
     time limit of job scheduler like slurm.
     """
 
-    stage = "maxwell second"
+    stage = "maxwell_2"
 
     def __init__(self, out_dir: Union[str, Path], interval: Union[int, float, Callable] = 1000, keep: Optional[int] = None, 
                  dump_signals: list[int]|bool=False) -> None:

@@ -159,18 +159,18 @@ class Simulation:
 
     STAGES: ClassVar[list[str]] = [
         "start",
-        "maxwell first",
-        "push position first",
+        "maxwell_1",
+        "push_position_1",
         "interpolator",
         "qed",
-        "push momentum",
-        "push position second",
-        "current deposition",
-        "qed create particles",
+        "push_momentum",
+        "push_position_2",
+        "current_deposition",
+        "qed_create_particles",
         "_laser",
-        "maxwell second",
+        "maxwell_2",
     ]
-    DEFAULT_STAGE: ClassVar[str] = "maxwell second"
+    DEFAULT_STAGE: ClassVar[str] = "maxwell_2"
 
     stages: list[str] = field(init=False)
 
@@ -798,11 +798,11 @@ class Simulation:
 
         # check unified pusher
         stages_in_pusher = {
-            "push position first",
+            "push_position_1",
             "interpolator",  
             "qed",     
-            "push momentum", 
-            "push position second",
+            "push_momentum", 
+            "push_position_2",
         }
         use_unified_pusher = [False] * len(self.patches.species)
         for ispec, pusher in enumerate(self.pusher):
@@ -844,8 +844,8 @@ class Simulation:
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
                 
-            with Timer("maxwell first"):
-                stage_callbacks.run('maxwell first')
+            with Timer("maxwell_1"):
+                stage_callbacks.run('maxwell_1')
                 
             for ispec, s in enumerate(self.patches.species):
                 if not s.is_enabled():
@@ -878,8 +878,8 @@ class Simulation:
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
                         
-                    with Timer("Callbacks: push position first stage"):
-                        stage_callbacks.run('push position first')
+                    with Timer("Callbacks: push_position_1 stage"):
+                        stage_callbacks.run('push_position_1')
 
                     if self.interpolator:
                         with Timer(f'Interpolation for {self.species[ispec].name}'):
@@ -905,23 +905,23 @@ class Simulation:
                     with Timer(f"Pushing {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt)
                         
-                    with Timer("Callbacks: push momentum stage"):
-                        stage_callbacks.run('push momentum')
+                    with Timer("Callbacks: push_momentum stage"):
+                        stage_callbacks.run('push_momentum')
                     
                     # position from t+0.5t to t+dt, using new momentum
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
                         
-                    with Timer("Callbacks: push position second stage"):
-                        stage_callbacks.run('push position second')
+                    with Timer("Callbacks: push_position_2 stage"):
+                        stage_callbacks.run('push_position_2')
                         
                     if self.current_depositor:
                         with Timer(f"Current deposition for {self.species[ispec].name}"):
                             self.current_depositor(ispec, self.dt)
                     self.current_synced = False
                         
-                with Timer("Callbacks: current deposition stage"):
-                    stage_callbacks.run('current deposition')
+                with Timer("Callbacks: current_deposition stage"):
+                    stage_callbacks.run('current_deposition')
 
             self.sync_currents()
 
@@ -957,8 +957,8 @@ class Simulation:
             with Timer("Updating lists"):
                 self.update_lists()
 
-            with Timer("Callbacks: qed create particles stage"):
-                stage_callbacks.run("qed create particles")
+            with Timer("Callbacks: qed_create_particles stage"):
+                stage_callbacks.run("qed_create_particles")
 
             # EM from t to t+0.5dt
             with Timer('update B field'):
@@ -980,8 +980,8 @@ class Simulation:
             with Timer('sync E field'):
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
 
-            with Timer("Callbacks: maxwell second stage"):
-                stage_callbacks.run('maxwell second')
+            with Timer("Callbacks: maxwell_2 stage"):
+                stage_callbacks.run('maxwell_2')
         
             if restart_cb and restart_cb._dump_requested:
                 restart_cb._call(self)
@@ -1279,7 +1279,7 @@ class SimulationCallbacks:
         """Execute all callbacks registered for a given simulation stage.
         
         Args:
-            stage: The simulation stage to run callbacks for (e.g., 'start', 'maxwell first')
+            stage: The simulation stage to run callbacks for (e.g., 'start', 'maxwell_1')
             
         Note:
             Calls each callback function in sequence, passing the simulation instance.

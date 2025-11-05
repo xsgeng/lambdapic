@@ -259,7 +259,7 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
         If you want to save the density to file, use :any:`SaveSpeciesDensityToHDF5` instead.
     """
 
-    stage = "current deposition"
+    stage = "current_deposition"
     def __init__(self, sim: Simulation, species: Species, interval: Union[int, float, Callable] = 100) -> None:
         self.species = species
         self.interval = interval

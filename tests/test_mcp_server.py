@@ -27,7 +27,7 @@ def test_documentation_index_finds_callbacks():
 
     callbacks = {record.qualified_name: record for record in index.callbacks}
     assert "lambdapic.callback.hdf5.SaveFieldsToHDF5" in callbacks
-    assert callbacks["lambdapic.callback.hdf5.SaveFieldsToHDF5"].stage == "maxwell second"
+    assert callbacks["lambdapic.callback.hdf5.SaveFieldsToHDF5"].stage == "maxwell_2"
 
     doc = index.get_doc("lambdapic.callback.hdf5.SaveFieldsToHDF5")
     assert doc is not None
