@@ -251,6 +251,12 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                     dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0) ],
                     prefix='laser-target'),
             ])
+    
+    Note:
+        This callback collects data from all patches and sends it to rank 0.
+        This could be expensive for 3D simulations.
+        Use with caution.
+        If you want to save the density to file, use :any:`SaveSpeciesDensityToHDF5` instead.
     """
 
     stage = "current deposition"
