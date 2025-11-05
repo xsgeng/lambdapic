@@ -160,11 +160,11 @@ class Simulation:
     STAGES: ClassVar[list[str]] = [
         "start",
         "maxwell_1",
-        "push_position_1",
-        "interpolator",
-        "qed",
-        "push_momentum",
-        "push_position_2",
+        "_push_position_1",
+        "_interpolator",
+        "_qed",
+        "_push_momentum",
+        "_push_position_2",
         "current_deposition",
         "qed_create_particles",
         "_laser",
@@ -798,11 +798,11 @@ class Simulation:
 
         # check unified pusher
         stages_in_pusher = {
-            "push_position_1",
-            "interpolator",  
-            "qed",     
-            "push_momentum", 
-            "push_position_2",
+            "_push_position_1",
+            "_interpolator",  
+            "_qed",     
+            "_push_momentum", 
+            "_push_position_2",
         }
         use_unified_pusher = [False] * len(self.patches.species)
         for ispec, pusher in enumerate(self.pusher):
@@ -878,15 +878,15 @@ class Simulation:
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
                         
-                    with Timer("Callbacks: push_position_1 stage"):
-                        stage_callbacks.run('push_position_1')
+                    with Timer("Callbacks: _push_position_1 stage"):
+                        stage_callbacks.run('_push_position_1')
 
                     if self.interpolator:
                         with Timer(f'Interpolation for {self.species[ispec].name}'):
                             self.interpolator(ispec)
                             
-                        with Timer("Callbacks: interpolator stage"):
-                            stage_callbacks.run('interpolator')
+                        with Timer("Callbacks: _interpolator stage"):
+                            stage_callbacks.run("_interpolator")
 
                     with Timer(f'radiation for {self.species[ispec].name}'):
                         if self.radiation[ispec] is not None:
@@ -899,21 +899,22 @@ class Simulation:
                             self.pairproduction[ispec].update_chi()
                             self.pairproduction[ispec].event(dt=self.dt)
                             
-                    stage_callbacks.run('qed')
+                    with Timer("Callbacks: _qed stage"):
+                        stage_callbacks.run("_qed")
                     
                     # momentum from t to t+dt
                     with Timer(f"Pushing {self.species[ispec].name}"):
                         self.pusher[ispec](self.dt)
                         
-                    with Timer("Callbacks: push_momentum stage"):
-                        stage_callbacks.run('push_momentum')
+                    with Timer("Callbacks: _push_momentum stage"):
+                        stage_callbacks.run("_push_momentum")
                     
                     # position from t+0.5t to t+dt, using new momentum
                     with Timer('push_position'):
                         self.pusher[ispec].push_position(0.5*self.dt)
                         
-                    with Timer("Callbacks: push_position_2 stage"):
-                        stage_callbacks.run('push_position_2')
+                    with Timer("Callbacks: _push_position_2 stage"):
+                        stage_callbacks.run("_push_position_2")
                         
                     if self.current_depositor:
                         with Timer(f"Current deposition for {self.species[ispec].name}"):

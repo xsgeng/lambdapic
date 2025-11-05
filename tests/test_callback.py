@@ -102,7 +102,7 @@ class TestCallback:
         assert executed_stages == ["start", "maxwell_1"]
         
         # Test stage with no callbacks doesn't affect execution
-        callbacks.run("interpolator")
+        callbacks.run("_interpolator")
         assert executed_stages == ["start", "maxwell_1"]
         
     def test_multiple_callbacks_same_stage(self, mock_sim):

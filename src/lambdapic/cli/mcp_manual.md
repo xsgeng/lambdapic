@@ -33,18 +33,18 @@ Examples of `get_doc` calls:
   - `p.particles[ispec]`: particles for each species (see Data Structures)
   - `p.index`, `p.ipatch_x`, `p.ipatch_y[, p.ipatch_z]`, `p.x0`, `p.y0[, p.z0]`
 - Execution stages (callbacks hook here; see `Simulation.STAGES` or customize `sim.stages`):
-  - `start` → `maxwell_1` → species loop: `push_position_1` → `interpolator` → `qed` → `push_momentum` → `push_position_2` → `current_deposition` → post‑species: `qed_create_particles` → `_laser` → `maxwell_2`
+  - `start` → `maxwell_1` → species loop: `_push_position_1` → `_interpolator` → `_qed` → `_push_momentum` → `_push_position_2` → `current_deposition` → post‑species: `qed_create_particles` → `_laser` → `maxwell_2`
 - Discovery: use `list_simulations()` then `get_doc('lambdapic.simulation.Simulation')` for full constructor/options.
 
 ## Stage Selection Cheat Sheet
 
 - `start`: diagnostics that read fields/particles before updates.
 - `maxwell_1`: observe/modify fields after first half‑step.
-- `push_position_1`: per‑species work after positions move by 0.5·dt.
-- `interpolator`: modify per‑particle fields before momentum push.
-- `qed`: radiation/pair production related instrumentation.
-- `push_momentum`: momentum‑space diagnostics or tweaks.
-- `push_position_2`: per‑species work after momentum push.
+- `_push_position_1`: per‑species work after positions move by 0.5·dt.
+- `_interpolator`: modify per‑particle fields before momentum push.
+- `_qed`: radiation/pair production related instrumentation.
+- `_push_momentum`: momentum‑space diagnostics or tweaks.
+- `_push_position_2`: per‑species work after momentum push.
 - `current_deposition`: observe/modify deposited currents; density extractions.
 - `qed_create_particles`: react to new particles created.
 - `_laser`: laser injection stage.
@@ -125,7 +125,7 @@ def plot_results(sim):
 import numpy as np
 from lambdapic import callback
 
-@callback('interpolator')
+@callback("_interpolator")
 def set_static_fields(sim):
     for p in sim.patches:
         for part in p.particles:
@@ -149,7 +149,7 @@ def set_static_fields_jit(x, is_dead, t, ex_part):
         ex_part[i] += np.sin(t)
         ex_part[i] += np.sin(x[i]/1e-6)
 
-@callback('interpolator')
+@callback("_interpolator")
 def set_static_fields(sim):
     for p in sim.patches:
         # assume 'ele' species exists; use its index
@@ -202,7 +202,7 @@ def sum_ek(sim):
   - Alive mask and IDs: `alive = part.is_alive`; `ids = part.id` (uint64 view).
   - Interpolated fields at particles: `part.ex_part, part.ey_part, ...`.
 - Species‑loop stages:
-  - During `push_position_1`, `interpolator`, `qed`, `push_momentum`, `push_position_2`, `current_deposition` callbacks, `sim.ispec` holds the current species index being processed.
+  - During `_push_position_1`, `interpolator`, `qed`, `push_momentum`, `push_position_2`, `current_deposition` callbacks, `sim.ispec` holds the current species index being processed.
   - After the species loop, `sim.ispec` is reset to `None`.
 - Global assembly:
   - Use `get_fields(sim, [...])` to assemble rank‑0 global 2D/3D slices safely; other ranks return `None`.
