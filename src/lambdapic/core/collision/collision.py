@@ -78,12 +78,20 @@ class Collision(PickleableTypedList):
                     self.part_lists[ispec][ipatch] = pack_particle_data(p.particles[ispec], s.m, s.q)
 
     def generate_field_lists(self) -> None:
-        self.debye_length_inv_square_list = typed.List(# type: ignore
-            [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
-        )
-        self.total_density_list = typed.List(# type: ignore
-            [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
-        )
+        if self.patches.dimension == 2:
+            self.debye_length_inv_square_list = typed.List(# type: ignore
+                [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
+            )
+            self.total_density_list = typed.List(# type: ignore
+                [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
+            )
+        elif self.patches.dimension == 3:
+            self.debye_length_inv_square_list = typed.List(# type: ignore
+                [np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches]
+            )
+            self.total_density_list = typed.List(# type: ignore
+                [np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches]
+            )
         self.bucket_bound_min_lists = [typed.List(s.bucket_bound_min_list) for s in self.sorter] # type: ignore
         self.bucket_bound_max_lists = [typed.List(s.bucket_bound_max_list) for s in self.sorter] # type: ignore
         self.gen_list = typed.List(self.gen.spawn(self.patches.npatches)) # type: ignore
