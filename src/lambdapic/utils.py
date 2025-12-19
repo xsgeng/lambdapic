@@ -59,17 +59,18 @@ def is_version_outdated(local: str, remote: str) -> bool:
         return False
 
 def get_num_threads() -> int:
+    from .core.pusher.unified import unified_pusher_2d
     from threadpoolctl import threadpool_info
     for info in threadpool_info():
         if info['internal_api'] == 'openmp':
             return info['num_threads']
     return 0
 
-def find_divisors(n):
+def find_divisors(n, min_divisor=2):
     divisors = set()
     n_abs = abs(n)
     
-    for i in range(1, int(np.sqrt(n_abs)) + 1):
+    for i in range(min_divisor, int(np.sqrt(n_abs)) + 1):
         if n_abs % i == 0:
             divisors.add(i)
             divisors.add(n_abs // i)
@@ -77,10 +78,10 @@ def find_divisors(n):
     return sorted(divisors)
 
 def auto_patch_2d(nx: int, ny: int, n_guard: int, cpml_thickness: int, npatch_min: int) -> tuple[int, int]:
-    possible_npatch_x = find_divisors(nx)
-    possible_npatch_y = find_divisors(ny)
+    npatch_x_min = npatch_y_min = 2
+    possible_npatch_x = find_divisors(nx, npatch_x_min)
+    possible_npatch_y = find_divisors(ny, npatch_x_min)
 
-    npatch_x_min = npatch_y_min = npatch_y_max = 2
     npatch_x_max = min(nx//cpml_thickness, nx//(2*n_guard))
     npatch_y_max = min(ny//cpml_thickness, ny//(2*n_guard))
     
@@ -110,7 +111,7 @@ def auto_patch_3d(nx: int, ny: int, nz: int, n_guard: int, cpml_thickness: int, 
     possible_npatch_y = find_divisors(ny)
     possible_npatch_z = find_divisors(nz)
 
-    npatch_x_min = npatch_y_min = npatch_z_min = npatch_y_max = npatch_z_max = 2
+    npatch_x_min = npatch_y_min = npatch_z_min = 2
     npatch_x_max = min(nx//cpml_thickness, nx//(2*n_guard))
     npatch_y_max = min(ny//cpml_thickness, ny//(2*n_guard))
     npatch_z_max = min(nz//cpml_thickness, nz//(2*n_guard))

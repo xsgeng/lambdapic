@@ -64,9 +64,9 @@ class MPIManager2D(MPIManager):
         self.dy = patches.dy
 
     def sync_particles(self, ispec: int):
-        from . import sync_particles_2d
         if self.size == 1:
             return
+        from . import sync_particles_2d
         particles_list = [p.particles[ispec] for p in self.patches]
         patch_list = self.patches.patches
 
@@ -95,9 +95,9 @@ class MPIManager2D(MPIManager):
         )
 
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
-        from . import sync_fields2d
         if self.size == 1:
             return
+        from . import sync_fields2d
         sync_fields2d.sync_guard_fields_2d(
             [p.fields for p in self.patches],
             self.patches.patches,
@@ -107,9 +107,9 @@ class MPIManager2D(MPIManager):
         )
 
     def sync_currents(self):
-        from . import sync_fields2d
         if self.size == 1:
             return
+        from . import sync_fields2d
         sync_fields2d.sync_currents_2d(
             [p.fields for p in self.patches],
             self.patches.patches,
@@ -129,9 +129,9 @@ class MPIManager3D(MPIManager):
         self.dz = patches.dz
 
     def sync_particles(self, ispec: int):
-        from . import sync_particles_3d
         if self.size == 1:
             return
+        from . import sync_particles_3d
         particles_list = [p.particles[ispec] for p in self.patches]
         patch_list = self.patches.patches
         
@@ -160,9 +160,9 @@ class MPIManager3D(MPIManager):
         )
 
     def sync_guard_fields(self, attrs=['ex', 'ey', 'ez', 'bx', 'by', 'bz']):
-        from . import sync_fields3d
         if self.size == 1:
             return
+        from . import sync_fields3d
        
         sync_fields3d.sync_guard_fields_3d(
             [p.fields for p in self.patches],
@@ -175,6 +175,7 @@ class MPIManager3D(MPIManager):
     def sync_currents(self):
         if self.size == 1:
             return
+        from . import sync_fields3d
             
         sync_fields3d.sync_currents_3d(
             [p.fields for p in self.patches],
