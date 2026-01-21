@@ -77,8 +77,12 @@ def _update_laser_bfields_3d(
 
         
 class Laser:
-    stage = "_laser"
-    disabled = False
+    def __init__(self) -> None:
+        self.stage = "_laser"
+        self.disabled = False
+        self.side = "xmin"
+        self.tstop = np.inf
+
     def _get_r(self, sim, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
         raise NotImplementedError
@@ -86,6 +90,54 @@ class Laser:
     def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
         raise NotImplementedError
     
+    def _calculate_bound_fields(self, sim: Simulation, patch: Patch) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Calculate ey_source and ez_source for this laser."""
+        raise NotImplementedError
+    
+    def __call__(self, sim: Simulation):
+        if self.disabled:
+            return
+
+        time = sim.time
+        # Stop injecting after twice the pulse duration for smooth falloff
+        if c*time >= self.tstop:
+            self.disabled = True
+            return
+
+        if self.side == "xmin":
+            ipatch_x = 0
+            laserpos = sim.cpml_thickness + 2
+            patches = list(filter(lambda p: p.ipatch_x == ipatch_x, sim.patches))
+            n_pmlxmin = sum(isinstance(pml, PMLXmin) for p in patches for pml in p.pml_boundary)
+            if n_pmlxmin < len(patches):
+                logger.info("Disabling laser for lacking of PML. Maybe due to MovingWindow starts.")
+                self.disabled = True
+                return
+        else:
+            raise ValueError("Invalid side: only 'xmin' is supported.")
+
+        # Inject the laser from the left boundary
+        for p in sim.patches:
+            # Only inject from the leftmost patch
+            if p.ipatch_x == ipatch_x:
+                ey_source, ez_source = self._calculate_bound_fields(sim, p)
+                if ey_source is not None:
+                    self._update_bfields(laserpos, p, ey_source, ez_source, dt=sim.dt)
+
+    def __add__(self, other):
+        """Add two lasers together."""
+        if self.side != other.side:
+            raise TypeError(f"Cannot add lasers from different sides: {self.side} and {other.side}")
+        if not isinstance(other, Laser):
+            raise TypeError(f"Cannot add Laser with {type(other)}")
+        if isinstance(self, Laser2D) and isinstance(other, Laser2D):
+            return _CombinedLaser2D(self, other)
+        elif isinstance(self, Laser3D) and isinstance(other, Laser3D):
+            return _CombinedLaser3D(self, other)
+        else:
+            raise TypeError("Cannot add 2D and 3D laser")
+
+
 class Laser2D(Laser):
     def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         f = patch.fields
@@ -138,7 +190,38 @@ class Laser3D(Laser):
             ey_source,
             ez_source
         )
-    
+
+class _CombinedLaser(Laser):
+    """A laser that combines two laser sources by adding their fields."""
+
+    def __init__(self, laser1: Laser, laser2: Laser):
+        super().__init__()
+        self.laser1 = laser1
+        self.laser2 = laser2
+
+        self.side = self.laser1.side
+
+        self.tstop = max(laser1.tstop, laser2.tstop)
+
+    def _calculate_bound_fields(self, sim: Simulation, patch: Patch) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        # Calculate source fields from both lasers and sum them
+        ey1, ez1 = self.laser1._calculate_bound_fields(sim, patch)
+        ey2, ez2 = self.laser2._calculate_bound_fields(sim, patch)
+
+        if ey1 is None and ey2 is None:
+            return None, None
+        elif ey1 is None:
+            return ey2, ez2
+        elif ey2 is None:
+            return ey1, ez1
+        else:
+            return ey1 + ey2, ez1 + ez2
+        
+
+class _CombinedLaser2D(Laser2D,_CombinedLaser): 
+    ...
+class _CombinedLaser3D(Laser3D,_CombinedLaser): 
+    ...
 class SimpleLaser(Laser):
     """
     A simple laser pulse implementation with basic spatial and temporal profiles.
@@ -153,7 +236,9 @@ class SimpleLaser(Laser):
         For more accurate physics including proper beam evolution, wavefront curvature,
         and Gouy phase, use the GaussianLaser class instead.
     """
-    def __init__(self, a0: float, w0: float, ctau: float, tstop: Optional[float]=None, pol_angle: float = 0.0, l0: float=0.8e-6, side="xmin"):
+    def __init__(self, a0: float, w0: float, ctau: float, 
+                 tstop: Optional[float]=None, pol_angle: float = 0.0, cep: float = 0.0, 
+                 l0: float=0.8e-6, side="xmin"):
         """
         Parameters:
             sim: Simulation object that this laser will be injected into
@@ -161,11 +246,13 @@ class SimpleLaser(Laser):
             w0: Laser waist size
             ctau: Pulse duration (c*tau)
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            cep: Carrier envelope phase (default: 0.0)
             l0: Laser wavelength (default: 800nm)
         
         Raises:
             ValueError: If parameters are invalid (negative or zero values)
         """
+        super().__init__()
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
@@ -181,46 +268,33 @@ class SimpleLaser(Laser):
         self.tstop = 2*self.ctau or tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
+        self.cep = cep
         self.side = side
 
 
-    def __call__(self, sim: Simulation):
-        if self.disabled:
-            return
-        
-        time = sim.itime * sim.dt
+    def _calculate_bound_fields(self, sim: Simulation, patch: Patch) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Calculate ey_source and ez_source for this laser."""
+        time = sim.time
         # Stop injecting after twice the pulse duration for smooth falloff
         if c*time >= self.tstop:
-            self.disabled = True
-            return
+            return None, None
 
         # Calculate temporal profile (sin² envelope for smooth turn-on/off)
         tprof = np.sin(c*time/(2*self.ctau)*pi)**2 * (c*time < 2*self.ctau)
-        
-        if self.side == "xmin":
-            ipatch_x = 0
-            laserpos = sim.cpml_thickness + 2
-            patches = list(filter(lambda p: p.ipatch_x == ipatch_x, sim.patches))
-            n_pmlxmin = sum(isinstance(pml, PMLXmin) for p in patches for pml in p.pml_boundary)
-            if n_pmlxmin < len(patches):
-                logger.info("Disabling laser for lacking of PML. Maybe due to MovingWindow starts.")
-                self.disabled = True
-                return
-        else:
-            raise ValueError("Invalid side: only 'xmin' is supported.")
 
-        # Inject the laser from the left boundary
-        for p in sim.patches:
-            # Only inject from the leftmost patch
-            if p.ipatch_x == ipatch_x:
-                # r is 2D or 3D depending on the simulation dimension
-                r = self._get_r(sim, p)
-                # Calculate base field amplitude with:
-                # - Gaussian transverse profile: exp(-r²/w0²)
-                # - Temporal oscillation: sin(ω₀t)
-                # - Smooth temporal envelope: tprof
-                efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time) * tprof
-                self._update_bfields(laserpos, p, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
+        # r is 2D or 3D depending on the simulation dimension
+        r = self._get_r(sim, patch)
+        # Calculate base field amplitude with:
+        # - Gaussian transverse profile: exp(-r²/w0²)
+        # - Temporal oscillation: sin(ω₀t)
+        # - Smooth temporal envelope: tprof
+        efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time + self.cep) * tprof
+
+        ey_source = efield * np.cos(self.pol_angle)
+        ez_source = efield * np.sin(self.pol_angle)
+        return ey_source, ez_source
+
+    
 
 class SimpleLaser2D(Laser2D, SimpleLaser):
     ...
@@ -248,7 +322,8 @@ class GaussianLaser(Laser):
         realistic simulations where these effects matter.
     """
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
-                 x0: float=None, tstop: float=None, pol_angle: float = 0.0, focus_position: float = 0.0, side: str = "xmin"):
+                 x0: float=None, tstop: float=None, pol_angle: float = 0.0, cep: float = 0.0,
+                 focus_position: float = 0.0, side: str = "xmin"):
         """
         Parameters:
             a0: Normalized vector potential amplitude
@@ -258,9 +333,11 @@ class GaussianLaser(Laser):
             x0: Pulse center position (default: 3*ctau)
             tstop: Time to stop injection (default: 6*ctau)
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            cep: Carrier envelope phase (default: 0.0)
             focus_position: Position of laser focus relative to boundary (default: 0.0)
             side: Injection boundary ('xmin' or 'xmax') (default: 'xmin')
         """
+        super().__init__()
 
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
@@ -279,6 +356,7 @@ class GaussianLaser(Laser):
         self.tstop = 6*ctau if tstop is None else tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
+        self.cep = cep
         self.focus_position = focus_position
         self.side = side
         
@@ -301,48 +379,35 @@ class GaussianLaser(Laser):
         
         return w, R, psi
     
-    def __call__(self, sim: Simulation):
-        """
-        Inject the Gaussian laser pulse into the simulation.
-        """
-        time = sim.itime * sim.dt
+    def _calculate_bound_fields(self, sim: Simulation, patch: Patch) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Calculate ey_source and ez_source for this laser."""
+        time = sim.time
         if c*time >= self.tstop:
-            return
-            
+            return None, None
+
         # Temporal envelope (Gaussian)
         tprof = np.exp(-(c*time - self.x0)**2 / self.ctau**2)
-        
+
         # Calculate boundary parameters
         x_rel = sim.cpml_thickness * sim.dx
         boundary_w, boundary_R, boundary_psi = self._gaussian_beam_params(x_rel)
-        
-        if self.side == "xmin":
-            ipatch_x = 0
-            laserpos = sim.cpml_thickness + 2
-            patches = list(filter(lambda p: p.ipatch_x == ipatch_x, sim.patches))
-            n_pmlxmin = sum(isinstance(pml, PMLXmin) for p in patches for pml in p.pml_boundary)
-            if n_pmlxmin < len(patches):
-                logger.info("Disabling laser for lacking of PML. Maybe due to MovingWindow starts.")
-                self.disabled = True
-        else:
-            raise ValueError("Invalid side: only 'xmin' is supported.")
 
-        for p in sim.patches:
-            if p.ipatch_x == ipatch_x:
-                # r is 2D or 3D depending on the simulation dimension
-                r = self._get_r(sim, p)
-                
-                # Calculate amplitude and phase
-                amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
-                phase_curv = self.k0 * r**2/(2*boundary_R)
-                phase = (self.omega0 * time -          # Oscillation
-                        self.k0 * x_rel -             # Propagation
-                        phase_curv -                  # Curvature
-                        boundary_psi)                 # Gouy phase
-                
-                # Set fields based on polarization
-                efield = amp * np.sin(phase) * tprof
-                self._update_bfields(laserpos, p, ey_source=efield * np.cos(self.pol_angle), ez_source=efield * np.sin(self.pol_angle), dt=sim.dt)
+        # r is 2D or 3D depending on the simulation dimension
+        r = self._get_r(sim, patch)
+
+        # Calculate amplitude and phase
+        amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
+        phase_curv = self.k0 * r**2/(2*boundary_R)
+        phase = (self.omega0 * time + self.cep -          # Oscillation
+                self.k0 * x_rel -             # Propagation
+                phase_curv -                  # Curvature
+                boundary_psi)                  # Gouy phase
+
+        # Set fields based on polarization
+        efield = amp * np.sin(phase) * tprof
+        ey_source = efield * np.cos(self.pol_angle)
+        ez_source = efield * np.sin(self.pol_angle)
+        return ey_source, ez_source
 
 class GaussianLaser2D(Laser2D, GaussianLaser):
     ...
