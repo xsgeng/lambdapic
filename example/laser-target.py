@@ -1,3 +1,5 @@
+import numpy as np
+
 from lambdapic import (
     Electron,
     ExtractSpeciesDensity,
@@ -40,13 +42,23 @@ def density(n0):
         return ne
     return _density
 
-laser = GaussianLaser2D(
+laser1 = GaussianLaser2D(
     a0=10,
     w0=2e-6,
     l0=0.8e-6,
     ctau=5e-6,
     focus_position=Lx/2,
     x0=10e-6
+)
+laser2 = GaussianLaser2D(
+    a0=10,
+    w0=2e-6,
+    l0=0.8e-6,
+    ctau=5e-6,
+    focus_position=Lx/2,
+    x0=10e-6,
+    pol_angle=pi/2,
+    cep=pi/2
 )
 
 sim = Simulation(
@@ -66,14 +78,21 @@ sim.add_species([ele, carbon, proton])
     
 if __name__ == "__main__":
     sim.run(2001, callbacks=[
-            laser, 
+            laser1+laser2, 
             n_ele := ExtractSpeciesDensity(sim, ele, 500),
             PlotFields(
                 [
                     dict(field=n_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
-                    dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser.a0, vmax=laser.a0)
+                    dict(field='ey',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser1.a0, vmax=laser1.a0)
                 ],
-                prefix='laser-target', interval=10e-15,
+                prefix='laser-target/ey', interval=10e-15,
+            ),
+            PlotFields(
+                [
+                    dict(field=n_ele.density, scale=1/nc, cmap='Grays', vmin=0, vmax=20), 
+                    dict(field='ez',  scale=e/(m_e*c*omega0), cmap='bwr_alpha', vmin=-laser2.a0, vmax=laser2.a0)
+                ],
+                prefix='laser-target/ez', interval=10e-15,
             ),
             SaveFieldsToHDF5('laser-target/fields', 500, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
             SaveSpeciesDensityToHDF5(carbon, 'laser-target/density', 500),
