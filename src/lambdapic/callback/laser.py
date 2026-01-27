@@ -82,6 +82,8 @@ class Laser:
         self.disabled = False
         self.side = "xmin"
         self.tstop = np.inf
+        self.y0: float = 0
+        self.z0: float = 0
 
     def _get_r(self, sim, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
@@ -141,7 +143,7 @@ class Laser:
 class Laser2D(Laser):
     def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
         f = patch.fields
-        r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2)
+        r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2 - self.y0)
         return r
 
     def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
@@ -165,7 +167,8 @@ class Laser2D(Laser):
 class Laser3D(Laser):
     def _get_r(self, sim: Simulation3D, patch: Patch) -> NDArray[np.float64]:
         f = patch.fields
-        r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2)**2 + (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2)**2)**0.5
+        r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2 - self.y0)**2 + 
+             (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2 - self.z0)**2)**0.5
         return r
     
     def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
@@ -237,6 +240,7 @@ class SimpleLaser(Laser):
         and Gouy phase, use the GaussianLaser class instead.
     """
     def __init__(self, a0: float, w0: float, ctau: float, 
+                 y0: float|None=0, z0: float|None=0,
                  tstop: Optional[float]=None, pol_angle: float = 0.0, cep: float = 0.0, 
                  l0: float=0.8e-6, side="xmin"):
         """
@@ -245,6 +249,8 @@ class SimpleLaser(Laser):
             a0: Normalized vector potential amplitude
             w0: Laser waist size
             ctau: Pulse duration (c*tau)
+            y0: y position of the laser center (default: 0)
+            z0: z position of the laser center (default: 0). No effect for 2D laser.
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
             cep: Carrier envelope phase (default: 0.0)
             l0: Laser wavelength (default: 800nm)
@@ -322,7 +328,8 @@ class GaussianLaser(Laser):
         realistic simulations where these effects matter.
     """
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
-                 x0: float=None, tstop: float=None, pol_angle: float = 0.0, cep: float = 0.0,
+                 x0: float=None, y0: float=0, z0: float=0,
+                 tstop: float=None, pol_angle: float = 0.0, cep: float = 0.0,
                  focus_position: float = 0.0, side: str = "xmin"):
         """
         Parameters:
@@ -330,7 +337,9 @@ class GaussianLaser(Laser):
             l0: Laser wavelength
             w0: Waist size at focus
             ctau: Pulse duration (c*tau)
-            x0: Pulse center position (default: 3*ctau)
+            x0: Pulse center position from boundary (default: 3*ctau)
+            y0: y position of the laser center (default: 0)
+            z0: z position of the laser center (default: 0). No effect for 2D laser.
             tstop: Time to stop injection (default: 6*ctau)
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
             cep: Carrier envelope phase (default: 0.0)
@@ -353,6 +362,8 @@ class GaussianLaser(Laser):
         self.w0 = w0
         self.ctau = ctau
         self.x0 = 3*ctau if x0 is None else x0
+        self.y0 = y0
+        self.z0 = z0
         self.tstop = 6*ctau if tstop is None else tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
