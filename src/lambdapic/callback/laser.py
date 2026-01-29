@@ -5,12 +5,12 @@ from ..core.boundary.cpml import PMLXmin
 from ..core.boundary.utils import get_pml
 from ..core.utils.logger import logger
 from ..core.fields import Fields
-from ..core.patch.patch import Patch
+from ..core.patch.patch import Patch, Patch2D, Patch3D
 from numba import njit, prange, typed
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from numpy.typing import NDArray
 
-from ..simulation import Simulation, Simulation3D
+from ..simulation import Simulation, Simulation3D, Simulation2D
 from ..core.utils.jit_spinner import jit_spinner
 
 @jit_spinner
@@ -82,11 +82,15 @@ class Laser:
         self.disabled = False
         self.side = "xmin"
         self.tstop = np.inf
-        self.y0: float = 0
-        self.z0: float = 0
+        self.y0: float|None = None
+        self.z0: float|None = None
 
     def _get_r(self, sim, patch: Patch) -> NDArray[np.float64]:
         """Calculate the radial distance from the center of the laser beam."""
+        raise NotImplementedError
+    
+    def _get_boundary_coordinates(self, sim: Simulation, patch: Patch):
+        """Get the coordinates of the boundary. Centered to y0 and z0"""
         raise NotImplementedError
     
     def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
@@ -141,12 +145,21 @@ class Laser:
 
 
 class Laser2D(Laser):
-    def _get_r(self, sim: Simulation, patch: Patch) -> NDArray[np.float64]:
+    def _get_r(self, sim: Simulation, patch: Patch2D) -> NDArray[np.float64]:
         f = patch.fields
-        r = abs(f.yaxis[0, :] - sim.dy/2 - sim.Ly/2 - self.y0)
+        y0 = self.y0 or sim.Ly/2
+        r = abs(f.yaxis[0, :] - sim.dy/2 - y0)
         return r
+    
+    def _get_boundary_coordinates(self, sim: Simulation2D, patch: Patch2D):
+        f = patch.fields
+        y0 = self.y0 or sim.Ly/2
+        y = f.yaxis[0, :] - sim.dy/2 - y0
+        z = 0.0
+        r = abs(y)
+        return y, z, r
 
-    def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+    def _update_bfields(self, laserpos: int, patch: Patch2D, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
         f = patch.fields
         iy_start, iy_end = 0, f.ny
         if (pml := get_pml(patch.pml_boundary, "ymin")) is not None:
@@ -165,13 +178,25 @@ class Laser2D(Laser):
         )
 
 class Laser3D(Laser):
-    def _get_r(self, sim: Simulation3D, patch: Patch) -> NDArray[np.float64]:
+    def _get_r(self, sim: Simulation3D, patch: Patch3D) -> NDArray[np.float64]:
         f = patch.fields
-        r = ((f.yaxis[0, :, :] - sim.dy/2 - sim.Ly/2 - self.y0)**2 + 
-             (f.zaxis[0, :, :] - sim.dz/2 - sim.Lz/2 - self.z0)**2)**0.5
+        y0 = self.y0 or sim.Ly/2
+        z0 = self.z0 or sim.Lz/2
+        r = ((f.yaxis[0, :, :] - sim.dy/2 - y0)**2 + 
+             (f.zaxis[0, :, :] - sim.dz/2 - z0)**2)**0.5
         return r
     
-    def _update_bfields(self, laserpos: int, patch: Patch, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
+    def _get_boundary_coordinates(self, sim: Simulation3D, patch: Patch3D):
+        f = patch.fields
+        y0 = self.y0 or sim.Ly/2
+        z0 = self.z0 or sim.Lz/2
+        
+        y = f.yaxis[0, :, :] - sim.dy/2 - y0
+        z = f.zaxis[0, :, :] - sim.dz/2 - z0
+        r = np.sqrt(y**2 + z**2)
+        return y, z, r
+    
+    def _update_bfields(self, laserpos: int, patch: Patch3D, ey_source: NDArray[np.float64], ez_source: NDArray[np.float64], dt: float):
         f = patch.fields
         iy_start, iy_end = 0, f.ny
         iz_start, iz_end = 0, f.nz
@@ -240,8 +265,8 @@ class SimpleLaser(Laser):
         and Gouy phase, use the GaussianLaser class instead.
     """
     def __init__(self, a0: float, w0: float, ctau: float, 
-                 y0: float|None=0, z0: float|None=0,
-                 tstop: Optional[float]=None, pol_angle: float = 0.0, cep: float = 0.0, 
+                 y0: float|None=None, z0: float|None=None, angle_y: float=0, angle_z: float=0,
+                 tstop: float|None=None, pol_angle: float = 0.0, cep: float = 0.0, 
                  l0: float=0.8e-6, side="xmin"):
         """
         Parameters:
@@ -249,8 +274,11 @@ class SimpleLaser(Laser):
             a0: Normalized vector potential amplitude
             w0: Laser waist size
             ctau: Pulse duration (c*tau)
-            y0: y position of the laser center (default: 0)
-            z0: z position of the laser center (default: 0). No effect for 2D laser.
+            y0: y position of the laser center (default: Ly/2)
+            z0: z position of the laser center (default: Lz/2). No effect for 2D laser.
+            angle_y: incident angle with boundary normal in y direction (default: 0)
+            angle_z: NOT IMPLEMENTED.
+            tstop: Time at which the laser pulse should stop (default: 2*ctau)
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
             cep: Carrier envelope phase (default: 0.0)
             l0: Laser wavelength (default: 800nm)
@@ -264,40 +292,62 @@ class SimpleLaser(Laser):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
         
         if side not in ["xmin"]:
-            raise ValueError("Invalid side: only 'xmin' is supported.")
-            
+            raise NotImplementedError("Invalid side: only 'xmin' is supported.")
+        
+        if angle_y >= pi/2:
+            raise ValueError("Angle_y must be less than pi/2")
+        
+        if angle_z != 0:
+            raise NotImplementedError("Angle_z is not implemented")
+        
         self.a0 = a0
         self.l0 = l0
         self.omega0 = 2 * pi * c / l0
         self.w0 = w0
         self.ctau = ctau
-        self.tstop = 2*self.ctau or tstop
+        self.y0 = y0
+        self.z0 = z0
+        self.angle_y = angle_y
+        self.angle_z = angle_z
+        self.tstop = 2*self.ctau or tstop*c
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
         self.cep = cep
         self.side = side
 
+        # Wavevector components for incident angles
+        self.k0 = self.omega0 / c
+        self.ky = self.k0 * np.sin(self.angle_y)
+        self.kz = 0
+
 
     def _calculate_bound_fields(self, sim: Simulation, patch: Patch) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Calculate ey_source and ez_source for this laser."""
         time = sim.time
-        # Stop injecting after twice the pulse duration for smooth falloff
+        
         if c*time >= self.tstop:
             return None, None
 
-        # Calculate temporal profile (sin² envelope for smooth turn-on/off)
-        tprof = np.sin(c*time/(2*self.ctau)*pi)**2 * (c*time < 2*self.ctau)
 
-        # r is 2D or 3D depending on the simulation dimension
-        r = self._get_r(sim, patch)
+        if self.side == "xmin":
+            y, z, r = self._get_boundary_coordinates(sim, patch)
+            r_rot = np.sqrt((y/np.cos(self.angle_y))**2 + z**2)
+            transverse_phase = -(self.ky * y + self.kz * z)
+        else:
+            raise NotImplementedError("Invalid side: only 'xmin' is supported.")
+
+        # Calculate temporal profile (sin² envelope for smooth turn-on/off)
+        t_rot = c*time - y * np.sin(self.angle_y)
+        tprof = np.sin(t_rot/(2*self.ctau)*pi)**2 * (t_rot < 2*self.ctau)
+
         # Calculate base field amplitude with:
         # - Gaussian transverse profile: exp(-r²/w0²)
-        # - Temporal oscillation: sin(ω₀t)
+        # - Temporal oscillation: sin(ω₀t + transverse_phase)
         # - Smooth temporal envelope: tprof
-        efield = self.E0 * np.exp(-r**2/self.w0**2) * np.sin(self.omega0 * time + self.cep) * tprof
+        efield = self.E0 * np.exp(-r_rot**2/self.w0**2) * np.sin(self.omega0 * time + self.cep + transverse_phase) * tprof
 
-        ey_source = efield * np.cos(self.pol_angle)
-        ez_source = efield * np.sin(self.pol_angle)
+        ey_source = efield * np.cos(self.pol_angle) * np.cos(self.angle_y)
+        ez_source = efield * np.sin(self.pol_angle) * np.cos(self.angle_z)
         return ey_source, ez_source
 
     
@@ -328,8 +378,8 @@ class GaussianLaser(Laser):
         realistic simulations where these effects matter.
     """
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
-                 x0: float=None, y0: float=0, z0: float=0,
-                 tstop: float=None, pol_angle: float = 0.0, cep: float = 0.0,
+                 x0: float|None=None, y0: float|None=None, z0: float|None=None,
+                 tstop: float|None=None, pol_angle: float = 0.0, cep: float = 0.0,
                  focus_position: float = 0.0, side: str = "xmin"):
         """
         Parameters:
