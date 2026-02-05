@@ -277,7 +277,7 @@ class SimpleLaser(Laser):
             y0: y position of the laser center (default: Ly/2)
             z0: z position of the laser center (default: Lz/2). No effect for 2D laser.
             angle_y: incident angle with boundary normal in y direction (default: 0)
-            angle_z: NOT IMPLEMENTED.
+            angle_z: NOT IMPLEMENTED. Must be 0.
             tstop: Time at which the laser pulse should stop (default: 2*ctau)
             pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
             cep: Carrier envelope phase (default: 0.0)
@@ -294,8 +294,8 @@ class SimpleLaser(Laser):
         if side not in ["xmin"]:
             raise NotImplementedError("Invalid side: only 'xmin' is supported.")
         
-        if angle_y >= pi/2:
-            raise ValueError("Angle_y must be less than pi/2")
+        if abs(angle_y) >= pi/2:
+            raise ValueError("Angle_y must be in range (-pi/2, pi/2)")
         
         if angle_z != 0:
             raise NotImplementedError("Angle_z is not implemented")
@@ -309,7 +309,7 @@ class SimpleLaser(Laser):
         self.z0 = z0
         self.angle_y = angle_y
         self.angle_z = angle_z
-        self.tstop = 2*self.ctau or tstop*c
+        self.tstop = 2*ctau if tstop is None else c*tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
         self.cep = cep
@@ -414,7 +414,7 @@ class GaussianLaser(Laser):
         self.x0 = 3*ctau if x0 is None else x0
         self.y0 = y0
         self.z0 = z0
-        self.tstop = 6*ctau if tstop is None else tstop
+        self.tstop = 6*ctau if tstop is None else c*tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
         self.cep = cep
