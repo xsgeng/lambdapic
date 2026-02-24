@@ -39,10 +39,12 @@ class SaveFieldsToHDF5(Callback):
     def __init__(self, 
                  prefix: Union[str, Path]='', 
                  interval: Union[int, float, Callable] = 100,
-                 components: Optional[List[str]] = None) -> None:
+                 components: Optional[List[str]] = None,
+                 mpi: bool = False) -> None:
         self.stage = self.DEFAULT_STAGE
         self.prefix = Path(prefix)
         self.interval = interval
+        self.mpi = mpi
 
         self.prefix.mkdir(parents=True, exist_ok=True)
         
@@ -85,9 +87,8 @@ class SaveFieldsToHDF5(Callback):
         
         chunk_size = (sim.nx_per_patch, sim.ny_per_patch)
         # Create filename with timestep
-
-        if rank == 0:
-            with h5py.File(filename, 'w') as f:
+        if self.mpi:
+            with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
                 for field in self.components:
                     dset = f.create_dataset(
                         field, 
@@ -95,19 +96,33 @@ class SaveFieldsToHDF5(Callback):
                         dtype='f8',
                         chunks=chunk_size
                     )
-        comm.Barrier()
+                    for p in sim.patches:
+                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
+                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
+                        data = getattr(p.fields, field)
+                        dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
+        else: 
+            if rank == 0:
+                with h5py.File(filename, 'w') as f:
+                    for field in self.components:
+                        dset = f.create_dataset(
+                            field, 
+                            data=np.zeros((sim.nx, sim.ny)),
+                            dtype='f8',
+                            chunks=chunk_size
+                        )
+            comm.Barrier()
         
-        # Create chunked dataset with parallel access
-        with h5py.File(filename, 'a', locking=False) as f:
-            for field in self.components:
-                dset = f[field]
-                for p in sim.patches:
-                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
-                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
-                    data = getattr(p.fields, field)
-                    dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
+            with h5py.File(filename, 'a', locking=False) as f:
+                for field in self.components:
+                    dset = f[field]
+                    for p in sim.patches:
+                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
+                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
+                        data = getattr(p.fields, field)
+                        dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
 
-        comm.Barrier()    
+            comm.Barrier()    
         # Only rank 0 writes metadata
         if rank == 0:
             with h5py.File(filename, 'a') as f:
@@ -138,27 +153,43 @@ class SaveFieldsToHDF5(Callback):
         
         chunk_size = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
         # Create filename with timestep
-        if rank == 0:
-            with h5py.File(filename, 'w') as f:
+        if self.mpi:
+            with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
                 for field in self.components:
                     dset = f.create_dataset(
                         field, 
                         data=np.zeros((sim.nx, sim.ny, sim.nz)),
                         dtype='f8',
-                        chunks=chunk_size
+                        # chunks=chunk_size
                     )
-        comm.Barrier()
-        
-        # Create chunked dataset with parallel access
-        with h5py.File(filename, 'a', locking=False) as f:
-            for field in self.components:
-                dset = f[field]
-                for p in sim.patches:
-                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
-                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
-                    data = getattr(p.fields, field)
-                    dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-        comm.Barrier()    
+                    comm.Barrier()
+                    for p in sim.patches:
+                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
+                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
+                        data = getattr(p.fields, field)
+                        dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        else:
+            if rank == 0:
+                with h5py.File(filename, 'w') as f:
+                    for field in self.components:
+                        dset = f.create_dataset(
+                            field, 
+                            data=np.zeros((sim.nx, sim.ny, sim.nz)),
+                            dtype='f8',
+                            chunks=chunk_size
+                        )
+            comm.Barrier()
+            
+            # Create chunked dataset with parallel access
+            with h5py.File(filename, 'a', locking=False) as f:
+                for field in self.components:
+                    dset = f[field]
+                    for p in sim.patches:
+                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
+                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
+                        data = getattr(p.fields, field)
+                        dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+            comm.Barrier()    
         # Only rank 0 writes metadata
         if rank == 0:
             with h5py.File(filename, 'a') as f:
@@ -196,10 +227,11 @@ class SaveSpeciesDensityToHDF5(Callback):
             function(sim) -> bool that determines when to save. Defaults to 100.
     """
     stage = "current_deposition"
-    def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, float, Callable] = 100):
+    def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, float, Callable] = 100, mpi: bool = False):
         self.species = species
         self.prefix = Path(prefix)
         self.prefix.mkdir(parents=True, exist_ok=True)
+        self.mpi = mpi
 
         self.interval = interval
         self.prev_rho = None
@@ -276,23 +308,35 @@ class SaveSpeciesDensityToHDF5(Callback):
         """
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        
-        if rank == 0:
-            with h5py.File(filename, 'w') as f:
+
+        if self.mpi:
+            with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
                 dset = f.create_dataset(
                     'density', 
                     data=np.zeros((sim.nx, sim.ny), dtype='f8'),
                     chunks=(sim.nx_per_patch, sim.ny_per_patch)
                 )
-        comm.Barrier()
+                for ip, p in enumerate(sim.patches):
+                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
+                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
+                    dset[start[0]:end[0], start[1]:end[1]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch]
+        else:
+            if rank == 0:
+                with h5py.File(filename, 'w') as f:
+                    dset = f.create_dataset(
+                        'density', 
+                        data=np.zeros((sim.nx, sim.ny), dtype='f8'),
+                        chunks=(sim.nx_per_patch, sim.ny_per_patch)
+                    )
+            comm.Barrier()
 
-        with h5py.File(filename, 'a', locking=False) as f:
-            dset = f['density']
-            for ip, p in enumerate(sim.patches):
-                start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
-                end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
-                dset[start[0]:end[0], start[1]:end[1]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch]
-        comm.Barrier()
+            with h5py.File(filename, 'a', locking=False) as f:
+                dset = f['density']
+                for ip, p in enumerate(sim.patches):
+                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
+                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
+                    dset[start[0]:end[0], start[1]:end[1]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch]
+            comm.Barrier()
 
         if rank == 0:
             with h5py.File(filename, 'a') as f:
@@ -320,24 +364,38 @@ class SaveSpeciesDensityToHDF5(Callback):
         """
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        
-        if rank == 0:
-            with h5py.File(filename, 'w') as f:
+
+        if self.mpi:
+            with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
                 dset = f.create_dataset(
                     'density', 
                     data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
                     dtype='f8',
                     chunks=(sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
                 )
-        comm.Barrier()
 
-        with h5py.File(filename, 'a', locking=False) as f:
-            dset = f['density']
-            for ip, p in enumerate(sim.patches):
-                start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
-                end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
-                dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-        comm.Barrier()
+                for ip, p in enumerate(sim.patches):
+                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
+                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
+                    dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        else:
+            if rank == 0:
+                with h5py.File(filename, 'w') as f:
+                    dset = f.create_dataset(
+                        'density', 
+                        data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
+                        dtype='f8',
+                        chunks=(sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
+                    )
+            comm.Barrier()
+
+            with h5py.File(filename, 'a', locking=False) as f:
+                dset = f['density']
+                for ip, p in enumerate(sim.patches):
+                    start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
+                    end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
+                    dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+            comm.Barrier()
 
         if rank == 0:
             with h5py.File(filename, 'a') as f:
