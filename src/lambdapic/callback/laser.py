@@ -298,7 +298,7 @@ class SimpleLaser(Laser):
             angle_y: incident angle with boundary normal in y direction (default: 0)
             angle_z: NOT IMPLEMENTED. Must be 0.
             tstop: Time at which the laser pulse should stop (default: 2*ctau)
-            pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            pol_angle: Polarization angle in radians (default: 0.0 for y-polarization)
             cep: Carrier envelope phase (default: 0.0)
             l0: Laser wavelength (default: 800nm)
         
@@ -412,7 +412,7 @@ class GaussianLaser(Laser):
             y0: y position of the laser center (default: 0)
             z0: z position of the laser center (default: 0). No effect for 2D laser.
             tstop: Time to stop injection (default: 6*ctau)
-            pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            pol_angle: Polarization angle in radians (default: 0.0 for y-polarization)
             cep: Carrier envelope phase (default: 0.0)
             focus_position: Position of laser focus relative to boundary (default: 0.0)
             side: Injection boundary ('xmin' or 'xmax') (default: 'xmin')
