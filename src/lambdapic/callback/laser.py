@@ -452,10 +452,14 @@ class GaussianLaser(Laser):
         # Derived parameters
         self.zR = pi * w0**2 / l0  # Rayleigh length
         
-        self.l = l
-        self.p = p
-        self.normalization = np.sqrt(2 * factorial(p) / (pi * factorial(p + abs(l))))
-        self.normalization = self.normalization/np.sqrt(2/pi) # let GS (p=0, l=0) norm=1
+        # LG parameters
+        if l > 0 or p > 0:
+            self._is_lg = True
+            self.l = l
+            self.p = p
+            self.lg_norm = np.sqrt(2 * factorial(p) / (pi * factorial(p + abs(l))))
+            self.lg_norm /= np.sqrt(2/pi) # let GS (p=0, l=0) norm=1
+            self.laguerre = genlaguerre(self.p, abs(self.l))
 
     def _gaussian_beam_params(self, z):
         """Calculate Gaussian beam parameters at position z"""
@@ -486,20 +490,27 @@ class GaussianLaser(Laser):
         x_rel = sim.cpml_thickness * sim.dx
         boundary_w, boundary_R, boundary_psi = self._gaussian_beam_params(x_rel)
 
-        # r is 2D or 3D depending on the simulation dimension
+       # r is 2D or 3D depending on the simulation dimension
         r = self._get_r(sim, patch)
-        phi = self._get_phi(sim, patch)
+
+        # lg mode
+        if self._is_lg:
+            phi = self._get_phi(sim, patch)
+            amp_lg = self.lg_norm * (np.sqrt(2)*r/boundary_w)**abs(self.l) \
+                     * self.laguerre((np.sqrt(2)*r/boundary_w)**2)
+            phase_lg = self.l * phi
+        else:
+            amp_lg = 1.0
+            phase_lg = 0.0
 
         # Calculate amplitude and phase
-        amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)          \
-                      * self.normalization * (np.sqrt(2)*r/boundary_w)**abs(self.l) \
-                      * genlaguerre(self.p, abs(self.l))((np.sqrt(2)*r/boundary_w)**2)
+        amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2) * amp_lg
         phase_curv = self.k0 * r**2/(2*boundary_R)
-        phase = (self.omega0 * time + self.cep -         # Oscillation
-                self.k0 * x_rel -                        # Propagation
-                phase_curv -                             # Curvature
-                self.l * phi -                           # Vortex
-                (2*self.p+abs(self.l)+1) * boundary_psi) # Gouy phase
+        phase = (self.omega0 * time + self.cep -          # Oscillation
+                self.k0 * x_rel -             # Propagation
+                phase_curv -                  # Curvature
+                (2*self.p+abs(self.l)+1) * boundary_psi # Gouy phase
+                - phase_lg)                  # Vortex
 
         # Set fields based on polarization
         efield = amp * np.sin(phase) * tprof
