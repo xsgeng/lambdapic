@@ -453,10 +453,11 @@ class GaussianLaser(Laser):
         self.zR = pi * w0**2 / l0  # Rayleigh length
         
         # LG parameters
+        self._is_lg = False
+        self.l = l
+        self.p = p
         if l > 0 or p > 0:
             self._is_lg = True
-            self.l = l
-            self.p = p
             self.lg_norm = np.sqrt(2 * factorial(p) / (pi * factorial(p + abs(l))))
             self.lg_norm /= np.sqrt(2/pi) # let GS (p=0, l=0) norm=1
             self.laguerre = genlaguerre(self.p, abs(self.l))
