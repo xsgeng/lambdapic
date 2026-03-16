@@ -1099,6 +1099,10 @@ class Simulation:
             return
         with Timer("sync_currents"):
             self.patches.sync_currents()
+
+        with Timer("mpi.barrier: pusher not balanced"):
+            self.mpi.comm.Barrier()
+
         with Timer("mpi.sync_currents"):
             self.mpi.sync_currents()
 
