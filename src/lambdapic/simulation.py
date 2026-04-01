@@ -797,7 +797,7 @@ class Simulation:
         steps for rebalance:
         1. each rank calculates its load
         2. rank 0 gather loads.
-        3. rank 0: patches_new = self.create_patches(), compute_rank, p.rank = r, init_neighbor_ipatch_, init_neighbor_rank_. These patches are empty.
+        3. rank 0: collect patch skeletons, build global patches_new from them, compute_rank, p.rank = r, init_neighbor_ipatch_, init_neighbor_rank_. These patches are empty.
         4. bcast patches_list, each rank gets patches_list. these patches do not have particle and field data.
         5. each rank gets patches_new from the list. then calls patches_new.init_neighbor_ipatch
         6. each rank checks received patches and see which patch it needs to exchange with other ranks and exchange patches with them.
@@ -819,19 +819,16 @@ class Simulation:
         # Gather loads and indices from all ranks
         all_loads = comm.gather(local_loads, root=0)
         all_indices = comm.gather(local_indices, root=0)
+        all_patches_skeleton = comm.gather([p.copy_skeleton() for p in self.patches], root=0)
 
         npatches_total = self.npatch_x * self.npatch_y
         if self.dimension == 3:
             npatches_total *= self.npatch_z
 
-        rank_prev = np.zeros(npatches_total, dtype=np.int64)
-        for p in self.patches:
-            rank_prev[p.index] = p.rank
-
-        rank_prev = comm.reduce(rank_prev, root=0)
-
         # Rank 0: Merge into global loads array
         if rank == 0:
+            assert all_loads is not None
+            assert all_indices is not None
             global_loads = np.zeros(npatches_total, dtype=np.float64)
             for loads, indices in zip(all_loads, all_indices):
                 for load, idx in zip(loads, indices):
@@ -842,9 +839,16 @@ class Simulation:
         # Step 3: Rank 0 creates new patches and computes new rank assignment
         if rank == 0:
             from .core.patch.metis import compute_rank
+            assert all_patches_skeleton is not None
+            assert global_loads is not None
 
-            # Create empty patches (geometric info only, no fields/particles)
-            patches_new = self.create_patches()
+            patches_new = Patches(self.dimension)
+            for patch in sorted(
+                (patch for patches in all_patches_skeleton for patch in patches),
+                key=lambda patch: patch.index,
+            ):
+                patches_new.append(patch)
+
 
             # Compute new rank assignment using Metis
             # global_loads is already calculated in Step 2
@@ -853,7 +857,7 @@ class Simulation:
                 patches_new,
                 nrank=comm_size,
                 weights=weights,
-                rank_prev=rank_prev
+                rank_prev=np.array([p.rank for p in patches_new])
             )
 
             # Assign ranks to patches
@@ -882,11 +886,6 @@ class Simulation:
         patches_new: Patches = comm.scatter(patches_list, root=0)
         index_to_new_rank = comm.bcast(index_to_new_rank, root=0)
 
-        if self.dimension == 2:
-            patches_new.init_neighbor_ipatch_2d()
-        else:
-            patches_new.init_neighbor_ipatch_3d()
-
         # Step 6: Exchange patches between ranks using dill serialization
         import dill as pickle
         from mpi4py import MPI
@@ -901,6 +900,9 @@ class Simulation:
         # Patches to receive: in new but not in old (by index)
         patches_to_recv_idx = [idx for idx in new_patch_indices if idx not in old_patch_indices]
 
+        rank_log(f"patches to send: {patches_to_send_idx}", comm)
+        rank_log(f"patches to receive: {patches_to_recv_idx}", comm)
+
         # Find which rank has each patch we need to receive
         index_to_old_rank = {}  # index -> rank that has this patch
         for p in self.patches:
@@ -912,94 +914,73 @@ class Simulation:
         for loc in all_locations:
             index_to_old_rank.update(loc)
 
-        # Send patches using dill serialization
+
         requests = []
+        patches_to_send = []
         for idx in patches_to_send_idx:
-            target_rank = index_to_new_rank[idx]  # FIX: use new rank, not old rank
-            if target_rank != rank:  # only send if going to different rank
-                data = pickle.dumps(old_patch_indices[idx], byref=True, recurse=True)
-                req = comm.isend(data, dest=target_rank, tag=idx)
-                requests.append(req)
+            patches_to_send.append(self.patches.pop(idx))
+
+        for p in patches_to_send:
+            target_rank = index_to_new_rank[p.index]
+            data = pickle.dumps(p, byref=True, recurse=True)
+
+            rank_log(f"sending patch {p.index} to rank {target_rank}", comm)
+            req = comm.isend(data, dest=target_rank, tag=p.index)
+            requests.append(req)
 
         # Receive patches
-        received_patches = {}
         for idx in patches_to_recv_idx:
             source_rank = index_to_old_rank[idx]
-            if source_rank != rank:  # only receive from different rank
-                data = comm.recv(source=source_rank, tag=idx)
-                p = pickle.loads(data)
-                received_patches[idx] = p
+            if source_rank == rank:
+                continue
+            rank_log(f"receiving patch {idx} from rank {source_rank}", comm)
+            data = comm.recv(source=source_rank, tag=idx)
+            p = pickle.loads(data)
+            p.rank = rank
+            self.patches.append(p)
 
         # Wait for all sends to complete
         MPI.Request.waitall(requests)
 
-        # Step 7: Fill data into new patches
-        # Keep new patch objects (with correct neighbor indices/ranks) and copy data from old patches
+        # reset neighbor ranks from the new patches
+        for p in self.patches:
+            p.neighbor_rank[:] = new_patch_indices[p.index].neighbor_rank[:]
 
-        def _copy_patch_data(source_patch, target_patch):
-            """Copy particles, fields, and PML boundaries from source to target patch."""
-            # Copy particles
-            for particles in source_patch.particles:
-                target_patch.add_particles(particles)
+        if self.dimension == 2:
+            self.patches.init_neighbor_ipatch_2d()
+        else:
+            self.patches.init_neighbor_ipatch_3d()
 
-            # Copy fields
-            target_patch.set_fields(source_patch.fields)
+        self.update_patches()
+        rank_log(f"Rebalance completed successfully", comm)
 
-            # Copy PML boundaries
-            for pml in source_patch.pml_boundary:
-                target_patch.add_pml_boundary(pml)
-
-        # Fill data from received patches (patches that moved from other ranks)
-        for idx, received_patch in received_patches.items():
-            logger.info(f"Rank {rank} copying data to new patch {idx} from received patch")
-            new_patch = new_patch_indices[idx]
-            _copy_patch_data(received_patch, new_patch)
-
-        # Fill data from patches that stay on this rank
-        for idx in new_patch_indices:
-            if idx in old_patch_indices:
-                old_patch = old_patch_indices[idx]
-                new_patch = new_patch_indices[idx]
-                _copy_patch_data(old_patch, new_patch)
-
-        self.update_patches(patches_new)
-
-        # Log completion (rank 0 only)
-        if rank == 0:
-            logger.info("Rebalance completed successfully")
-
-    def update_patches(self, patches_new: Patches):
-        old_patches = self.patches
-        self.patches = patches_new
-        self.patches.species = old_patches.species
-
-        self._set_global_domain_bounds()
-
-        comm = self.mpi.comm
-
-        self.mpi = MPIManager.create(self.patches, comm)
+    def update_patches(self):
+        self.maxwell.generate_field_lists()
         
-        rank_log("Re-initializing Maxwell solver", comm)
-        self._init_maxwell_solver()
-        
-        rank_log("Re-initializing field interpolator", comm)
-        self._init_interpolator()
-        
-        rank_log("Re-initializing current depositor", comm)
-        self._init_current_depositor()
-        
-        rank_log("Re-initializing pushers", comm)
-        self._init_pushers()
+        self.interpolator.generate_field_lists()
+        self.interpolator.generate_particle_lists()
 
-        rank_log("Re-initializing QED modules", comm)
-        self._init_qed()
-
-        rank_log("Re-initializing particle sorter", comm)
-        self._init_sorter()
+        self.current_depositor.generate_field_lists()
+        self.current_depositor.generate_particle_lists()
         
-        # Initialize collision module if groups were registered
-        rank_log("Re-initializing collision module", comm)
-        self._init_collision()
+        for p in self.pusher:
+            p.generate_particle_lists()
+
+        for r in self.radiation:
+            if r is not None:
+                r.generate_particle_lists()
+
+        for p in self.pairproduction:
+            if p is not None:
+                p.generate_particle_lists()
+
+        for s in self.sorter:
+            s.generate_particle_lists()
+            s.generate_field_lists()
+
+        if self.collision:
+            self.collision.generate_field_lists()
+            self.collision.generate_particle_lists()
 
         # Update particle lists for all modules
         self.update_lists()

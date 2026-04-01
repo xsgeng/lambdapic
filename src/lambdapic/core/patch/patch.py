@@ -185,6 +185,36 @@ class Patch:
     def add_pml_boundary(self, pml: PML) -> None:
         raise NotImplementedError
 
+    def copy_skeleton(self) -> "Patch":
+        """Create a skeleton copy of the patch for rebalancing.
+        
+        Creates a lightweight copy containing only metadata (index, position, 
+        neighbor info) without field data or particles. NumPy arrays are copied
+        to prevent accidental modifications to the original patch.
+        
+        Note that the `fields` attribute is not set on the skeleton patch.
+        Accessing it will raise AttributeError. This is intentional as skeleton
+        patches are used only for metadata during rebalancing.
+        
+        Returns
+        -------
+        Patch
+            A skeleton patch with empty particles/pml_boundary and no fields.
+        """
+        new_patch = self.__class__.__new__(self.__class__)
+        for key, value in self.__dict__.items():
+            if key in ("fields", "particles", "pml_boundary"):
+                continue
+            if isinstance(value, Fields):
+                continue
+            if isinstance(value, np.ndarray):
+                setattr(new_patch, key, value.copy())
+            else:
+                setattr(new_patch, key, value)
+        new_patch.pml_boundary = []
+        new_patch.particles = []
+        return new_patch
+
 class Patch2D(Patch):
     def __init__(
         self,
@@ -399,10 +429,11 @@ class Patches:
         self.indices.insert(0, patch.index)
         self.npatches += 1
     
-    def pop(self, i):
-        self.indices.pop(i)
+    def pop(self, index: int):
+        ipatch = self.indices.index(index)
+        self.indices.remove(index)
+        p = self.patches.pop(ipatch)
         self.npatches -= 1
-        p = self.patches.pop(i)
 
         return p
 
