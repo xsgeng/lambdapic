@@ -24,6 +24,7 @@ from .core.interpolation.field_interpolation import (
     FieldInterpolation3D,
 )
 from .core.maxwell.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
+from .core.mpi.load_balancer import LoadBalancer
 from .core.mpi.mpi_manager import MPIManager
 from .core.patch.metis import compute_rank
 from .core.patch.patch import Patch2D, Patch3D, Patches
@@ -404,6 +405,8 @@ class Simulation:
         # Initialize collision module if groups were registered
         rank_log("Initializing collision module", comm)
         self._init_collision()
+
+        self.load_balancer = LoadBalancer(self.patches, self.mpi)
 
         self.initialized = True
         logger.success(f"Rank {rank}: Initialization complete")
@@ -792,167 +795,11 @@ class Simulation:
             for ipatch, p in enumerate(self.patches):
                 p.particles[ispec].extended = False
 
-    def rebalance(self):
-        """
-        steps for rebalance:
-        1. each rank calculates its load
-        2. rank 0 gather loads.
-        3. rank 0: collect patch skeletons, build global patches_new from them, compute_rank, p.rank = r, init_neighbor_ipatch_, init_neighbor_rank_. These patches are empty.
-        4. bcast patches_list, each rank gets patches_list. these patches do not have particle and field data.
-        5. each rank gets patches_new from the list. then calls patches_new.init_neighbor_ipatch
-        6. each rank checks received patches and see which patch it needs to exchange with other ranks and exchange patches with them.
-        7. take fields and particles from old patches and fill data into new_patches
-        8. sim.update_lists
-        """
-        # Early return if single rank
-        if self.mpi.size == 1:
-            return
-
-        comm = self.mpi.comm
-        rank = self.mpi.rank
-        comm_size = self.mpi.size
-
-        # Step 1: Calculate local loads
-        local_loads = self._calculate_patch_loads()
-        local_indices = np.array([p.index for p in self.patches], dtype=np.int64)
-
-        # Gather loads and indices from all ranks
-        all_loads = comm.gather(local_loads, root=0)
-        all_indices = comm.gather(local_indices, root=0)
-        all_patches_skeleton = comm.gather([p.copy_skeleton() for p in self.patches], root=0)
-
-        npatches_total = self.npatch_x * self.npatch_y
-        if self.dimension == 3:
-            npatches_total *= self.npatch_z
-
-        # Rank 0: Merge into global loads array
-        if rank == 0:
-            assert all_loads is not None
-            assert all_indices is not None
-            global_loads = np.zeros(npatches_total, dtype=np.float64)
-            for loads, indices in zip(all_loads, all_indices):
-                for load, idx in zip(loads, indices):
-                    global_loads[idx] = load
-        else:
-            global_loads = None
-
-        # Step 3: Rank 0 creates new patches and computes new rank assignment
-        if rank == 0:
-            from .core.patch.metis import compute_rank
-            assert all_patches_skeleton is not None
-            assert global_loads is not None
-
-            patches_new = Patches(self.dimension)
-            for patch in sorted(
-                (patch for patches in all_patches_skeleton for patch in patches),
-                key=lambda patch: patch.index,
-            ):
-                patches_new.append(patch)
-
-
-            # Compute new rank assignment using Metis
-            # global_loads is already calculated in Step 2
-            weights = global_loads.astype(np.int64)  # Metis requires int weights
-            new_ranks, npatch_per_rank = compute_rank(
-                patches_new,
-                nrank=comm_size,
-                weights=weights,
-                rank_prev=np.array([p.rank for p in patches_new])
-            )
-
-            # Assign ranks to patches
-            for p, new_rank in zip(patches_new.patches, new_ranks):
-                p.rank = new_rank
-
-            # Initialize neighbor ranks
-            if self.dimension == 2:
-                patches_new.init_neighbor_rank_2d()
-            else:
-                patches_new.init_neighbor_rank_3d()
-
-            # Build patches_list for distribution
-            patches_list = [Patches(self.dimension) for _ in range(comm_size)]
-            index_to_new_rank = {}  # map patch index to new rank
-            for p in patches_new.patches:
-                assert p.rank is not None
-                patches_list[p.rank].append(p)
-                index_to_new_rank[p.index] = p.rank  # map patch index to new rank
-
-        else:
-            patches_list = None
-            index_to_new_rank = None
-
-        # Step 4: Broadcast patches_list to all ranks
-        patches_new: Patches = comm.scatter(patches_list, root=0)
-        index_to_new_rank = comm.bcast(index_to_new_rank, root=0)
-
-        # Step 6: Exchange patches between ranks using dill serialization
-        import dill as pickle
-        from mpi4py import MPI
-
-        # Determine which patches need to be sent/received
-        old_patch_indices = {p.index: p for p in self.patches}
-        new_patch_indices = {p.index: p for p in patches_new}
-
-        # Patches to send: in old but not in new (by index)
-        patches_to_send_idx = [idx for idx in old_patch_indices if idx not in new_patch_indices]
-
-        # Patches to receive: in new but not in old (by index)
-        patches_to_recv_idx = [idx for idx in new_patch_indices if idx not in old_patch_indices]
-
-        rank_log(f"patches to send: {patches_to_send_idx}", comm)
-        rank_log(f"patches to receive: {patches_to_recv_idx}", comm)
-
-        # Find which rank has each patch we need to receive
-        index_to_old_rank = {}  # index -> rank that has this patch
-        for p in self.patches:
-            index_to_old_rank[p.index] = rank  # we have these patches
-
-        # Gather patch locations from all ranks
-        all_locations = comm.allgather(index_to_old_rank)
-        index_to_old_rank = {}
-        for loc in all_locations:
-            index_to_old_rank.update(loc)
-
-
-        requests = []
-        patches_to_send = []
-        for idx in patches_to_send_idx:
-            patches_to_send.append(self.patches.pop(idx))
-
-        for p in patches_to_send:
-            target_rank = index_to_new_rank[p.index]
-            data = pickle.dumps(p, byref=True, recurse=True)
-
-            rank_log(f"sending patch {p.index} to rank {target_rank}", comm)
-            req = comm.isend(data, dest=target_rank, tag=p.index)
-            requests.append(req)
-
-        # Receive patches
-        for idx in patches_to_recv_idx:
-            source_rank = index_to_old_rank[idx]
-            if source_rank == rank:
-                continue
-            rank_log(f"receiving patch {idx} from rank {source_rank}", comm)
-            data = comm.recv(source=source_rank, tag=idx)
-            p = pickle.loads(data)
-            p.rank = rank
-            self.patches.append(p)
-
-        # Wait for all sends to complete
-        MPI.Request.waitall(requests)
-
-        # reset neighbor ranks from the new patches
-        for p in self.patches:
-            p.neighbor_rank[:] = new_patch_indices[p.index].neighbor_rank[:]
-
-        if self.dimension == 2:
-            self.patches.init_neighbor_ipatch_2d()
-        else:
-            self.patches.init_neighbor_ipatch_3d()
-
+    def rebalance(self) -> None:
+        """Rebalance patch distribution across MPI ranks based on load."""
+        self.load_balancer()
         self.update_patches()
-        rank_log(f"Rebalance completed successfully", comm)
+        rank_log("Rebalance completed successfully", self.comm)
 
     def update_patches(self):
         self.maxwell.generate_field_lists()
