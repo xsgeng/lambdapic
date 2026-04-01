@@ -31,12 +31,11 @@ class ParticleSort2D:
         """
         self.dimension = patches.dimension
         self.patches = patches
-        self.npatches: int = patches.npatches
         self.ispec = species.ispec
 
         self.attrs = attrs or patches[0].particles[self.ispec].attrs
         self.nattrs = len(self.attrs)
-        
+
         self.dx_buckets = dx_buckets or patches.dx
         self.dy_buckets = dy_buckets or patches.dy
         self.nx_buckets = nx_buckets or patches.nx
@@ -44,6 +43,10 @@ class ParticleSort2D:
 
         self.generate_particle_lists()
         self.generate_field_lists()
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
     def generate_particle_lists(self) -> None:
         """
@@ -193,12 +196,11 @@ class ParticleSort3D(ParticleSort2D):
         """
         self.dimension = patches.dimension
         self.patches = patches
-        self.npatches: int = patches.npatches
         self.ispec = species.ispec
 
         self.attrs = attrs or patches[0].particles[self.ispec].attrs
         self.nattrs = len(self.attrs)
-        
+
         self.dx_buckets = dx_buckets or patches.dx
         self.dy_buckets = dy_buckets or patches.dy
         self.dz_buckets = dz_buckets or patches.dz
@@ -216,10 +218,10 @@ class ParticleSort3D(ParticleSort2D):
         Parameters
         ----------
         particle_list : list of Particles
-            List of particles of all patches. 
+            List of particles of all patches.
         """
         ispec = self.ispec
-        
+
         self.x_list = [p.particles[ispec].x for p in self.patches]
         self.y_list = [p.particles[ispec].y for p in self.patches]
         self.z_list = [p.particles[ispec].z for p in self.patches]

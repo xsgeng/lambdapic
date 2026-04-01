@@ -19,17 +19,20 @@ class PusherBase(PickleableTypedList,EnableMixin):
 
         Parameters
         ----------
-        
+
         """
         self.dimension = patches.dimension
         self.patches = patches
-        self.npatches: int = patches.npatches
         self.ispec = ispec
 
         self.q = patches.species[ispec].q
         self.m = patches.species[ispec].m
 
         self.generate_particle_lists()
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
     def generate_particle_lists(self) -> None:
         """
