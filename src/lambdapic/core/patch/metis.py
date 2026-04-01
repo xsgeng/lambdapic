@@ -11,6 +11,7 @@ def compute_rank(patches: Patches, nrank: int, weights: NDArray[np.int64], rank_
 
     opt = pymetis.Options(
         contig=True,
+        seed=0
         # ufactor=1,
     )
 

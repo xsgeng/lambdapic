@@ -1,3 +1,2 @@
 include src/lambdapic/core/qed/*.npz
 include src/lambdapic/core/utils/cutils.h
-include src/lambdapic/cli/mcp_manual.md

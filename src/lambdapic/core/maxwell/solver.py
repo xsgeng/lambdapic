@@ -27,7 +27,6 @@ class MaxwellSolver(PickleableTypedList):
         patches : Patches
         """
         self.patches = patches
-        self.npatches: int = patches.npatches
 
         self.dx: float = patches.dx
         self.nx: int = patches.nx
@@ -35,6 +34,10 @@ class MaxwellSolver(PickleableTypedList):
         self.n_guard: int = patches.n_guard
 
         self.generate_field_lists()
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
     def generate_field_lists(self) -> None:
         """

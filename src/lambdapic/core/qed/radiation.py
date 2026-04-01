@@ -35,10 +35,12 @@ class RadiationBase(PickleableTypedList,EnableMixin):
         """
         self.dimension = patches.dimension
         self.patches = patches
-        self.npatches = patches.npatches
-
         self.ispec = ispec
         self.photon_ispec = None
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
 
     def generate_particle_lists(self) -> None:
@@ -249,8 +251,6 @@ class ContinuousRadiation(RadiationBase):
             The index of species.
         """
         self.patches = patches
-        self.npatches = patches.npatches
-
         self.ispec = ispec
 
         radiation_species = patches.species[ispec]

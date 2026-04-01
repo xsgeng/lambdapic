@@ -23,7 +23,6 @@ class FieldInterpolation(EnableMixin):
 
         """
         self.patches = patches
-        self.npatches: int = patches.npatches
         self.dx: float = patches.dx
         self.nx: int = patches.nx
 
@@ -40,6 +39,10 @@ class FieldInterpolation(EnableMixin):
 
         self.generate_particle_lists()
         self.generate_field_lists()
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
     def generate_particle_lists(self) -> None:
         """
@@ -109,7 +112,6 @@ class FieldInterpolation(EnableMixin):
         """
         self.generate_field_lists()
         self.generate_particle_lists()
-        self.npatches = self.patches.npatches
         # raise NotImplementedError
 
     def __call__(self, ispec: int) -> None:

@@ -20,7 +20,6 @@ class CurrentDeposition(EnableMixin):
         
         """
         self.patches = patches
-        self.npatches: int = patches.npatches
         self.dx: float = patches.dx
 
         self.x_list = []
@@ -37,6 +36,10 @@ class CurrentDeposition(EnableMixin):
 
         self.generate_field_lists()
         self.generate_particle_lists()
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
     def generate_particle_lists(self) -> None:
         """
@@ -105,7 +108,6 @@ class CurrentDeposition(EnableMixin):
         """
         self.generate_field_lists()
         self.generate_particle_lists()
-        self.npatches = self.patches.npatches
         # raise NotImplementedError
 
     def reset(self) -> None:

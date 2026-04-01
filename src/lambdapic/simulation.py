@@ -24,6 +24,7 @@ from .core.interpolation.field_interpolation import (
     FieldInterpolation3D,
 )
 from .core.maxwell.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
+from .core.mpi.load_balancer import LoadBalancer
 from .core.mpi.mpi_manager import MPIManager
 from .core.patch.metis import compute_rank
 from .core.patch.patch import Patch2D, Patch3D, Patches
@@ -320,7 +321,11 @@ class Simulation:
                 patches_npart += npart_
 
             logger.info("Computing rank assignments")
-            patches_load = patches_npart + self.nx_per_patch * self.ny_per_patch / 2
+            if self.dimension == 2:
+                patches_load = patches_npart + self.nx_per_patch * self.ny_per_patch / 2
+            else:
+                patches_load = patches_npart + self.nx_per_patch * self.ny_per_patch * self.nz_per_patch / 2
+
             rank_load = np.zeros(comm_size)
             ranks, npatch_per_rank = compute_rank(patches, comm_size, patches_load)
 
@@ -400,6 +405,8 @@ class Simulation:
         # Initialize collision module if groups were registered
         rank_log("Initializing collision module", comm)
         self._init_collision()
+
+        self.load_balancer = LoadBalancer(self.patches, self.mpi)
 
         self.initialized = True
         logger.success(f"Rank {rank}: Initialization complete")
@@ -680,6 +687,30 @@ class Simulation:
             
         self.rand_gen = self.mpi.comm.scatter(gens, root=0)
 
+    def _calculate_patch_loads(self) -> np.ndarray:
+        """
+        Calculate load for each patch.
+        
+        Load calculation:
+        - 2D: load = npart + nx*ny/2
+        - 3D: load = npart + nx*ny*nz/2
+        
+        Returns:
+            np.ndarray: Load array for local patches, shape (self.patches.npatches,)
+        """
+        loads = np.zeros(self.patches.npatches, dtype=np.float64)
+        
+        for ipatch, p in enumerate(self.patches):
+            for ispec in range(len(self.patches.species)):
+                npart_alive = (~p.particles[ispec].is_dead).sum()
+                loads[ipatch] += npart_alive
+            
+        if self.dimension == 2:
+            loads += self.nx_per_patch * self.ny_per_patch / 2
+        else:
+            loads += self.nx_per_patch * self.ny_per_patch * self.nz_per_patch / 2
+        
+        return loads
 
     def maxwell_stage(self):
         """Perform a single Maxwell solver stage (half time step).
@@ -763,8 +794,44 @@ class Simulation:
         for ispec, s in enumerate(self.patches.species):
             for ipatch, p in enumerate(self.patches):
                 p.particles[ispec].extended = False
-                    
-                    
+
+    def rebalance(self) -> None:
+        """Rebalance patch distribution across MPI ranks based on load."""
+        self.load_balancer()
+        self.update_patches()
+        rank_log("Rebalance completed successfully", self.comm)
+
+    def update_patches(self):
+        self.maxwell.generate_field_lists()
+        
+        self.interpolator.generate_field_lists()
+        self.interpolator.generate_particle_lists()
+
+        self.current_depositor.generate_field_lists()
+        self.current_depositor.generate_particle_lists()
+        
+        for p in self.pusher:
+            p.generate_particle_lists()
+
+        for r in self.radiation:
+            if r is not None:
+                r.generate_particle_lists()
+
+        for p in self.pairproduction:
+            if p is not None:
+                p.generate_particle_lists()
+
+        for s in self.sorter:
+            s.generate_particle_lists()
+            s.generate_field_lists()
+
+        if self.collision:
+            self.collision.generate_field_lists()
+            self.collision.generate_particle_lists()
+
+        # Update particle lists for all modules
+        self.update_lists()
+
 
     def run(self, nsteps: int|None = None, sim_time: float|None = None, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None,
             stop_callback: Callable[..., bool] = lambda: False,):

@@ -20,9 +20,11 @@ class MPIManager:
 
         self.patches = patches
         self.dimension = patches.dimension
-        self.npatches = patches.npatches
-
         self.n_guard = patches.n_guard
+
+    @property
+    def npatches(self) -> int:
+        return self.patches.npatches
 
     @staticmethod
     def create(patches: Patches, comm: Optional[MPI.Comm]=None) -> "MPIManager":
