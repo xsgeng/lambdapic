@@ -3,6 +3,8 @@ from typing import Callable, Optional
 
 from yaspin import yaspin
 
+from ..core.utils.logger import logger
+from ..core.utils.terminal import is_terminal
 from ..core.utils.timer import Timer
 from ..simulation import Simulation
 
@@ -74,10 +76,15 @@ def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> C
                 return
             
             if sim.mpi.rank == 0:
-                with yaspin(text=f"Running callback: {func.__name__}") as sp:
+                if is_terminal():
+                    with yaspin(text=f"Running callback: {func.__name__}") as sp:
+                        with Timer(f"callback: {func.__name__}"):
+                            ret = func(*args, **kwargs)
+                else:
+                    logger.info(f"Running callback: {func.__name__}")
                     with Timer(f"callback: {func.__name__}"):
                         ret = func(*args, **kwargs)
-                    sim.mpi.comm.Barrier()
+                sim.mpi.comm.Barrier()
             else:
                 with Timer(f"callback: {func.__name__}"):
                     ret = func(*args, **kwargs)
@@ -105,10 +112,15 @@ class Callback:
             return
         
         if sim.mpi.rank == 0:
-            with yaspin(text=f"Running callback: {self.__class__.__name__}") as sp:
+            if is_terminal():
+                with yaspin(text=f"Running callback: {self.__class__.__name__}") as sp:
+                    with Timer(f"callback: {self.__class__.__name__}"):
+                        ret = self._call(sim)
+            else:
+                logger.info(f"Running callback: {self.__class__.__name__}")
                 with Timer(f"callback: {self.__class__.__name__}"):
                     ret = self._call(sim)
-                sim.mpi.comm.Barrier()
+            sim.mpi.comm.Barrier()
         else:
             with Timer(f"callback: {self.__class__.__name__}"):
                 ret = self._call(sim)
