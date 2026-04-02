@@ -795,11 +795,6 @@ class Simulation:
             for ipatch, p in enumerate(self.patches):
                 p.particles[ispec].extended = False
 
-    def rebalance(self) -> None:
-        """Rebalance patch distribution across MPI ranks based on load."""
-        self.load_balancer()
-        self.update_patches()
-        rank_log("Rebalance completed successfully", self.comm)
 
     def update_patches(self):
         self.maxwell.generate_field_lists()
@@ -1026,6 +1021,14 @@ class Simulation:
 
             with Timer("sync_particles"):
                 self.patches.sync_particles()
+
+            with Timer("load balancer"):
+                self.load_balancer.update_weights()
+
+                if self.mpi.size > 1 and self.load_balancer.should_rebalance():
+                    self.load_balancer()
+                    self.update_patches()
+                    rank_log("Rebalance completed successfully", self.mpi.comm)
 
             with Timer("Updating lists"):
                 self.update_lists()
