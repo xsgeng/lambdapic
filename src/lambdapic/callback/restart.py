@@ -13,10 +13,10 @@ from .callback import Callback
 class RestartDump(Callback):
     """Callback that persists per-rank restart checkpoints for later replay.
 
-    The callback runs during the Maxwell solver's second stage and captures one
-    shard per MPI rank inside ``out_dir/ckpt_<itime>/``. Each shard stores the
-    full ``Simulation`` state so a subsequent :meth:`RestartDump.load` call can
-    resume execution on the same rank topology.
+    The callback runs at stage ``"end"`` and captures one shard per MPI rank
+    inside ``out_dir/ckpt_<itime>/``. Each shard stores the full ``Simulation``
+    state so a subsequent :meth:`RestartDump.load` call can resume execution on
+    the same rank topology.
 
     Parameters
     ----------
@@ -52,10 +52,11 @@ class RestartDump(Callback):
     time limit of job scheduler like slurm.
     """
 
-    stage = "end"
+    DEFAULT_STAGE = "end"
 
-    def __init__(self, out_dir: Union[str, Path], interval: Union[int, float, Callable] = 1000, keep: Optional[int] = None, 
+    def __init__(self, out_dir: Union[str, Path], interval: Union[int, float, Callable] = 1000, keep: Optional[int] = None,
                  dump_signals: list[int]|bool=False) -> None:
+        self.stage = self.DEFAULT_STAGE
         self.out_dir = Path(out_dir)
         self.interval = interval
         self.keep = keep
