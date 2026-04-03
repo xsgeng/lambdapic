@@ -47,6 +47,7 @@ class LoadBalancer(EnableMixin):
         self.local_loads = np.zeros(len(patches), dtype=np.float64)
 
         self.threshold = threshold
+        self._init_threshold = threshold
         self.dec_factor = 3/np.pi
         self.inc_factor = np.e/2
 
@@ -68,12 +69,14 @@ class LoadBalancer(EnableMixin):
         self.update_weights()
         if self.should_rebalance():
             self.threshold *= self.inc_factor
-            logger.debug(f"Rank {self.rank}: still unbalanced after rebalance, "
-                        f"increasing threshold to {self.threshold}", self.comm)
-        else:
+            if self.rank == 0:
+                logger.info(f"still unbalanced after rebalance, "
+                            f"increasing threshold to {self.threshold:.2f}", self.comm)
+        elif self.threshold > self._init_threshold:
             self.threshold *= self.dec_factor
-            logger.debug(f"Rank {self.rank}: balanced after rebalance, "
-                        f"decreasing threshold to {self.threshold}", self.comm)
+            if self.rank == 0:
+                logger.info(f"balanced after rebalance, "
+                            f"decreasing threshold to {self.threshold:.2f}", self.comm)
 
     @staticmethod
     def _default_load_function(patch: Patch) -> float:
@@ -263,6 +266,7 @@ class LoadBalancer(EnableMixin):
         if avg_load == 0:
             return False
 
+        # print(f"Rank {self.rank}: {max_load=}, {min_load=}, {avg_load=}, {(max_load - min_load) / avg_load = }")
         if (max_load - min_load) / avg_load > self.threshold:
             return True
         return False
