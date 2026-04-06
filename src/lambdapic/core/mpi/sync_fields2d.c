@@ -360,9 +360,9 @@ static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {
                 recv_buf[ipatch*NUM_BOUNDARIES + ibound],
                 jx[ipatch], jy[ipatch], jz[ipatch], rho[ipatch]
             );
+            MPI_Wait(&send_requests[ipatch*NUM_BOUNDARIES + ibound], MPI_STATUS_IGNORE);
             free(send_buf[ipatch*NUM_BOUNDARIES + ibound]);
             free(recv_buf[ipatch*NUM_BOUNDARIES + ibound]);
-            MPI_Wait(&send_requests[ipatch*NUM_BOUNDARIES + ibound], MPI_STATUS_IGNORE);
         }
     }
     Py_END_ALLOW_THREADS
