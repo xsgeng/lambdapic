@@ -5,12 +5,13 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
-from ...core.utils.logger import logger, rank_log
 from ..mpi.mpi_manager import MPIManager
 from ..patch.patch import Patch, Patches
+from ..utils.enable_mixin import EnableMixin
+from ..utils.logger import logger, rank_log
 
 
-class LoadBalancer:
+class LoadBalancer(EnableMixin):
     """Handles dynamic load balancing of patches across MPI ranks.
     """
 
@@ -18,6 +19,7 @@ class LoadBalancer:
         self,
         patches: Patches,
         mpi: MPIManager,
+        threshold: float = 0.1,
         load_function: Callable[[Patch], float] | None = None,
     ) -> None:
         """Initialize with patches (called during simulation init).
@@ -28,6 +30,9 @@ class LoadBalancer:
             The patches to be load balanced.
         mpi : MPIManager
             The MPI manager for communication.
+        threshold : float, optional
+            Load imbalance threshold for triggering rebalance.
+            Rebalance is triggered when (max_load - min_load) / avg_load > threshold.
         load_function : callable | None, optional
             Custom function to calculate load for a single patch. The function
             should accept a `Patch` as its only parameter and return a float
@@ -38,14 +43,20 @@ class LoadBalancer:
         self.comm = mpi.comm
         self.rank = mpi.rank
         self.comm_size = mpi.size
-        self.load_function = load_function
+        self.load_function = load_function or LoadBalancer._default_load_function
+        self.local_loads = np.zeros(len(patches), dtype=np.float64)
+
+        self.threshold = threshold
+        self._init_threshold = threshold
+        self.dec_factor = 3/np.pi
+        self.inc_factor = np.e/2
 
     def __call__(self) -> None:
         """Execute rebalance."""
         if self.comm_size == 1:
             return
 
-        _, _, global_loads = self._gather_loads()
+        _, global_loads = self._gather_loads()
 
         patches_list, index_to_new_rank = self._compute_distribution(global_loads)
 
@@ -54,6 +65,18 @@ class LoadBalancer:
 
         self._exchange(patches_new, index_to_new_rank)
         self._finalize(patches_new)
+
+        self.update_weights()
+        if self.should_rebalance():
+            self.threshold *= self.inc_factor
+            if self.rank == 0:
+                logger.info(f"still unbalanced after rebalance, "
+                            f"increasing threshold to {self.threshold:.2f}", self.comm)
+        elif self.threshold > self._init_threshold:
+            self.threshold *= self.dec_factor
+            if self.rank == 0:
+                logger.info(f"balanced after rebalance, "
+                            f"decreasing threshold to {self.threshold:.2f}", self.comm)
 
     @staticmethod
     def _default_load_function(patch: Patch) -> float:
@@ -65,9 +88,11 @@ class LoadBalancer:
         """
         load = 0.0
 
-        for ispec in range(len(patch.particles)):
-            npart_alive = (~patch.particles[ispec].is_dead).sum()
-            load += npart_alive
+        for part in patch.particles:
+            # npart_alive = (~patch.particles[ispec].is_dead).sum()
+
+            # TODO: calculate npart_alive in a Patches method
+            load += part.npart
 
         if hasattr(patch, 'nz'):
             load += patch.nx * patch.ny * patch.nz / 2
@@ -76,15 +101,11 @@ class LoadBalancer:
 
         return load
 
-    def _gather_loads(self) -> tuple[NDArray, NDArray, NDArray | None]:
+    def _gather_loads(self) -> tuple[NDArray, NDArray | None]:
         """Gather load information from all MPI ranks."""
-        load_func = self.load_function or LoadBalancer._default_load_function
-        local_loads = np.array(
-            [load_func(p) for p in self.patches], dtype=np.float64
-        )
         local_indices = np.array([p.index for p in self.patches], dtype=np.int64)
 
-        all_loads = self.comm.gather(local_loads, root=0)
+        all_loads = self.comm.gather(self.local_loads, root=0)
         all_indices = self.comm.gather(local_indices, root=0)
 
 
@@ -98,7 +119,7 @@ class LoadBalancer:
                 for load, idx in zip(loads, indices):
                     global_loads[idx] = load
 
-        return local_loads, local_indices, global_loads
+        return local_indices, global_loads
 
     def _compute_distribution(
         self,
@@ -217,4 +238,36 @@ class LoadBalancer:
             patches.init_neighbor_ipatch_2d()
         else:
             patches.init_neighbor_ipatch_3d()
+
+    def update_weights(self) -> None:
+        if self.local_loads.size != self.patches.npatches:
+            self.local_loads = np.zeros(self.patches.npatches, dtype=np.float64)
+            logger.debug(f"Rank {self.rank}: resized local_loads to {self.patches.npatches}")
+        for ipatch, p in enumerate(self.patches):
+            self.local_loads[ipatch] = self.load_function(p)
+            logger.debug(f"Rank {self.rank}: patch {p.index} load: {self.local_loads[ipatch]}")
+
+    def should_rebalance(self) -> bool:
+        if self.local_loads is None or len(self.local_loads) == 0:
+            return False
+
+        # Calculate local total weight (sum of all patch weights on this rank)
+        local_total = float(np.sum(self.local_loads))
+
+        # Gather total weights from all MPI ranks
+        all_totals = self.comm.allgather(local_total)
+        all_totals = np.array(all_totals, dtype=np.float64)
+
+        # Check global load imbalance across ranks
+        max_load = np.max(all_totals)
+        min_load = np.min(all_totals)
+        avg_load = np.mean(all_totals)
+
+        if avg_load == 0:
+            return False
+
+        # print(f"Rank {self.rank}: {max_load=}, {min_load=}, {avg_load=}, {(max_load - min_load) / avg_load = }")
+        if (max_load - min_load) / avg_load > self.threshold:
+            return True
+        return False
 

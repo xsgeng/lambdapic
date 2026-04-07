@@ -6,10 +6,10 @@ def get_npart_to_extend_2d(
     particles_list: list[ParticlesBase],
     patches_list: list['Patch2D'],
     npatches: int, dx: float, dy: float
-) -> tuple[ndarray, ndarray, ndarray]:
+) -> tuple[ndarray, ndarray, ndarray, ndarray]:
     """
     Get the number of particles to extend in each patch.
-    
+
     Parameters
     ----------
     particles_list : List[ParticlesBase]
@@ -22,7 +22,7 @@ def get_npart_to_extend_2d(
         Cell size in x direction.
     dy : float
         Cell size in y direction.
-    
+
     Returns
     -------
     npart_to_extend : ndarray
@@ -31,6 +31,8 @@ def get_npart_to_extend_2d(
         Number of incoming particles in each patch.
     npart_outgoing : ndarray
         Number of particles outgoing to each boundary in each patch.
+    npart_patches : ndarray
+        Number of alive particles in each patch.
     """
     ...
     

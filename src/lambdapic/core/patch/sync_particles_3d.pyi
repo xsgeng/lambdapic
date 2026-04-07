@@ -5,10 +5,10 @@ def get_npart_to_extend_3d(
     particles_list: list[ParticlesBase],
     patches_list: list['Patch3D'],
     npatches: int, dx: float, dy: float, dz: float
-) -> tuple[ndarray, ndarray, ndarray]:
+) -> tuple[ndarray, ndarray, ndarray, ndarray]:
     """
     Get the number of particles to extend in each patch.
-    
+
     Parameters
     ----------
     particles_list : List[ParticlesBase]
@@ -21,7 +21,7 @@ def get_npart_to_extend_3d(
         Cell size in x direction.
     dy : float
         Cell size in y direction.
-    
+
     Returns
     -------
     npart_to_extend : ndarray
@@ -30,6 +30,8 @@ def get_npart_to_extend_3d(
         Number of incoming particles in each patch.
     npart_outgoing : ndarray
         Number of particles outgoing to each boundary in each patch.
+    npart_patches : ndarray
+        Number of alive particles in each patch.
     """
     ...
     
@@ -39,6 +41,9 @@ def fill_particles_from_boundary_3d(
     npart_incoming: ndarray,
     npart_outgoing: ndarray,
     npatches: int, dx: float, dy: float, dz: float,
+    xmin_global: float, xmax_global: float, 
+    ymin_global: float, ymax_global: float,
+    zmin_global: float, zmax_global: float,
     attrs: list[str]
 ) -> None:
     """

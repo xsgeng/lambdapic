@@ -413,10 +413,12 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
     PyArrayObject *npart_to_extend_array = (PyArrayObject*) PyArray_ZEROS(1, &npatches, NPY_INT64, 0);
     PyArrayObject *npart_incoming_array = (PyArrayObject*) PyArray_ZEROS(1, &npatches, NPY_INT64, 0);
     PyArrayObject *npart_outgoing_array = (PyArrayObject*) PyArray_ZEROS(1, &dims, NPY_INT64, 0);
+    PyArrayObject *npart_array = (PyArrayObject*) PyArray_ZEROS(1, &npatches, NPY_INT64, 0);
 
     npy_intp *npart_to_extend = (npy_intp*) PyArray_DATA(npart_to_extend_array);
     npy_intp *npart_incoming = (npy_intp*) PyArray_DATA(npart_incoming_array);
     npy_intp *npart_outgoing = (npy_intp*) PyArray_DATA(npart_outgoing_array);
+    npy_intp *npart_alive = (npy_intp*) PyArray_DATA(npart_array);
 
     // Count outgoing particles for each patch
     Py_BEGIN_ALLOW_THREADS
@@ -454,25 +456,27 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
             }
         }
         
-        // Count dead particles
+        // Count dead particles and alive particles
         npy_intp ndead = 0;
         for (npy_intp i = 0; i < npart; i++) {
             if (is_dead[i]) {
                 ndead++;
             }
         }
-        
+        npy_intp nalive = npart - ndead;
+        npart_alive[ipatch] = nalive + npart_new;
+
         // Calculate number of particles to extend
         if ((npart_new - ndead) > 0) {
             // Reserve more space for new particles (25% extra)
             npart_to_extend[ipatch] = npart_new - ndead + (npy_intp)(npart * 0.25);
         }
-        
+
         npart_incoming[ipatch] = npart_new;
     }
     Py_END_ALLOW_THREADS
     
-    PyObject *ret = PyTuple_Pack(3, npart_to_extend_array, npart_incoming_array, npart_outgoing_array);
+    PyObject *ret = PyTuple_Pack(4, npart_to_extend_array, npart_incoming_array, npart_outgoing_array, npart_array);
     return ret;
 }
 

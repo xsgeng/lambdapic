@@ -694,16 +694,19 @@ class Patches:
                 self.npatches, self.nx, self.ny, self.nz, self.n_guard,
             )
         
-    def sync_particles(self) -> None:
+    def sync_particles(self) -> NDArray[np.int64]:
         from . import sync_particles_2d, sync_particles_3d
+        
+        npart_patches = np.zeros(self.npatches, dtype=np.int64)
         if self.dimension == 2:
             for ispec, s in enumerate(self.species):
 
-                npart_to_extend, npart_incoming, npart_outgoing = sync_particles_2d.get_npart_to_extend_2d(
+                npart_to_extend, npart_incoming, npart_outgoing, _npart_patches = sync_particles_2d.get_npart_to_extend_2d(
                     [p.particles[ispec] for p in self],
                     [p for p in self],
                     self.npatches, self.dx, self.dy,
                 )
+                npart_patches += _npart_patches
 
                 # extend the particles in each patch in python mode
                 # TODO: extend the particles in each patch in numba mode in parallel
@@ -725,11 +728,12 @@ class Patches:
                 )
         if self.dimension == 3:
             for ispec, s in enumerate(self.species):
-                npart_to_extend, npart_incoming, npart_outgoing = sync_particles_3d.get_npart_to_extend_3d(
+                npart_to_extend, npart_incoming, npart_outgoing, _npart_patches = sync_particles_3d.get_npart_to_extend_3d(
                     [p.particles[ispec] for p in self],
                     self.patches,
                     self.npatches, self.dx, self.dy, self.dz,
                 )
+                npart_patches += _npart_patches
 
                 for ipatches in range(self.npatches):
                     p = self[ipatches].particles[ispec]
@@ -745,7 +749,7 @@ class Patches:
                     self.xmin_global, self.xmax_global, self.ymin_global, self.ymax_global, self.zmin_global, self.zmax_global,
                     self[0].particles[ispec].attrs
                 )
-
+        return npart_patches
         
     @property
     def nx(self) -> int:
