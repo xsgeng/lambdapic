@@ -773,6 +773,7 @@ class SetTemperature(Callback):
 
     def _call(self, sim: Simulation) -> None:
         ispec = self.species.ispec
+        rand_gen, = sim.rand_gen.spawn(1)
         for p in sim.patches:
             part = p.particles[ispec]
             alive = part.is_alive
@@ -781,7 +782,7 @@ class SetTemperature(Callback):
                 continue
             
             thetax = self.temperature[0]*e / (self.species.m * c**2)
-            ux, uy, uz = self.sample_maxwell_juttner(n, thetax)
+            ux, uy, uz = self.sample_maxwell_juttner(n, thetax, rand_gen)
             # stretch to simulate temperature anisotropy
             part.ux[alive] = ux
             part.uy[alive] = uy * self.temperature[1]/self.temperature[0]
@@ -803,7 +804,7 @@ class SetTemperature(Callback):
         return (gamma**2 * beta) / (theta * k2) * np.exp(-gamma/theta)
     
     @staticmethod
-    def sample_maxwell_juttner(size: int, theta: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def sample_maxwell_juttner(size: int, theta: float, rand_gen: np.random.Generator|None=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Generate samples from Maxwell-Jüttner distribution
         Using a mixed strategy to adapt to different temperature ranges:
@@ -812,11 +813,12 @@ class SetTemperature(Callback):
         - θ > 0.5: Gamma proposal distribution + β acceptance probability
         """
         import scipy
+        rand_gen = rand_gen or np.random.default_rng()
         
         gamma = np.zeros(size)
         # Non-relativistic approximation (θ ≤ 0.01)
         if theta <= 0.01:
-            gamma[:] = scipy.stats.gamma(a=1.5, scale=theta).rvs(size=size) + 1
+            gamma[:] = scipy.stats.gamma(a=1.5, scale=theta).rvs(size=size, random_state=rand_gen) + 1
         
         # Medium temperature range (0.01 < θ ≤ 0.5)
         elif theta <= 0.5:
@@ -832,9 +834,9 @@ class SetTemperature(Callback):
             
             count: int = 0
             while count < size:
-                gamma_prop = np.random.uniform(1, gamma_max, size-count)
+                gamma_prop = rand_gen.uniform(1, gamma_max, size-count)
                 f_val = SetTemperature.maxwell_juttner_pdf(gamma_prop, theta)
-                accept = np.random.uniform(0, M, size-count) < f_val
+                accept = rand_gen.uniform(0, M, size-count) < f_val
                 gamma_accept = gamma_prop[accept]
                 n_accept = len(gamma_accept)
                 
@@ -846,9 +848,9 @@ class SetTemperature(Callback):
             gamma_dist = scipy.stats.gamma(a=3, scale=theta)
             count: int = 0
             while count < size:
-                gamma_prop = gamma_dist.rvs(size-count)
+                gamma_prop = gamma_dist.rvs(size-count, random_state=rand_gen)
                 beta_val = beta_val = np.sqrt(1 - 1/(np.ma.array(gamma_prop, mask=gamma_prop < 1)**2))
-                accept = (np.random.uniform(size=size-count) < beta_val) & (gamma_prop >= 1)
+                accept = (rand_gen.uniform(size=size-count) < beta_val) & (gamma_prop >= 1)
                 gamma_accept = gamma_prop[accept]
                 n_accept = len(gamma_accept)
                 
@@ -856,8 +858,8 @@ class SetTemperature(Callback):
                 count += n_accept
         
         u = np.sqrt(gamma**2 - 1)
-        phi = np.random.uniform(0, 2*np.pi, size)
-        costheta = np.random.uniform(-1, 1, size)
+        phi = rand_gen.uniform(0, 2*np.pi, size)
+        costheta = rand_gen.uniform(-1, 1, size)
         sintheta = np.sqrt(1 - costheta**2)
         ux = u * sintheta * np.cos(phi)
         uy = u * sintheta * np.sin(phi)
