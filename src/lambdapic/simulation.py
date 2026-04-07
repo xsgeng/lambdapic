@@ -34,6 +34,8 @@ from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
 from .core.species import Electron, Photon, Species
 from .core.utils.logger import configure_logger, logger, rank_log
+from .core.utils.progress_bar import ProgressBar
+from .core.utils.terminal import is_terminal
 from .core.utils.timer import Timer
 from .utils import (
     auto_patch_2d,
@@ -881,7 +883,11 @@ class Simulation:
                 rank_log(f"No callbacks in pusher stages, switching to unified pusher for {self.species[ispec].name}", self.mpi.comm)
 
         if self.mpi.rank == 0 and os.environ.get("LAMBDAPIC_CHECK_UPDATE", "1") == "1":
-            with yaspin(text="Checking for newer version on PyPI. Disable with LAMBDAPIC_CHECK_UPDATE=0"):
+            if is_terminal():
+                with yaspin(text="Checking for newer version on PyPI. Disable with LAMBDAPIC_CHECK_UPDATE=0"):
+                    current_version, latest_version = check_newer_version_on_pypi()
+            else:
+                logger.info("Checking for newer version on PyPI...")
                 current_version, latest_version = check_newer_version_on_pypi()
             if current_version and latest_version and is_version_outdated(current_version, latest_version):
                 logger.info(f"New version available: {current_version} -> {latest_version}. Upgrade with `pip install --upgrade --upgrade-strategy=only-if-needed lambdapic`")
@@ -890,9 +896,19 @@ class Simulation:
         nsteps_total = self._handle_nsteps(nsteps, sim_time)
             
         self.mpi.comm.Barrier()
-        for self.istep in trange(nsteps_total-self.itime, total=nsteps_total, initial=self.itime, 
-                                 disable=self.mpi.rank>0, position=1):
-            
+
+        # Progress bar handles terminal detection internally
+        pbar = ProgressBar(
+            total=nsteps_total,
+            initial=self.itime,
+            desc="Progress",
+            disable=(self.mpi.rank > 0),  # Only rank 0 shows/logs progress
+            position=1,
+        )
+
+        for self.istep in range(self.itime, nsteps_total-self.itime):
+            pbar.update(1)
+
             # start of simulation stages
             with Timer('Callbacks: start stage'):
                 stage_callbacks.run('start')
@@ -1061,6 +1077,7 @@ class Simulation:
                 stage_callbacks.run('end')
         
             if restart_cb and restart_cb._dump_requested:
+                pbar.close()
                 restart_cb._call(self)
                 return
             
@@ -1068,8 +1085,10 @@ class Simulation:
 
 
             if stop_callback():
+                pbar.close()
                 return "stop by callback"
-        
+
+        pbar.close()
         self.mpi.comm.Barrier()
 
         with Timer("Callbacks: final stage"):

@@ -4,6 +4,8 @@ from datetime import datetime
 from loguru import logger
 from typing import Optional
 
+from .terminal import is_terminal
+
 LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
 DEFAULT_LOG_LEVEL = "INFO"
 
@@ -13,7 +15,7 @@ def configure_logger(
     format_str: str = "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
                      "<level>{level: <8}</level> | "
                      "<level>{message}</level>",
-    colorize: bool = True,
+    colorize: bool | None = None,
     serialize: bool = False,
     backtrace: bool = False,
     diagnose: bool = False,
@@ -25,12 +27,14 @@ def configure_logger(
         level: Minimum logging level (default: INFO)
         sink: Where to send logs - None for auto filename (default: logs/lambdapic_YYYYMMDD_HHMMSS.log)
         format_str: Log message format
-        colorize: Whether to add colors to output
+        colorize: Whether to add colors to output. If None, auto-detect based on terminal.
         serialize: Whether to output as JSON
         backtrace: Whether to show exception backtrace
         diagnose: Whether to show variable values in backtrace
         truncate_existing: Whether to truncate existing log file
     """
+    colorize = colorize if colorize is not None else is_terminal()
+    
     logger.remove()
     
     # Register custom levels first
