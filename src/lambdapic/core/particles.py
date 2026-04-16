@@ -52,6 +52,7 @@ class ParticlesBase:
 
     npart: int # length of the particles, including dead
     _npart_created: int  # counter for generating sequential local IDs
+    _npart_alive: int # updated on call of sync_particles(), not realtime
 
     def __init__(self, ipatch: Optional[int]=None, rank: Optional[int]=None) -> None:
         """
@@ -66,6 +67,7 @@ class ParticlesBase:
         ]
         self.extended: bool = False
         self._npart_created = 0
+        self._npart_alive = 0
 
         if rank is None:
             try:

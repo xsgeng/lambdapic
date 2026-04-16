@@ -707,6 +707,8 @@ class Patches:
                     self.npatches, self.dx, self.dy,
                 )
                 npart_patches += _npart_patches
+                for ipatch, p in enumerate(self.patches):
+                    p.particles[ispec]._npart_alive = _npart_patches[ipatch]
 
                 # extend the particles in each patch in python mode
                 # TODO: extend the particles in each patch in numba mode in parallel
@@ -734,6 +736,8 @@ class Patches:
                     self.npatches, self.dx, self.dy, self.dz,
                 )
                 npart_patches += _npart_patches
+                for ipatch, p in enumerate(self.patches):
+                    p.particles[ispec]._npart_alive = _npart_patches[ipatch]
 
                 for ipatches in range(self.npatches):
                     p = self[ipatches].particles[ispec]
