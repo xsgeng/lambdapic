@@ -462,10 +462,11 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     npy_intp *npart_outgoing = (npy_intp*) PyArray_DATA(npart_outgoing_array);
 
     // Allocate MPI request arrays
-    AUTOFREE MPI_Request *sendrecv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *send_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *recv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
 
     Py_BEGIN_ALLOW_THREADS
-    
+
     // Count outgoing particles for each patch
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
@@ -477,15 +478,15 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         double ymin = ymin_list[ipatch];
         double ymax = ymax_list[ipatch];
         npy_intp npart = npart_list[ipatch];
-        
+
         // Count particles going out of bounds
         npy_intp npart_out[NUM_BOUNDARIES] = {0};
-        
+
         count_outgoing_particles(
             x, y, is_dead, xmin, xmax, ymin, ymax, npart,
             npart_out
         );
-        
+
         // Store results in the outgoing array
         for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
@@ -495,36 +496,37 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
             npart_outgoing[ipatch * NUM_BOUNDARIES + ibound] = npart_out[ibound];
         }
     }
-    
+
     // Post non-blocking sends and receives for particle counts
     #pragma omp parallel for
     for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES; i++) {
         int ipatch = i / NUM_BOUNDARIES;
         int ibound = i % NUM_BOUNDARIES;
         int neighbor_rank = neighbor_rank_list[ipatch][ibound];
-        
+
         // Skip if no neighbor in this direction
         if (neighbor_rank < 0){
-            sendrecv_requests[i] = MPI_REQUEST_NULL;
+            send_requests[i] = MPI_REQUEST_NULL;
+            recv_requests[i] = MPI_REQUEST_NULL;
             continue;
-        } 
-        
+        }
+
         int index = index_list[ipatch];
         int neighbor_index = neighbor_index_list[ipatch][ibound];
         // Tag based on patch index and boundary
         int send_tag = index*NUM_BOUNDARIES + ibound;
         int recv_tag = neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
-        // printf("send_tag: %i", index*8 + ibound);
-            // printf("rank: %d, ipatch: %d, ibound: %d, neighbor_rank: %d, index: %d, neighbor_index: %d, send_tag: %d, recv_tag: %d\n", rank, ipatch, ibound, neighbor_rank, index, neighbor_index, send_tag, recv_tag);
-        
+
         // Thread-multiple access to MPI functions
-        MPI_Isendrecv(&npart_outgoing[i], 1, MPI_LONG, neighbor_rank, send_tag,
-                      &npart_incoming[i], 1, MPI_LONG, neighbor_rank, recv_tag,
-                      comm, &sendrecv_requests[i]);
+        MPI_Isend(&npart_outgoing[i], 1, MPI_LONG, neighbor_rank, send_tag,
+                  comm, &send_requests[i]);
+        MPI_Irecv(&npart_incoming[i], 1, MPI_LONG, neighbor_rank, recv_tag,
+                  comm, &recv_requests[i]);
     }
-    
+
     // Wait for all communications to complete
-    MPI_Waitall(npatches*NUM_BOUNDARIES, sendrecv_requests, MPI_STATUSES_IGNORE);
+    MPI_Waitall(npatches*NUM_BOUNDARIES, send_requests, MPI_STATUSES_IGNORE);
+    MPI_Waitall(npatches*NUM_BOUNDARIES, recv_requests, MPI_STATUSES_IGNORE);
     
     // Process received counts
     #pragma omp parallel for

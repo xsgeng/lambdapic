@@ -637,10 +637,12 @@ static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {
     AUTOFREE npy_intp *index_list = get_attr_int(patches_list, npatches, "index");
 
     // Allocate MPI request arrays
-    AUTOFREE MPI_Request *sendrecv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *send_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *recv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
 
     // buffers
-    AUTOFREE double **buf = (double**) malloc(npatches * NUM_BOUNDARIES * sizeof(double*));
+    AUTOFREE double **send_buf = (double**) malloc(npatches * NUM_BOUNDARIES * sizeof(double*));
+    AUTOFREE double **recv_buf = (double**) malloc(npatches * NUM_BOUNDARIES * sizeof(double*));
 
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for collapse(2)
@@ -650,7 +652,8 @@ static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {
             const npy_intp index = index_list[ipatch];
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (neighbor_rank < 0) {
-                buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
+                send_buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
+                recv_buf[ipatch*NUM_BOUNDARIES + ibound] = NULL;
                 continue;
             }
             int ix_src, ix_dst, nx_sync, 
@@ -664,7 +667,8 @@ static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {
                 &iz_dst, &iz_src, &nz_sync
             );
             // store attrs into one buffer
-            buf[ipatch*NUM_BOUNDARIES + ibound] = (double*) malloc(4*sizeof(double) * nx_sync * ny_sync * nz_sync);
+            send_buf[ipatch*NUM_BOUNDARIES + ibound] = (double*) malloc(4*sizeof(double) * nx_sync * ny_sync * nz_sync);
+            recv_buf[ipatch*NUM_BOUNDARIES + ibound] = (double*) malloc(4*sizeof(double) * nx_sync * ny_sync * nz_sync);
             int send_tag = index*NUM_BOUNDARIES + ibound;
             int recv_tag = neighbor_index[ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
             fill_currents_buf(
@@ -672,13 +676,15 @@ static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {
                 iy_src, ny_sync, NY,
                 iz_src, nz_sync, NZ,
                 jx[ipatch], jy[ipatch], jz[ipatch], rho[ipatch], 
-                buf[ipatch*NUM_BOUNDARIES + ibound]
+                send_buf[ipatch*NUM_BOUNDARIES + ibound]
             );
-            MPI_Isendrecv_replace(
-                buf[ipatch*NUM_BOUNDARIES + ibound], 4*nx_sync*ny_sync*nz_sync, MPI_DOUBLE, 
-                neighbor_rank, send_tag, 
-                neighbor_rank, recv_tag, 
-                comm, &sendrecv_requests[ipatch*NUM_BOUNDARIES + ibound]
+            MPI_Isend(
+                send_buf[ipatch*NUM_BOUNDARIES + ibound], 4*nx_sync*ny_sync*nz_sync, MPI_DOUBLE, 
+                neighbor_rank, send_tag, comm, &send_requests[ipatch*NUM_BOUNDARIES + ibound]
+            );
+            MPI_Irecv(
+                recv_buf[ipatch*NUM_BOUNDARIES + ibound], 4*nx_sync*ny_sync*nz_sync, MPI_DOUBLE, 
+                neighbor_rank, recv_tag, comm, &recv_requests[ipatch*NUM_BOUNDARIES + ibound]
             );
         }
     }
@@ -701,15 +707,17 @@ static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {
                 &iy_dst, &iy_src, &ny_sync,
                 &iz_dst, &iz_src, &nz_sync
             );
-            MPI_Wait(&sendrecv_requests[ipatch*NUM_BOUNDARIES + ibound], MPI_STATUS_IGNORE);
+            MPI_Wait(&recv_requests[ipatch*NUM_BOUNDARIES + ibound], MPI_STATUS_IGNORE);
             sync_currents_buf(
                 ix_dst, nx_sync, NX,
                 iy_dst, ny_sync, NY,
                 iz_dst, nz_sync, NZ,
-                buf[ipatch*NUM_BOUNDARIES + ibound],
+                recv_buf[ipatch*NUM_BOUNDARIES + ibound],
                 jx[ipatch], jy[ipatch], jz[ipatch], rho[ipatch]
             );
-            free(buf[ipatch*NUM_BOUNDARIES + ibound]);
+            MPI_Wait(&send_requests[ipatch*NUM_BOUNDARIES + ibound], MPI_STATUS_IGNORE);
+            free(send_buf[ipatch*NUM_BOUNDARIES + ibound]);
+            free(recv_buf[ipatch*NUM_BOUNDARIES + ibound]);
         }
     }
     Py_END_ALLOW_THREADS
