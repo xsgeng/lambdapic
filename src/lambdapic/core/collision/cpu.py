@@ -249,7 +249,7 @@ def constrain_debye_length_patches(
 
 @njit(cache=True)
 def varying_lnLambda(d: CollisionData, debye_length_inv_square: np.float64|float) -> float:
-    """
+    r"""
     https://doi.org/10.1063/1.4742167
 
     typo square removed
