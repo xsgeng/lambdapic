@@ -360,7 +360,7 @@ class SimpleLaser3D(Laser3D, SimpleLaser):
 
 
 class GaussianLaser(Laser):
-    """
+    r"""
     Implementation of a proper Gaussian laser beam with full physics including:
     
     - Gaussian temporal and spatial profiles
