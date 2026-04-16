@@ -89,10 +89,7 @@ class LoadBalancer(EnableMixin):
         load = 0.0
 
         for part in patch.particles:
-            # npart_alive = (~patch.particles[ispec].is_dead).sum()
-
-            # TODO: calculate npart_alive in a Patches method
-            load += part.npart
+            load += part._npart_alive
 
         if hasattr(patch, 'nz'):
             load += patch.nx * patch.ny * patch.nz / 2
