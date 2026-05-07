@@ -161,6 +161,119 @@ def _serialize_slice(normalized_slice: tuple, dims: tuple) -> str:
     return "[" + ", ".join(parts) + "]"
 
 
+class _HDF5SliceWriter:
+    """Encapsulates parallel HDF5 write logic for multi-component field/density data with slice support."""
+
+    def __init__(self, mpi: bool, barrier_after_create: bool = False):
+        self.mpi = mpi
+        self.barrier_after_create = barrier_after_create
+
+    def write(
+        self,
+        filename: Path,
+        sim,
+        components: list[str],
+        patch_data_fn: Callable[[int, object, str], np.ndarray],
+        normalized_slice: tuple[slice, ...] | None,
+    ):
+        """Write multi-component data to HDF5, handling 2D/3D, MPI/non-MPI, and optional slicing."""
+        if sim.dimension == 2:
+            self._write_nd(filename, sim, components, patch_data_fn, normalized_slice, 2)
+        elif sim.dimension == 3:
+            self._write_nd(filename, sim, components, patch_data_fn, normalized_slice, 3)
+
+    def _write_nd(
+        self,
+        filename: Path,
+        sim,
+        components: list[str],
+        patch_data_fn: Callable[[int, object, str], np.ndarray],
+        normalized_slice: tuple[slice, ...] | None,
+        ndim: int,
+    ):
+        comm = sim.mpi.comm
+        rank = comm.Get_rank()
+
+        if ndim == 2:
+            dims = (sim.nx, sim.ny)
+            per_patch = (sim.nx_per_patch, sim.ny_per_patch)
+        else:
+            dims = (sim.nx, sim.ny, sim.nz)
+            per_patch = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
+
+        if normalized_slice is None:
+            normalized_slice = tuple(slice(0, d, 1) for d in dims)
+
+        shape = tuple(len(range(s.start, s.stop, s.step)) for s in normalized_slice)
+        chunk_size = tuple(min(c, s) for c, s in zip(per_patch, shape))
+
+        if self.mpi:
+            self._write_mpi(filename, sim, comm, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size)
+        else:
+            self._write_non_mpi(filename, sim, comm, rank, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size)
+
+    def _write_mpi(
+        self, filename, sim, comm, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size,
+    ):
+        with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
+            for comp in components:
+                dset = f.create_dataset(comp, data=np.zeros(shape, dtype='f8'), chunks=chunk_size)
+                if self.barrier_after_create:
+                    comm.Barrier()
+                for ip, p in enumerate(sim.patches):
+                    offsets = self._patch_offsets(p, sim, ndim)
+                    slices_info = [
+                        _compute_patch_slice(d, s, o, pp)
+                        for d, s, o, pp in zip(dims, normalized_slice, offsets, per_patch)
+                    ]
+                    if any(si is None for si in slices_info):
+                        continue
+                    local_slices = [si[0] for si in slices_info]
+                    out_starts = [si[1] for si in slices_info]
+                    nums = [si[2] for si in slices_info]
+
+                    data = patch_data_fn(ip, p, comp)
+                    data = data[tuple(local_slices)]
+                    out_idx = tuple(slice(o, o + n) for o, n in zip(out_starts, nums))
+                    dset[out_idx] = data
+
+    def _write_non_mpi(
+        self, filename, sim, comm, rank, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size,
+    ):
+        if rank == 0:
+            with h5py.File(filename, 'w') as f:
+                for comp in components:
+                    f.create_dataset(comp, data=np.zeros(shape, dtype='f8'), chunks=chunk_size)
+        comm.Barrier()
+
+        with h5py.File(filename, 'a', locking=False) as f:
+            for comp in components:
+                dset = f[comp]
+                for ip, p in enumerate(sim.patches):
+                    offsets = self._patch_offsets(p, sim, ndim)
+                    slices_info = [
+                        _compute_patch_slice(d, s, o, pp)
+                        for d, s, o, pp in zip(dims, normalized_slice, offsets, per_patch)
+                    ]
+                    if any(si is None for si in slices_info):
+                        continue
+                    local_slices = [si[0] for si in slices_info]
+                    out_starts = [si[1] for si in slices_info]
+                    nums = [si[2] for si in slices_info]
+
+                    data = patch_data_fn(ip, p, comp)
+                    data = data[tuple(local_slices)]
+                    out_idx = tuple(slice(o, o + n) for o, n in zip(out_starts, nums))
+                    dset[out_idx] = data
+        comm.Barrier()
+
+    @staticmethod
+    def _patch_offsets(p, sim, ndim: int):
+        if ndim == 2:
+            return (p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch)
+        return (p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch)
+
+
 class SaveFieldsToHDF5(Callback):
     """Callback to save field data to HDF5 files.
 
@@ -235,113 +348,14 @@ class SaveFieldsToHDF5(Callback):
             self._write_3d(sim, filename)
 
     def _write_2d(self, sim: Simulation, filename: Path):
-        """Write 2D field data to HDF5 file in parallel.
-
-        Args:
-            sim (Simulation): 2D simulation object containing field data
-            filename (str): Output HDF5 filename
-
-        Note:
-            - Creates HDF5 file with datasets for each field component
-            - Uses MPI parallel I/O to write patch data
-            - Includes simulation metadata as file attributes
-        """
-        # Get MPI communicator
+        writer = _HDF5SliceWriter(mpi=self.mpi)
+        writer.write(
+            filename, sim, self.components,
+            lambda ip, p, comp: getattr(p.fields, comp),
+            self._normalized_slice,
+        )
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        
-        chunk_size = (sim.nx_per_patch, sim.ny_per_patch)
-        # Create filename with timestep
-        if self.mpi:
-            if self._normalized_slice is not None:
-                sx, sy = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)))
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    for field in self.components:
-                        dset = f.create_dataset(
-                            field, 
-                            data=np.zeros(shape),
-                            dtype='f8',
-                            chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                        )
-                        for p in sim.patches:
-                            px = p.ipatch_x * sim.nx_per_patch
-                            py = p.ipatch_y * sim.ny_per_patch
-                            x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                            y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                            if x_info is None or y_info is None:
-                                continue
-                            local_x, out_x, num_x = x_info
-                            local_y, out_y, num_y = y_info
-                            data = getattr(p.fields, field)[local_x, local_y]
-                            dset[out_x:out_x+num_x, out_y:out_y+num_y] = data
-            else:
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    for field in self.components:
-                        dset = f.create_dataset(
-                            field, 
-                            data=np.zeros((sim.nx, sim.ny)),
-                            dtype='f8',
-                            chunks=chunk_size
-                        )
-                        for p in sim.patches:
-                            start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
-                            end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
-                            data = getattr(p.fields, field)
-                            dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
-        else: 
-            if self._normalized_slice is not None:
-                sx, sy = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)))
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        for field in self.components:
-                            dset = f.create_dataset(
-                                field, 
-                                data=np.zeros(shape),
-                                dtype='f8',
-                                chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                            )
-                comm.Barrier()
-            
-                with h5py.File(filename, 'a', locking=False) as f:
-                    for field in self.components:
-                        dset = f[field]
-                        for p in sim.patches:
-                            px = p.ipatch_x * sim.nx_per_patch
-                            py = p.ipatch_y * sim.ny_per_patch
-                            x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                            y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                            if x_info is None or y_info is None:
-                                continue
-                            local_x, out_x, num_x = x_info
-                            local_y, out_y, num_y = y_info
-                            data = getattr(p.fields, field)[local_x, local_y]
-                            dset[out_x:out_x+num_x, out_y:out_y+num_y] = data
-                comm.Barrier()
-            else:
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        for field in self.components:
-                            dset = f.create_dataset(
-                                field, 
-                                data=np.zeros((sim.nx, sim.ny)),
-                                dtype='f8',
-                                chunks=chunk_size
-                            )
-                comm.Barrier()
-        
-                with h5py.File(filename, 'a', locking=False) as f:
-                    for field in self.components:
-                        dset = f[field]
-                        for p in sim.patches:
-                            start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
-                            end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
-                            data = getattr(p.fields, field)
-                            dset[start[0]:end[0], start[1]:end[1]] = data[:sim.nx_per_patch, :sim.ny_per_patch]
-
-                comm.Barrier()    
-        # Only rank 0 writes metadata
         if rank == 0:
             with h5py.File(filename, 'a') as f:
                 f.attrs['nx'] = sim.nx
@@ -356,122 +370,14 @@ class SaveFieldsToHDF5(Callback):
                     f.attrs['slice'] = _serialize_slice(self._normalized_slice, (sim.nx, sim.ny))
                 
     def _write_3d(self, sim: Simulation3D, filename: Path):
-        """Write 3D field data to HDF5 file in parallel.
-
-        Args:
-            sim (Simulation3D): 3D simulation object containing field data
-            filename (str): Output HDF5 filename
-
-        Note:
-            - Creates HDF5 file with datasets for each field component
-            - Uses MPI parallel I/O to write patch data
-            - Includes simulation metadata as file attributes
-        """
-        # Get MPI communicator
+        writer = _HDF5SliceWriter(mpi=self.mpi, barrier_after_create=True)
+        writer.write(
+            filename, sim, self.components,
+            lambda ip, p, comp: getattr(p.fields, comp),
+            self._normalized_slice,
+        )
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-        
-        chunk_size = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
-        # Create filename with timestep
-        if self.mpi:
-            if self._normalized_slice is not None:
-                sx, sy, sz = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)), len(range(sz.start, sz.stop, sz.step)))
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    for field in self.components:
-                        dset = f.create_dataset(
-                            field, 
-                            data=np.zeros(shape),
-                            dtype='f8',
-                            # chunks=chunk_size
-                        )
-                        comm.Barrier()
-                        for p in sim.patches:
-                            px = p.ipatch_x * sim.nx_per_patch
-                            py = p.ipatch_y * sim.ny_per_patch
-                            pz = p.ipatch_z * sim.nz_per_patch
-                            x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                            y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                            z_info = _compute_patch_slice(sim.nz, sz, pz, sim.nz_per_patch)
-                            if x_info is None or y_info is None or z_info is None:
-                                continue
-                            local_x, out_x, num_x = x_info
-                            local_y, out_y, num_y = y_info
-                            local_z, out_z, num_z = z_info
-                            data = getattr(p.fields, field)[local_x, local_y, local_z]
-                            dset[out_x:out_x+num_x, out_y:out_y+num_y, out_z:out_z+num_z] = data
-            else:
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    for field in self.components:
-                        dset = f.create_dataset(
-                            field, 
-                            data=np.zeros((sim.nx, sim.ny, sim.nz)),
-                            dtype='f8',
-                            # chunks=chunk_size
-                        )
-                        comm.Barrier()
-                        for p in sim.patches:
-                            start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
-                            end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
-                            data = getattr(p.fields, field)
-                            dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-        else:
-            if self._normalized_slice is not None:
-                sx, sy, sz = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)), len(range(sz.start, sz.stop, sz.step)))
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        for field in self.components:
-                            dset = f.create_dataset(
-                                field, 
-                                data=np.zeros(shape),
-                                dtype='f8',
-                                chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                            )
-                comm.Barrier()
-            
-                # Create chunked dataset with parallel access
-                with h5py.File(filename, 'a', locking=False) as f:
-                    for field in self.components:
-                        dset = f[field]
-                        for p in sim.patches:
-                            px = p.ipatch_x * sim.nx_per_patch
-                            py = p.ipatch_y * sim.ny_per_patch
-                            pz = p.ipatch_z * sim.nz_per_patch
-                            x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                            y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                            z_info = _compute_patch_slice(sim.nz, sz, pz, sim.nz_per_patch)
-                            if x_info is None or y_info is None or z_info is None:
-                                continue
-                            local_x, out_x, num_x = x_info
-                            local_y, out_y, num_y = y_info
-                            local_z, out_z, num_z = z_info
-                            data = getattr(p.fields, field)[local_x, local_y, local_z]
-                            dset[out_x:out_x+num_x, out_y:out_y+num_y, out_z:out_z+num_z] = data
-                comm.Barrier()
-            else:
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        for field in self.components:
-                            dset = f.create_dataset(
-                                field, 
-                                data=np.zeros((sim.nx, sim.ny, sim.nz)),
-                                dtype='f8',
-                                chunks=chunk_size
-                            )
-                comm.Barrier()
-            
-                # Create chunked dataset with parallel access
-                with h5py.File(filename, 'a', locking=False) as f:
-                    for field in self.components:
-                        dset = f[field]
-                        for p in sim.patches:
-                            start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
-                            end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
-                            data = getattr(p.fields, field)
-                            dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = data[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-                comm.Barrier()    
-        # Only rank 0 writes metadata
         if rank == 0:
             with h5py.File(filename, 'a') as f:
                 f.attrs['nx'] = sim.nx
@@ -592,98 +498,14 @@ class SaveSpeciesDensityToHDF5(Callback):
         return density
 
     def _write_2d(self, sim: Simulation, density_per_patch: List[np.ndarray], filename: Path):
-        """Write 2D density data to HDF5 file in parallel.
-
-        Args:
-            sim (Simulation): 2D simulation object
-            density_per_patch (List[np.ndarray]): List of density arrays (one per patch)
-
-        Note:
-            - Creates HDF5 file with density dataset
-            - Uses MPI parallel I/O to write patch data
-            - Includes simulation metadata as file attributes
-        """
+        writer = _HDF5SliceWriter(mpi=self.mpi)
+        writer.write(
+            filename, sim, ['density'],
+            lambda ip, p, comp: density_per_patch[ip],
+            self._normalized_slice,
+        )
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-
-        chunk_size = (sim.nx_per_patch, sim.ny_per_patch)
-        if self.mpi:
-            if self._normalized_slice is not None:
-                sx, sy = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)))
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    dset = f.create_dataset(
-                        'density',
-                        data=np.zeros(shape, dtype='f8'),
-                        chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                    )
-                    for ip, p in enumerate(sim.patches):
-                        px = p.ipatch_x * sim.nx_per_patch
-                        py = p.ipatch_y * sim.ny_per_patch
-                        x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                        y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                        if x_info is None or y_info is None:
-                            continue
-                        local_x, out_x, num_x = x_info
-                        local_y, out_y, num_y = y_info
-                        data = density_per_patch[ip][local_x, local_y]
-                        dset[out_x:out_x+num_x, out_y:out_y+num_y] = data
-            else:
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    dset = f.create_dataset(
-                        'density',
-                        data=np.zeros((sim.nx, sim.ny), dtype='f8'),
-                        chunks=chunk_size
-                    )
-                    for ip, p in enumerate(sim.patches):
-                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
-                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
-                        dset[start[0]:end[0], start[1]:end[1]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch]
-        else:
-            if self._normalized_slice is not None:
-                sx, sy = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)))
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                            dset = f.create_dataset(
-                                'density',
-                                data=np.zeros(shape, dtype='f8'),
-                                chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                            )
-                comm.Barrier()
-
-                with h5py.File(filename, 'a', locking=False) as f:
-                    dset = f['density']
-                    for ip, p in enumerate(sim.patches):
-                        px = p.ipatch_x * sim.nx_per_patch
-                        py = p.ipatch_y * sim.ny_per_patch
-                        x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                        y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                        if x_info is None or y_info is None:
-                            continue
-                        local_x, out_x, num_x = x_info
-                        local_y, out_y, num_y = y_info
-                        data = density_per_patch[ip][local_x, local_y]
-                        dset[out_x:out_x+num_x, out_y:out_y+num_y] = data
-                comm.Barrier()
-            else:
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        dset = f.create_dataset(
-                            'density',
-                            data=np.zeros((sim.nx, sim.ny), dtype='f8'),
-                            chunks=chunk_size
-                        )
-                comm.Barrier()
-
-                with h5py.File(filename, 'a', locking=False) as f:
-                    dset = f['density']
-                    for ip, p in enumerate(sim.patches):
-                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch
-                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch
-                        dset[start[0]:end[0], start[1]:end[1]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch]
-                comm.Barrier()
-
         if rank == 0:
             with h5py.File(filename, 'a') as f:
                 f.attrs['time'] = sim.time
@@ -699,104 +521,14 @@ class SaveSpeciesDensityToHDF5(Callback):
                     f.attrs['slice'] = _serialize_slice(self._normalized_slice, (sim.nx, sim.ny))
 
     def _write_3d(self, sim: Simulation3D, density_per_patch: List[np.ndarray], filename: Path):
-        """Write 3D density data to HDF5 file in parallel.
-
-        Args:
-            sim (Simulation3D): 3D simulation object
-            density_per_patch (List[np.ndarray]): List of density arrays (one per patch)
-
-        Note:
-            - Creates HDF5 file with density dataset
-            - Uses MPI parallel I/O to write patch data
-            - Includes simulation metadata as file attributes
-        """
+        writer = _HDF5SliceWriter(mpi=self.mpi)
+        writer.write(
+            filename, sim, ['density'],
+            lambda ip, p, comp: density_per_patch[ip],
+            self._normalized_slice,
+        )
         comm = sim.mpi.comm
         rank = comm.Get_rank()
-
-        chunk_size = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
-        if self.mpi:
-            if self._normalized_slice is not None:
-                sx, sy, sz = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)), len(range(sz.start, sz.stop, sz.step)))
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    dset = f.create_dataset(
-                        'density',
-                        data=np.zeros(shape, dtype='f8'),
-                        chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                    )
-                    for ip, p in enumerate(sim.patches):
-                        px = p.ipatch_x * sim.nx_per_patch
-                        py = p.ipatch_y * sim.ny_per_patch
-                        pz = p.ipatch_z * sim.nz_per_patch
-                        x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                        y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                        z_info = _compute_patch_slice(sim.nz, sz, pz, sim.nz_per_patch)
-                        if x_info is None or y_info is None or z_info is None:
-                            continue
-                        local_x, out_x, num_x = x_info
-                        local_y, out_y, num_y = y_info
-                        local_z, out_z, num_z = z_info
-                        data = density_per_patch[ip][local_x, local_y, local_z]
-                        dset[out_x:out_x+num_x, out_y:out_y+num_y, out_z:out_z+num_z] = data
-            else:
-                with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
-                    dset = f.create_dataset(
-                        'density',
-                        data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
-                        chunks=chunk_size
-                    )
-                    for ip, p in enumerate(sim.patches):
-                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
-                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
-                        dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-        else:
-            if self._normalized_slice is not None:
-                sx, sy, sz = self._normalized_slice
-                shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)), len(range(sz.start, sz.stop, sz.step)))
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        dset = f.create_dataset(
-                            'density',
-                            data=np.zeros(shape, dtype='f8'),
-                            chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                        )
-                comm.Barrier()
-
-                with h5py.File(filename, 'a', locking=False) as f:
-                    dset = f['density']
-                    for ip, p in enumerate(sim.patches):
-                        px = p.ipatch_x * sim.nx_per_patch
-                        py = p.ipatch_y * sim.ny_per_patch
-                        pz = p.ipatch_z * sim.nz_per_patch
-                        x_info = _compute_patch_slice(sim.nx, sx, px, sim.nx_per_patch)
-                        y_info = _compute_patch_slice(sim.ny, sy, py, sim.ny_per_patch)
-                        z_info = _compute_patch_slice(sim.nz, sz, pz, sim.nz_per_patch)
-                        if x_info is None or y_info is None or z_info is None:
-                            continue
-                        local_x, out_x, num_x = x_info
-                        local_y, out_y, num_y = y_info
-                        local_z, out_z, num_z = z_info
-                        data = density_per_patch[ip][local_x, local_y, local_z]
-                        dset[out_x:out_x+num_x, out_y:out_y+num_y, out_z:out_z+num_z] = data
-                comm.Barrier()
-            else:
-                if rank == 0:
-                    with h5py.File(filename, 'w') as f:
-                        dset = f.create_dataset(
-                            'density',
-                            data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
-                            chunks=chunk_size
-                        )
-                comm.Barrier()
-
-                with h5py.File(filename, 'a', locking=False) as f:
-                    dset = f['density']
-                    for ip, p in enumerate(sim.patches):
-                        start = p.ipatch_x * sim.nx_per_patch, p.ipatch_y * sim.ny_per_patch, p.ipatch_z * sim.nz_per_patch
-                        end   = start[0] + sim.nx_per_patch, start[1] + sim.ny_per_patch, start[2] + sim.nz_per_patch
-                        dset[start[0]:end[0], start[1]:end[1], start[2]:end[2]] = density_per_patch[ip][:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
-                comm.Barrier()
-
         if rank == 0:
             with h5py.File(filename, 'a') as f:
                 f.attrs['time'] = sim.time
