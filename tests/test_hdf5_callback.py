@@ -2,7 +2,7 @@ import pytest
 import h5py
 import os
 import numpy as np
-from lambdapic.simulation import Simulation
+from lambdapic.simulation import Simulation, Simulation3D
 from lambdapic.core.species import Electron
 from lambdapic.callback.hdf5 import (
     SaveFieldsToHDF5,
@@ -141,3 +141,257 @@ def test_hdf5_particles_callback_2d(tmp_path):
         # Verify length matches expected particles per cell
         expected_particles = sim.nx * sim.ny * electrons.ppc
         assert x_len == expected_particles
+
+
+# =============================================================================
+# 2D Slice tests for SaveFieldsToHDF5
+# =============================================================================
+
+def test_hdf5_field_callback_2d_slice_none(tmp_path):
+    """Test SaveFieldsToHDF5 with no slice (full domain) in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :] = p.ipatch_x * 10 + p.ipatch_y
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=None, components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (32, 32)
+        ref = np.zeros((32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch]
+        np.testing.assert_array_equal(f['ex'][:], ref)
+        assert 'slice' not in f.attrs
+
+
+def test_hdf5_field_callback_2d_slice_int(tmp_path):
+    """Test SaveFieldsToHDF5 with an integer slice along y in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :] = p.ipatch_x * 10 + p.ipatch_y
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, 5], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (32, 1)
+        ref = np.zeros((32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch]
+        np.testing.assert_array_equal(f['ex'][:, 0], ref[:, 5])
+        assert f.attrs['slice'] == '[:, 5]'
+
+
+def test_hdf5_field_callback_2d_slice_stepped(tmp_path):
+    """Test SaveFieldsToHDF5 with stepped slicing in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :] = p.ipatch_x * 10 + p.ipatch_y
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[::2, ::3], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (16, 11)
+        ref = np.zeros((32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch]
+        np.testing.assert_array_equal(f['ex'][:], ref[::2, ::3])
+        assert f.attrs['slice'] == '[::2, ::3]'
+
+
+def test_hdf5_field_callback_2d_slice_tail(tmp_path):
+    """Test SaveFieldsToHDF5 with a tail slice (first half omitted) in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :] = p.ipatch_x * 10 + p.ipatch_y
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[16:, :], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (16, 32)
+        ref = np.zeros((32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch]
+        np.testing.assert_array_equal(f['ex'][:], ref[16:, :])
+
+
+# =============================================================================
+# 3D Slice tests for SaveFieldsToHDF5
+# =============================================================================
+
+def test_hdf5_field_callback_3d_slice_none(tmp_path):
+    """Test SaveFieldsToHDF5 with no slice (full domain) in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :, :] = p.ipatch_x * 100 + p.ipatch_y * 10 + p.ipatch_z
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out3d'), interval=1, slice=None, components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out3d' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (32, 32, 32)
+        ref = np.zeros((32, 32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            iz = p.ipatch_z * sim.nz_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch, iz:iz + sim.nz_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        np.testing.assert_array_equal(f['ex'][:], ref)
+        assert 'slice' not in f.attrs
+
+
+def test_hdf5_field_callback_3d_slice_plane(tmp_path):
+    """Test SaveFieldsToHDF5 with a plane slice in 3D (single z index)."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :, :] = p.ipatch_x * 100 + p.ipatch_y * 10 + p.ipatch_z
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out3d'), interval=1, slice=np.s_[:, :, 10], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out3d' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (32, 32, 1)
+        ref = np.zeros((32, 32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            iz = p.ipatch_z * sim.nz_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch, iz:iz + sim.nz_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        np.testing.assert_array_equal(f['ex'][:, :, 0], ref[:, :, 10])
+        assert f.attrs['slice'] == '[:, :, 10]'
+
+
+def test_hdf5_field_callback_3d_slice_stepped(tmp_path):
+    """Test SaveFieldsToHDF5 with stepped slicing in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :, :] = p.ipatch_x * 100 + p.ipatch_y * 10 + p.ipatch_z
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out3d'), interval=1, slice=np.s_[::2, ::2, ::5], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out3d' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (16, 16, 7)
+        ref = np.zeros((32, 32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            iz = p.ipatch_z * sim.nz_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch, iz:iz + sim.nz_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        np.testing.assert_array_equal(f['ex'][:], ref[::2, ::2, ::5])
+        assert f.attrs['slice'] == '[::2, ::2, ::5]'
+
+
+def test_hdf5_field_callback_3d_slice_tail(tmp_path):
+    """Test SaveFieldsToHDF5 with a tail slice in 3D (first half along x omitted)."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :, :] = p.ipatch_x * 100 + p.ipatch_y * 10 + p.ipatch_z
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out3d'), interval=1, slice=np.s_[16:, :, :], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out3d' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (16, 32, 32)
+        ref = np.zeros((32, 32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            iz = p.ipatch_z * sim.nz_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch, iz:iz + sim.nz_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch, :sim.nz_per_patch]
+        np.testing.assert_array_equal(f['ex'][:], ref[16:, :, :])
+
+
+# =============================================================================
+# Invalid slice edge cases for SaveFieldsToHDF5
+# =============================================================================
+
+def test_hdf5_field_callback_invalid_slice_type(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for invalid slice element type (list)."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=([0, 1], slice(None)), components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_ellipsis(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for Ellipsis in slice."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[..., 10], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_neg_step(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for negative step in slice."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[::-1, :, :], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_axis_mismatch(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for axis count mismatch."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, :], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_empty(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for empty slice (start >= stop)."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[0:0, :, :], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_newaxis(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for None/newaxis in slice."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[None, :, :], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_zero_step(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for zero step in slice."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, ::0, :], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
+
+
+def test_hdf5_field_callback_invalid_slice_out_of_range(tmp_path):
+    """Test SaveFieldsToHDF5 raises ValueError for out-of-range slice start."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    sim.initialize()
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[999:, :, :], components=['ex'])
+    with pytest.raises(ValueError):
+        cb._call(sim)
