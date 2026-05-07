@@ -9,6 +9,7 @@ from lambdapic.callback.hdf5 import (
     SaveSpeciesDensityToHDF5,
     SaveParticlesToHDF5
 )
+from lambdapic.callback.utils import ExtractSpeciesDensity
 
 def test_hdf5_field_callback_2d(tmp_path):
     """Test saving field data to HDF5 in 2D simulation."""
@@ -495,3 +496,75 @@ def test_hdf5_field_callback_invalid_slice_out_of_range(tmp_path):
     cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[999:, :, :], components=['ex'])
     with pytest.raises(ValueError):
         cb._call(sim)
+
+
+def test_extract_density_2d_slice_none(tmp_path):
+    """Test ExtractSpeciesDensity with slice=None (full domain) in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+    cb = ExtractSpeciesDensity(sim, electrons, interval=1, slice=None)
+    sim.run(1, callbacks=[cb])
+    assert cb.density.shape == (32, 32)
+    assert np.isfinite(cb.density).all()
+    assert cb.density.max() > 0
+
+
+def test_extract_density_2d_slice_int(tmp_path):
+    """Test ExtractSpeciesDensity with int slice in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+    cb_full = ExtractSpeciesDensity(sim, electrons, interval=1, slice=None)
+    cb_slice = ExtractSpeciesDensity(sim, electrons, interval=1, slice=np.s_[:, 5])
+    sim.run(1, callbacks=[cb_full, cb_slice])
+    assert cb_slice.density.shape == (32, 1)
+    assert np.allclose(cb_slice.density, cb_full.density[:, 5:6])
+
+
+def test_extract_density_2d_slice_stepped(tmp_path):
+    """Test ExtractSpeciesDensity with stepped slice in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+    cb_full = ExtractSpeciesDensity(sim, electrons, interval=1, slice=None)
+    cb_slice = ExtractSpeciesDensity(sim, electrons, interval=1, slice=np.s_[::2, ::3])
+    sim.run(1, callbacks=[cb_full, cb_slice])
+    assert cb_slice.density.shape == (16, 11)
+    assert np.allclose(cb_slice.density, cb_full.density[::2, ::3])
+
+
+def test_extract_density_3d_slice_none(tmp_path):
+    """Test ExtractSpeciesDensity with slice=None (full domain) in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+    cb = ExtractSpeciesDensity(sim, electrons, interval=1, slice=None)
+    sim.run(1, callbacks=[cb])
+    assert cb.density.shape == (32, 32, 32)
+    assert np.isfinite(cb.density).all()
+    assert cb.density.max() > 0
+
+
+def test_extract_density_3d_slice_plane(tmp_path):
+    """Test ExtractSpeciesDensity with plane slice in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+    cb_full = ExtractSpeciesDensity(sim, electrons, interval=1, slice=None)
+    cb_slice = ExtractSpeciesDensity(sim, electrons, interval=1, slice=np.s_[:, :, 10])
+    sim.run(1, callbacks=[cb_full, cb_slice])
+    assert cb_slice.density.shape == (32, 32, 1)
+    assert np.allclose(cb_slice.density, cb_full.density[:, :, 10:11])
+
+
+def test_extract_density_3d_slice_stepped(tmp_path):
+    """Test ExtractSpeciesDensity with stepped slice in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+    cb_full = ExtractSpeciesDensity(sim, electrons, interval=1, slice=None)
+    cb_slice = ExtractSpeciesDensity(sim, electrons, interval=1, slice=np.s_[::2, ::2, ::5])
+    sim.run(1, callbacks=[cb_full, cb_slice])
+    assert cb_slice.density.shape == (16, 16, 7)
+    assert np.allclose(cb_slice.density, cb_full.density[::2, ::2, ::5])
