@@ -85,6 +85,106 @@ def test_hdf5_species_callback_2d(tmp_path):
         assert 'density' in f
         assert f.attrs['species'] == 'electrons'
 
+# =============================================================================
+# 2D Slice tests for SaveSpeciesDensityToHDF5
+# =============================================================================
+
+def test_hdf5_density_callback_2d_slice_none(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with slice=None (full domain) in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out'), interval=1, slice=None)
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out' / f'electrons_000000.h5', 'r') as f:
+        dset = f['density']
+        assert dset.shape == (32, 32)
+        assert dset[:].size == 32 * 32
+        assert 'slice' not in f.attrs
+        assert f.attrs['species'] == 'electrons'
+
+
+def test_hdf5_density_callback_2d_slice_int(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with an integer slice along y in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, 5])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (32, 1)
+        assert f['density'][:].size == 32
+        assert f.attrs['slice'] == '[:, 5]'
+
+
+def test_hdf5_density_callback_2d_slice_stepped(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with stepped slicing in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[::2, ::3])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (16, 11)
+        assert f['density'][:].size == 176
+        assert f.attrs['slice'] == '[::2, ::3]'
+
+
+# =============================================================================
+# 3D Slice tests for SaveSpeciesDensityToHDF5
+# =============================================================================
+
+def test_hdf5_density_callback_3d_slice_none(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with slice=None (full domain) in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out3d'), interval=1, slice=None)
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out3d' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (32, 32, 32)
+        assert f['density'][:].size == 32 * 32 * 32
+        assert 'slice' not in f.attrs
+
+
+def test_hdf5_density_callback_3d_slice_plane(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with a plane slice in 3D (single z index)."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out3d'), interval=1, slice=np.s_[:, :, 10])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out3d' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (32, 32, 1)
+        assert f['density'][:].size == 32 * 32
+        assert f.attrs['slice'] == '[:, :, 10]'
+
+
+def test_hdf5_density_callback_3d_slice_stepped(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with stepped slicing in 3D."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out3d'), interval=1, slice=np.s_[::2, ::2, ::5])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out3d' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (16, 16, 7)
+        assert f['density'][:].size == 1792
+        assert f.attrs['slice'] == '[::2, ::2, ::5]'
+
+
 def test_hdf5_particles_callback_2d(tmp_path):
     """Test saving particle data to HDF5 in 2D simulation."""
     sim = Simulation(
