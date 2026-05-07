@@ -35,7 +35,7 @@ def _normalize_slice(sim_dim: int, user_slice: tuple[int | slice, ...], dims: tu
         return None
     
     # Wrap single slice or int in tuple
-    if isinstance(user_slice, (slice, int)):
+    if isinstance(user_slice, (slice, int, np.integer)):
         user_slice = (user_slice,)
     
     # Reject Ellipsis
@@ -56,7 +56,7 @@ def _normalize_slice(sim_dim: int, user_slice: tuple[int | slice, ...], dims: tu
     result = []
     for i, s in enumerate(user_slice):
         dim = dims[i]
-        if isinstance(s, int):
+        if isinstance(s, (int, np.integer)):
             # Normalize negative index
             if s < 0:
                 s = dim + s
@@ -615,7 +615,6 @@ class SaveSpeciesDensityToHDF5(Callback):
                     dset = f.create_dataset(
                         'density',
                         data=np.zeros(shape, dtype='f8'),
-                        dtype='f8',
                         chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
                     )
                     for ip, p in enumerate(sim.patches):
@@ -646,12 +645,11 @@ class SaveSpeciesDensityToHDF5(Callback):
                 shape = (len(range(sx.start, sx.stop, sx.step)), len(range(sy.start, sy.stop, sy.step)))
                 if rank == 0:
                     with h5py.File(filename, 'w') as f:
-                        dset = f.create_dataset(
-                            'density',
-                            data=np.zeros(shape, dtype='f8'),
-                            dtype='f8',
-                            chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
-                        )
+                            dset = f.create_dataset(
+                                'density',
+                                data=np.zeros(shape, dtype='f8'),
+                                chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
+                            )
                 comm.Barrier()
 
                 with h5py.File(filename, 'a', locking=False) as f:
@@ -724,7 +722,6 @@ class SaveSpeciesDensityToHDF5(Callback):
                     dset = f.create_dataset(
                         'density',
                         data=np.zeros(shape, dtype='f8'),
-                        dtype='f8',
                         chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
                     )
                     for ip, p in enumerate(sim.patches):
@@ -746,7 +743,6 @@ class SaveSpeciesDensityToHDF5(Callback):
                     dset = f.create_dataset(
                         'density',
                         data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
-                        dtype='f8',
                         chunks=chunk_size
                     )
                     for ip, p in enumerate(sim.patches):
@@ -762,7 +758,6 @@ class SaveSpeciesDensityToHDF5(Callback):
                         dset = f.create_dataset(
                             'density',
                             data=np.zeros(shape, dtype='f8'),
-                            dtype='f8',
                             chunks=tuple(min(c, s) for c, s in zip(chunk_size, shape))
                         )
                 comm.Barrier()
@@ -790,7 +785,6 @@ class SaveSpeciesDensityToHDF5(Callback):
                         dset = f.create_dataset(
                             'density',
                             data=np.zeros((sim.nx, sim.ny, sim.nz), dtype='f8'),
-                            dtype='f8',
                             chunks=chunk_size
                         )
                 comm.Barrier()

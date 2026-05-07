@@ -568,3 +568,85 @@ def test_extract_density_3d_slice_stepped(tmp_path):
     sim.run(1, callbacks=[cb_full, cb_slice])
     assert cb_slice.density.shape == (16, 16, 7)
     assert np.allclose(cb_slice.density, cb_full.density[::2, ::2, ::5])
+
+
+def test_hdf5_field_callback_2d_slice_negative_int(tmp_path):
+    """Test SaveFieldsToHDF5 with a negative integer slice index in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :] = p.ipatch_x * 10 + p.ipatch_y
+
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, -1], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (32, 1)
+        ref = np.zeros((32, 32))
+        for p in sim.patches:
+            ix = p.ipatch_x * sim.nx_per_patch
+            iy = p.ipatch_y * sim.ny_per_patch
+            ref[ix:ix + sim.nx_per_patch, iy:iy + sim.ny_per_patch] = p.fields.ex[:sim.nx_per_patch, :sim.ny_per_patch]
+        np.testing.assert_array_equal(f['ex'][:, 0], ref[:, -1])
+        assert f.attrs['slice'] == '[:, 31]'
+
+
+def test_hdf5_density_callback_2d_slice_negative_int(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with a negative integer slice index in 2D."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, -1])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (32, 1)
+        assert f.attrs['slice'] == '[:, 31]'
+
+
+def test_hdf5_density_callback_3d_slice_tail(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 with a tail slice in 3D (first half along x omitted)."""
+    sim = Simulation3D(nx=32, ny=32, nz=32, dx=0.1, dy=0.1, dz=0.1, npatch_x=2, npatch_y=2, npatch_z=2)
+    electrons = Electron(name="electrons", density=lambda x, y, z: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out3d'), interval=1, slice=np.s_[16:, :, :])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out3d' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (16, 32, 32)
+        assert f.attrs['slice'] == '[16:, :, :]'
+
+
+def test_hdf5_field_callback_numpy_int_slice(tmp_path):
+    """Test SaveFieldsToHDF5 accepts numpy integer types in slice specification."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    sim.initialize()
+    for p in sim.patches:
+        p.fields.ex[:, :] = p.ipatch_x * 10 + p.ipatch_y
+
+    # Use np.int64 explicitly to verify the bug fix
+    idx = np.int64(5)
+    cb = SaveFieldsToHDF5(prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, idx], components=['ex'])
+    cb._call(sim)
+
+    with h5py.File(tmp_path / 'out' / '000000.h5', 'r') as f:
+        assert f['ex'].shape == (32, 1)
+        assert f.attrs['slice'] == '[:, 5]'
+
+
+def test_hdf5_density_callback_numpy_int_slice(tmp_path):
+    """Test SaveSpeciesDensityToHDF5 accepts numpy integer types in slice specification."""
+    sim = Simulation(nx=32, ny=32, dx=0.1, dy=0.1, npatch_x=2, npatch_y=2, dt_cfl=0.95)
+    electrons = Electron(name="electrons", density=lambda x, y: 1.0, ppc=4)
+    sim.add_species([electrons])
+
+    # Use np.int64 explicitly to verify the bug fix
+    idx = np.int64(5)
+    cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out'), interval=1, slice=np.s_[:, idx])
+    sim.run(1, callbacks=[cb])
+
+    with h5py.File(tmp_path / 'out' / 'electrons_000000.h5', 'r') as f:
+        assert f['density'].shape == (32, 1)
+        assert f.attrs['slice'] == '[:, 5]'
