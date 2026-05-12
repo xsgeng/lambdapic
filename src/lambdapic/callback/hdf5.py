@@ -164,9 +164,8 @@ def _serialize_slice(normalized_slice: tuple, dims: tuple) -> str:
 class _HDF5SliceWriter:
     """Encapsulates parallel HDF5 write logic for multi-component field/density data with slice support."""
 
-    def __init__(self, mpi: bool, barrier_after_create: bool = False):
+    def __init__(self, mpi: bool):
         self.mpi = mpi
-        self.barrier_after_create = barrier_after_create
 
     def write(
         self,
@@ -218,8 +217,7 @@ class _HDF5SliceWriter:
         with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
             for comp in components:
                 dset = f.create_dataset(comp, data=np.zeros(shape, dtype='f8'), chunks=chunk_size)
-                if self.barrier_after_create:
-                    comm.Barrier()
+                comm.Barrier()
                 for ip, p in enumerate(sim.patches):
                     offsets = self._patch_offsets(p, sim, ndim)
                     slices_info = [
@@ -368,9 +366,10 @@ class SaveFieldsToHDF5(Callback):
                 f.attrs['itime'] = sim.itime
                 if self._normalized_slice is not None:
                     f.attrs['slice'] = _serialize_slice(self._normalized_slice, (sim.nx, sim.ny))
+        comm.Barrier()
                 
     def _write_3d(self, sim: Simulation3D, filename: Path):
-        writer = _HDF5SliceWriter(mpi=self.mpi, barrier_after_create=True)
+        writer = _HDF5SliceWriter(mpi=self.mpi)
         writer.write(
             filename, sim, self.components,
             lambda ip, p, comp: getattr(p.fields, comp),
@@ -519,6 +518,7 @@ class SaveSpeciesDensityToHDF5(Callback):
                 f.attrs['Ly'] = sim.Ly
                 if self._normalized_slice is not None:
                     f.attrs['slice'] = _serialize_slice(self._normalized_slice, (sim.nx, sim.ny))
+        comm.Barrier()
 
     def _write_3d(self, sim: Simulation3D, density_per_patch: List[np.ndarray], filename: Path):
         writer = _HDF5SliceWriter(mpi=self.mpi)
@@ -545,6 +545,7 @@ class SaveSpeciesDensityToHDF5(Callback):
                 f.attrs['Lz'] = sim.Lz
                 if self._normalized_slice is not None:
                     f.attrs['slice'] = _serialize_slice(self._normalized_slice, (sim.nx, sim.ny, sim.nz))
+        comm.Barrier()
 
 class SaveParticlesToHDF5(Callback):
     """Callback to save particle data to HDF5 files.
