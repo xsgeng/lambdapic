@@ -174,12 +174,13 @@ class _HDF5SliceWriter:
         components: list[str],
         patch_data_fn: Callable[[int, object, str], np.ndarray],
         normalized_slice: tuple[slice, ...] | None,
+        pre_sliced: bool = False,
     ):
         """Write multi-component data to HDF5, handling 2D/3D, MPI/non-MPI, and optional slicing."""
         if sim.dimension == 2:
-            self._write_nd(filename, sim, components, patch_data_fn, normalized_slice, 2)
+            self._write_nd(filename, sim, components, patch_data_fn, normalized_slice, 2, pre_sliced)
         elif sim.dimension == 3:
-            self._write_nd(filename, sim, components, patch_data_fn, normalized_slice, 3)
+            self._write_nd(filename, sim, components, patch_data_fn, normalized_slice, 3, pre_sliced)
 
     def _write_nd(
         self,
@@ -189,6 +190,7 @@ class _HDF5SliceWriter:
         patch_data_fn: Callable[[int, object, str], np.ndarray],
         normalized_slice: tuple[slice, ...] | None,
         ndim: int,
+        pre_sliced: bool = False,
     ):
         comm = sim.mpi.comm
         rank = comm.Get_rank()
@@ -207,12 +209,12 @@ class _HDF5SliceWriter:
         chunk_size = tuple(min(c, s) for c, s in zip(per_patch, shape))
 
         if self.mpi:
-            self._write_mpi(filename, sim, comm, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size)
+            self._write_mpi(filename, sim, comm, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size, pre_sliced)
         else:
-            self._write_non_mpi(filename, sim, comm, rank, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size)
+            self._write_non_mpi(filename, sim, comm, rank, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size, pre_sliced)
 
     def _write_mpi(
-        self, filename, sim, comm, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size,
+        self, filename, sim, comm, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size, pre_sliced: bool = False,
     ):
         with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
             for comp in components:
@@ -231,12 +233,13 @@ class _HDF5SliceWriter:
                     nums = [si[2] for si in slices_info]
 
                     data = patch_data_fn(ip, p, comp)
-                    data = data[tuple(local_slices)]
+                    if not pre_sliced:
+                        data = data[tuple(local_slices)]
                     out_idx = tuple(slice(o, o + n) for o, n in zip(out_starts, nums))
                     dset[out_idx] = data
 
     def _write_non_mpi(
-        self, filename, sim, comm, rank, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size,
+        self, filename, sim, comm, rank, components, patch_data_fn, normalized_slice, ndim, dims, per_patch, shape, chunk_size, pre_sliced: bool = False,
     ):
         if rank == 0:
             with h5py.File(filename, 'w') as f:
@@ -260,7 +263,8 @@ class _HDF5SliceWriter:
                     nums = [si[2] for si in slices_info]
 
                     data = patch_data_fn(ip, p, comp)
-                    data = data[tuple(local_slices)]
+                    if not pre_sliced:
+                        data = data[tuple(local_slices)]
                     out_idx = tuple(slice(o, o + n) for o, n in zip(out_starts, nums))
                     dset[out_idx] = data
         comm.Barrier()
@@ -458,7 +462,7 @@ class SaveSpeciesDensityToHDF5(Callback):
         if self.ispec_target == 0:
             if sim.ispec == 0:
                 sim.sync_currents()
-                density = self._compute_density(sim)
+                density = self._compute_density(sim, self._normalized_slice)
                 if sim.dimension == 2:
                     self._write_2d(sim, density, filename)
                 elif sim.dimension == 3:
@@ -466,34 +470,94 @@ class SaveSpeciesDensityToHDF5(Callback):
         else:
             if sim.ispec == self.ispec_target - 1:
                 sim.sync_currents()
-                self.prev_rho = []
-                for p in sim.patches:
-                    self.prev_rho.append(p.fields.rho.copy())
+                self.prev_rho = self._extract_prev_rho(sim, self._normalized_slice)
             elif sim.ispec == self.ispec_target:
                 sim.sync_currents()
-                density = self._compute_density(sim)
+                density = self._compute_density(sim, self._normalized_slice)
                 if sim.dimension == 2:
                     self._write_2d(sim, density, filename)
                 elif sim.dimension == 3:
                     self._write_3d(sim, density, filename)
                 self.prev_rho = None
 
-    def _compute_density(self, sim: Union[Simulation, Simulation3D]) -> List[np.ndarray]:
-        """Compute density from charge density for all patches.
+    def _extract_prev_rho(self, sim: Union[Simulation, Simulation3D], normalized_slice: tuple[slice, ...] | None) -> List[np.ndarray | None]:
+        if normalized_slice is None:
+            if sim.dimension == 2:
+                return [p.fields.rho[:p.fields.nx, :p.fields.ny].copy() for p in sim.patches]
+            else:
+                return [p.fields.rho[:p.fields.nx, :p.fields.ny, :p.fields.nz].copy() for p in sim.patches]
 
-        Args:
-            sim (Union[Simulation, Simulation3D]): The simulation object containing field data
+        ndim = sim.dimension
+        if ndim == 2:
+            dims = (sim.nx, sim.ny)
+            per_patch = (sim.nx_per_patch, sim.ny_per_patch)
+        else:
+            dims = (sim.nx, sim.ny, sim.nz)
+            per_patch = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
 
-        Returns:
-            List[np.ndarray]: List of density arrays (one per patch)
-        """
+        prev_rho = []
+        for ip, p in enumerate(sim.patches):
+            offsets = _HDF5SliceWriter._patch_offsets(p, sim, ndim)
+            slices_info = [
+                _compute_patch_slice(d, s, o, pp)
+                for d, s, o, pp in zip(dims, normalized_slice, offsets, per_patch)
+            ]
+            if any(si is None for si in slices_info):
+                if ndim == 2:
+                    prev_rho.append(np.zeros((0, 0)))
+                else:
+                    prev_rho.append(np.zeros((0, 0, 0)))
+                continue
+
+            local_slices = tuple(si[0] for si in slices_info)
+            prev_rho.append(p.fields.rho[local_slices].copy())
+
+        return prev_rho
+
+    def _compute_density(self, sim: Union[Simulation, Simulation3D], normalized_slice: tuple[slice, ...] | None) -> List[np.ndarray | None]:
+        if normalized_slice is None:
+            density = []
+            for ip, p in enumerate(sim.patches):
+                if sim.dimension == 2:
+                    rho = p.fields.rho[:p.fields.nx, :p.fields.ny]
+                else:
+                    rho = p.fields.rho[:p.fields.nx, :p.fields.ny, :p.fields.nz]
+                if self.ispec_target == 0:
+                    d = rho / self.species.q
+                else:
+                    d = (rho - self.prev_rho[ip]) / self.species.q
+                density.append(d)
+            return density
+
+        ndim = sim.dimension
+        if ndim == 2:
+            dims = (sim.nx, sim.ny)
+            per_patch = (sim.nx_per_patch, sim.ny_per_patch)
+        else:
+            dims = (sim.nx, sim.ny, sim.nz)
+            per_patch = (sim.nx_per_patch, sim.ny_per_patch, sim.nz_per_patch)
+
         density = []
         for ip, p in enumerate(sim.patches):
+            offsets = _HDF5SliceWriter._patch_offsets(p, sim, ndim)
+            slices_info = [
+                _compute_patch_slice(d, s, o, pp)
+                for d, s, o, pp in zip(dims, normalized_slice, offsets, per_patch)
+            ]
+            if any(si is None for si in slices_info):
+                if ndim == 2:
+                    density.append(np.zeros((0, 0)))
+                else:
+                    density.append(np.zeros((0, 0, 0)))
+                continue
+
+            local_slices = tuple(si[0] for si in slices_info)
             if self.ispec_target == 0:
-                d = p.fields.rho / self.species.q
+                rho = p.fields.rho[local_slices]
             else:
-                d = (p.fields.rho - self.prev_rho[ip]) / self.species.q
-            density.append(d)
+                rho = p.fields.rho[local_slices] - self.prev_rho[ip]
+            density.append(rho / self.species.q)
+
         return density
 
     def _write_2d(self, sim: Simulation, density_per_patch: List[np.ndarray], filename: Path):
@@ -502,6 +566,7 @@ class SaveSpeciesDensityToHDF5(Callback):
             filename, sim, ['density'],
             lambda ip, p, comp: density_per_patch[ip],
             self._normalized_slice,
+            pre_sliced=True,
         )
         comm = sim.mpi.comm
         rank = comm.Get_rank()
@@ -526,6 +591,7 @@ class SaveSpeciesDensityToHDF5(Callback):
             filename, sim, ['density'],
             lambda ip, p, comp: density_per_patch[ip],
             self._normalized_slice,
+            pre_sliced=True,
         )
         comm = sim.mpi.comm
         rank = comm.Get_rank()
