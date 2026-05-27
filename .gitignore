@@ -51,3 +51,5 @@ benchmark/
 
 __*/
 *.txt
+
+docs/_build

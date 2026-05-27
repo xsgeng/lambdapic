@@ -13,6 +13,13 @@ The :code:`interval` specifies how frequent the callback should be called. It ca
 
 By passing to the :code:`sim.run(1000, callbacks=[your callbacks])`, they will be sequentially called by the :code:`Simulation.run` method.
 
+.. note::
+    The :code:`@callback` decorator and :code:`Callback` base class detect whether the process
+    is running in a terminal (via :code:`is_terminal()`). In an interactive terminal, a yaspin
+    spinner is displayed during callback execution. In non-terminal environments (e.g. batch
+    jobs, pipes, or log files), callback execution is logged via the logger instead. Built-in
+    callbacks inheriting from :code:`Callback` share this terminal-aware behavior.
+
 .. autoclass:: lambdapic.callback.callback.callback
 
 Hello world
