@@ -9,7 +9,6 @@ Porject repository: https://github.com/xsgeng/lambdapic
    introduction
    installation
    example
-   AI_prompt
    api
    write_callbacks
    extension

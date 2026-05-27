@@ -83,7 +83,7 @@ def npho(sim: Simulation):
     if sim.mpi.rank == 0:
         logger.info(f"nphoton = {npart}")
 
-@callback("current deposition", interval=interval)
+@callback("current_deposition", interval=interval)
 def prune(sim: Simulation):
     for ipatch, p in enumerate(sim.patches):
         p.particles[sim.ispec].prune()

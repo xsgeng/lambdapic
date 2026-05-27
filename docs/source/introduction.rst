@@ -29,11 +29,14 @@ The package provides built-in callbacks for common diagnostics, such as saving t
 
 - Optimized PIC kernels (C/`Numba <https://github.com/numba/numba>`_ accelerated)
 - Load balancing via graph partitioning with `METIS <https://github.com/KarypisLab/METIS>`_
+- Automatic dynamic load balancing during simulation run via :class:`LoadBalancer`
+- Integrated progress bar with terminal/log detection via :class:`ProgressBar`
 - Efficient particle memory management via :code:`is_dead` flag
+- HDF5 output supports slice selection for saving domain subsets
 
 **Physics**:
 
-- Built-in support for intense laser interactions
+- Built-in support for intense laser interactions with angle, offset, CEP, and addition
 - QED processes (photon emission, pair production)
 - Efficient user-defined profile evaluation via Numba jit
 - [WIP] Collision & Nuclear physics
@@ -43,7 +46,7 @@ The package provides built-in callbacks for common diagnostics, such as saving t
 - Protocol-oriented simulation stages
 - Zero-core-modification plugin system
 - Callback-driven physics process prototyping
-- Custom PIC construction using :code:`lambdapic.core`
+- Custom PIC construction using :code:`lambdapic.core` submodules (:code:`mpi`, :code:`utils`)
 
 Code Organization
 -----------------

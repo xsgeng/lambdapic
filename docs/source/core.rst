@@ -6,3 +6,5 @@ Core Classes
 
     core/particles
     core/fields
+    core/mpi
+    core/utils
