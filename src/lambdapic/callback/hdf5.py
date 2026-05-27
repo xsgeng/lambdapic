@@ -1,5 +1,4 @@
 import math
-import os
 from pathlib import Path
 from typing import Callable, List, Optional, Set, Union
 
@@ -317,7 +316,7 @@ class SaveFieldsToHDF5(Callback):
         self.mpi = mpi
 
         self.prefix.mkdir(parents=True, exist_ok=True)
-        
+
         # Available field components
         self.all_components = {'ex','ey','ez','bx','by','bz','jx','jy','jz','rho'}
         if components is None:
@@ -328,9 +327,7 @@ class SaveFieldsToHDF5(Callback):
             if invalid:
                 raise ValueError(f"Invalid field components: {invalid}")
             self.components = list(components)
-            
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
+
         self.slice = slice
         self._normalized_slice = None
         
@@ -422,8 +419,9 @@ class SaveSpeciesDensityToHDF5(Callback):
             ``slice=np.s_[500:, :, :]``). Accepts any ``np.s_``-style tuple of ints and/or slices.
             If None, saves the full domain. Defaults to None.
     """
-    stage = "current_deposition"
+    DEFAULT_STAGE = "current_deposition"
     def __init__(self, species: Species, prefix: Union[str, Path]='', interval: Union[int, float, Callable] = 100, mpi: bool = False, slice: tuple[int | slice, ...] | None = None):
+        self.stage = self.DEFAULT_STAGE
         self.species = species
         self.prefix = Path(prefix)
         self.prefix.mkdir(parents=True, exist_ok=True)
@@ -434,7 +432,6 @@ class SaveSpeciesDensityToHDF5(Callback):
         self.species = species
         self.slice = slice
         self._normalized_slice = None
-        os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
 
     @property
     def ispec_target(self) -> int:
@@ -650,14 +647,11 @@ class SaveParticlesToHDF5(Callback):
         self.interval = interval
         self.attrs = attrs
         self.species = species
-        
+
         if self.attrs is None:
             logger.warning("No attributes specified, saving all attributes.")
         elif 'id' in self.attrs:
             self.attrs.remove('id')
-        
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(os.path.abspath(prefix)), exist_ok=True)
     
     def _call(self, sim: Union[Simulation, Simulation3D]):
         if self.attrs is None:
