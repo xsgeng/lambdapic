@@ -50,7 +50,7 @@ class PlotFields(Callback):
         ...     extract_ne,
         ...     PlotFields(field_configs, prefix='plots', interleval=100)])
     """
-    stage = "maxwell_2"
+    DEFAULT_STAGE = "end"
 
     def __init__(self,
                  field_configs: List[Dict],
@@ -58,6 +58,7 @@ class PlotFields(Callback):
                  interval: Union[int, float, Callable] = 100,
                  figsize: tuple | None = None,
                  dpi: int = 300):
+        self.stage = self.DEFAULT_STAGE
         self.prefix = Path(prefix)
         self.field_configs = field_configs
         self.interval = interval
