@@ -8,8 +8,9 @@ from ..core.fields import Fields
 from ..core.patch.patch import Patch, Patch2D, Patch3D
 from numba import njit, prange, typed
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
+from scipy.special import genlaguerre, factorial
 from numpy.typing import NDArray
-
+ 
 from ..simulation import Simulation, Simulation3D, Simulation2D
 from ..core.utils.jit_spinner import jit_spinner
 
@@ -89,6 +90,10 @@ class Laser:
         """Calculate the radial distance from the center of the laser beam."""
         raise NotImplementedError
     
+    def _get_phi(self, sim, patch: Patch) -> NDArray[np.float64]:
+        """Calculate the azimuthal angle from the center of the laser beam."""
+        raise NotImplementedError
+        
     def _get_boundary_coordinates(self, sim: Simulation, patch: Patch):
         """Get the coordinates of the boundary. Centered to y0 and z0"""
         raise NotImplementedError
@@ -151,6 +156,12 @@ class Laser2D(Laser):
         r = abs(f.yaxis[0, :] - sim.dy/2 - y0)
         return r
     
+    def _get_phi(self, sim: Simulation2D, patch: Patch2D) -> NDArray[np.float64]:
+        f = patch.fields
+        y0 = self.y0 or sim.Ly/2
+        phi = np.arctan2(0.0, f.yaxis[0, :] - sim.dy/2 - y0)
+        return phi
+        
     def _get_boundary_coordinates(self, sim: Simulation2D, patch: Patch2D):
         f = patch.fields
         y0 = self.y0 or sim.Ly/2
@@ -186,6 +197,14 @@ class Laser3D(Laser):
              (f.zaxis[0, :, :] - sim.dz/2 - z0)**2)**0.5
         return r
     
+    def _get_phi(self, sim: Simulation3D, patch: Patch3D) -> NDArray[np.float64]:
+        f = patch.fields
+        y0 = self.y0 or sim.Ly/2
+        z0 = self.z0 or sim.Lz/2
+        phi = np.arctan2(f.zaxis[0, :, :] - sim.dz/2 - z0,
+                         f.yaxis[0, :, :] - sim.dy/2 - y0)
+        return phi
+        
     def _get_boundary_coordinates(self, sim: Simulation3D, patch: Patch3D):
         f = patch.fields
         y0 = self.y0 or sim.Ly/2
@@ -279,7 +298,7 @@ class SimpleLaser(Laser):
             angle_y: incident angle with boundary normal in y direction (default: 0)
             angle_z: NOT IMPLEMENTED. Must be 0.
             tstop: Time at which the laser pulse should stop (default: 2*ctau)
-            pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            pol_angle: Polarization angle in radians (default: 0.0 for y-polarization)
             cep: Carrier envelope phase (default: 0.0)
             l0: Laser wavelength (default: 800nm)
         
@@ -362,16 +381,16 @@ class SimpleLaser3D(Laser3D, SimpleLaser):
 class GaussianLaser(Laser):
     r"""
     Implementation of a proper Gaussian laser beam with full physics including:
-    
+
     - Gaussian temporal and spatial profiles
     - Proper beam waist evolution (:math:`w(z) = w_0\sqrt{1 + (z/z_R)^2}`)
     - Gouy phase (:math:`tan^{-1}(z/z_R)`)
     - Wavefront curvature (:math:`R(z) = z(1 + (z_R/z)^2)`)
     - Correct phase evolution including propagation and curvature terms
+    - Laguerre-Gaussian (LG) beam modes via ``l`` and ``p`` parameters
 
     Use GaussianLaser2D or GaussianLaser3D for 2D and 3D simulations, respectively.
-    
-    
+
     Note:
         This implementation provides more accurate physics than SimpleLaser,
         including proper beam evolution and phase effects. Use this for
@@ -380,7 +399,9 @@ class GaussianLaser(Laser):
     def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
                  x0: float|None=None, y0: float|None=None, z0: float|None=None,
                  tstop: float|None=None, pol_angle: float = 0.0, cep: float = 0.0,
-                 focus_position: float = 0.0, side: str = "xmin"):
+                 focus_position: float = 0.0, side: str = "xmin",
+                 l: int=0, p: int=0, # Laguerre Gaussian laser index
+                 ):
         """
         Parameters:
             a0: Normalized vector potential amplitude
@@ -391,20 +412,27 @@ class GaussianLaser(Laser):
             y0: y position of the laser center (default: 0)
             z0: z position of the laser center (default: 0). No effect for 2D laser.
             tstop: Time to stop injection (default: 6*ctau)
-            pol_angle: Polarization angle in radians (default: 0.0 for z-polarization)
+            pol_angle: Polarization angle in radians (default: 0.0 for y-polarization)
             cep: Carrier envelope phase (default: 0.0)
             focus_position: Position of laser focus relative to boundary (default: 0.0)
             side: Injection boundary ('xmin' or 'xmax') (default: 'xmin')
+            l: Azimuthal index of Laguerre-Gaussian laser (default: 0)
+            p: Number of radial nodes of Laguerre-Gaussian laser (default: 0)
         """
         super().__init__()
 
         # Parameter validation
-        if any(p <= 0 for p in [a0, l0, w0, ctau]):
+        if any(par <= 0 for par in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
         
         if side not in ["xmin"]:
             raise ValueError("Invalid side: only 'xmin' is implemented.")
             
+        if not isinstance(p, int) or p < 0:
+            raise ValueError("Number of radial nodes p must be a non-negative integer")
+
+        if not isinstance(l, int):
+            raise ValueError("Azimuthal index l must be an integer")
         self.a0 = a0
         self.l0 = l0
         self.omega0 = 2 * pi * c / l0
@@ -424,6 +452,16 @@ class GaussianLaser(Laser):
         # Derived parameters
         self.zR = pi * w0**2 / l0  # Rayleigh length
         
+        # LG parameters
+        self._is_lg = False
+        self.l = l
+        self.p = p
+        if l != 0 or p > 0:
+            self._is_lg = True
+            self.lg_norm = np.sqrt(2 * factorial(p) / (pi * factorial(p + abs(l))))
+            self.lg_norm /= np.sqrt(2/pi) # let GS (p=0, l=0) norm=1
+            self.laguerre = genlaguerre(self.p, abs(self.l))
+
     def _gaussian_beam_params(self, z):
         """Calculate Gaussian beam parameters at position z"""
         # Normalized distance from focus
@@ -456,13 +494,24 @@ class GaussianLaser(Laser):
         # r is 2D or 3D depending on the simulation dimension
         r = self._get_r(sim, patch)
 
+        # lg mode
+        if self._is_lg:
+            phi = self._get_phi(sim, patch)
+            amp_lg = self.lg_norm * (np.sqrt(2)*r/boundary_w)**abs(self.l) \
+                     * self.laguerre((np.sqrt(2)*r/boundary_w)**2)
+            phase_lg = self.l * phi
+        else:
+            amp_lg = 1.0
+            phase_lg = 0.0
+
         # Calculate amplitude and phase
-        amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2)
+        amp = self.E0 * (self.w0/boundary_w) * np.exp(-r**2/boundary_w**2) * amp_lg
         phase_curv = self.k0 * r**2/(2*boundary_R)
         phase = (self.omega0 * time + self.cep -          # Oscillation
                 self.k0 * x_rel -             # Propagation
                 phase_curv -                  # Curvature
-                boundary_psi)                  # Gouy phase
+                (2*self.p+abs(self.l)+1) * boundary_psi # Gouy phase
+                - phase_lg)                  # Vortex
 
         # Set fields based on polarization
         efield = amp * np.sin(phase) * tprof

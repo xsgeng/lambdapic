@@ -78,6 +78,8 @@ Gaussian laser
 
 Use :any:`GaussianLaser2D` or :any:`GaussianLaser3D`.
 
+Supports Laguerre-Gaussian (LG) beam modes via the ``l`` (azimuthal index) and ``p`` (number of radial nodes) parameters. When both are zero (the default), a standard Gaussian beam is injected.
+
 .. autoclass:: lambdapic.callback.laser.GaussianLaser
 .. autoclass:: lambdapic.callback.laser.GaussianLaser2D
 .. autoclass:: lambdapic.callback.laser.GaussianLaser3D
