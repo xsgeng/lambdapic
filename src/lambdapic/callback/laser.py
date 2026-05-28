@@ -381,16 +381,16 @@ class SimpleLaser3D(Laser3D, SimpleLaser):
 class GaussianLaser(Laser):
     r"""
     Implementation of a proper Gaussian laser beam with full physics including:
-    
+
     - Gaussian temporal and spatial profiles
     - Proper beam waist evolution (:math:`w(z) = w_0\sqrt{1 + (z/z_R)^2}`)
     - Gouy phase (:math:`tan^{-1}(z/z_R)`)
     - Wavefront curvature (:math:`R(z) = z(1 + (z_R/z)^2)`)
     - Correct phase evolution including propagation and curvature terms
+    - Laguerre-Gaussian (LG) beam modes via ``l`` and ``p`` parameters
 
     Use GaussianLaser2D or GaussianLaser3D for 2D and 3D simulations, respectively.
-    
-    
+
     Note:
         This implementation provides more accurate physics than SimpleLaser,
         including proper beam evolution and phase effects. Use this for
