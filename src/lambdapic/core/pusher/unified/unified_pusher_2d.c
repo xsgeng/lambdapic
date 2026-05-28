@@ -7,14 +7,12 @@
 #include "../../current/current_deposit.h"
 
 
-inline static void boris(
-    double* ux, double* uy, double* uz, double* inv_gamma,
+__attribute__((always_inline)) inline static void boris(
+    double* restrict ux, double* restrict uy, double* restrict uz, double* restrict inv_gamma,
     double Ex, double Ey, double Ez,
     double Bx, double By, double Bz,
-    double q, double m, double dt
+    double efactor, double bfactor
 ) {
-    const double efactor = q * dt / (2 * m * LIGHT_SPEED);
-    const double bfactor = q * dt / (2 * m);
 
     // E field half acceleration
     double ux_minus = *ux + efactor * Ex;
@@ -47,76 +45,107 @@ inline static void boris(
     *inv_gamma = 1.0 / sqrt(1 + (*ux) * (*ux) + (*uy) * (*uy) + (*uz) * (*uz));
 }
 
-inline static void push_position_2d(
-    double* x, double* y,
+__attribute__((always_inline)) inline static void push_position_2d(
+    double* restrict x, double* restrict y,
     double ux, double uy,
     double inv_gamma,
-    double dt
+    double cdt
 ) {
-    const double cdt = LIGHT_SPEED * dt;
     *x += cdt * inv_gamma * ux;
     *y += cdt * inv_gamma * uy;
 }
 
 
-inline static void get_gx(double delta, double* gx) {
+__attribute__((always_inline)) inline static void get_gx(double delta, double* gx) {
     double delta2 = delta * delta;
     gx[0] = 0.5 * (0.25 + delta2 + delta);
     gx[1] = 0.75 - delta2;
     gx[2] = 0.5 * (0.25 + delta2 - delta);
 }
 
-inline static double interp_field(double* field, double* fac1, double* fac2, npy_intp ix, npy_intp iy, npy_intp nx, npy_intp ny) {
-    double field_part = 
-          fac2[0] * (fac1[0] * field[INDEX2(ix-1, iy-1)] 
-        +            fac1[1] * field[INDEX2(ix,   iy-1)] 
+// Slow path: uses INDEX2 with periodic boundary checks
+__attribute__((always_inline)) inline static double interp_field_safe(double* restrict field, double* restrict fac1, double* restrict fac2, npy_intp ix, npy_intp iy, npy_intp nx, npy_intp ny) {
+    double field_part =
+          fac2[0] * (fac1[0] * field[INDEX2(ix-1, iy-1)]
+        +            fac1[1] * field[INDEX2(ix,   iy-1)]
         +            fac1[2] * field[INDEX2(ix+1, iy-1)])
-        + fac2[1] * (fac1[0] * field[INDEX2(ix-1, iy  )] 
-        +            fac1[1] * field[INDEX2(ix,   iy  )] 
-        +            fac1[2] * field[INDEX2(ix+1, iy  )]) 
-        + fac2[2] * (fac1[0] * field[INDEX2(ix-1, iy+1)] 
-        +            fac1[1] * field[INDEX2(ix,   iy+1)] 
+        + fac2[1] * (fac1[0] * field[INDEX2(ix-1, iy  )]
+        +            fac1[1] * field[INDEX2(ix,   iy  )]
+        +            fac1[2] * field[INDEX2(ix+1, iy  )])
+        + fac2[2] * (fac1[0] * field[INDEX2(ix-1, iy+1)]
+        +            fac1[1] * field[INDEX2(ix,   iy+1)]
         +            fac1[2] * field[INDEX2(ix+1, iy+1)]);
     return field_part;
 }
 
-inline static void interpolation_2d(
-    double x, double y, 
-    double* ex_part, double* ey_part, double* ez_part, 
-    double* bx_part, double* by_part, double* bz_part, 
-    double* ex, double* ey, double* ez, 
-    double* bx, double* by, double* bz, 
-    double dx, double dy, double x0, double y0, 
+__attribute__((always_inline)) inline static double interp_field_fast(
+    double* restrict field, double* restrict fac1, double* restrict fac2,
+    int ix, int iy, int ny
+) {
+    int im1 = (ix - 1) * ny, i0 = ix * ny, ip1 = (ix + 1) * ny;
+    int jm1 = iy - 1, j0 = iy, jp1 = iy + 1;
+    return fac2[0] * (fac1[0] * field[im1 + jm1] + fac1[1] * field[i0 + jm1] + fac1[2] * field[ip1 + jm1])
+         + fac2[1] * (fac1[0] * field[im1 + j0]  + fac1[1] * field[i0 + j0]  + fac1[2] * field[ip1 + j0])
+         + fac2[2] * (fac1[0] * field[im1 + jp1] + fac1[1] * field[i0 + jp1] + fac1[2] * field[ip1 + jp1]);
+}
+
+__attribute__((always_inline)) inline static void interpolation_2d(
+    double x, double y,
+    double* restrict ex_part, double* restrict ey_part, double* restrict ez_part,
+    double* restrict bx_part, double* restrict by_part, double* restrict bz_part,
+    double* restrict ex, double* restrict ey, double* restrict ez,
+    double* restrict bx, double* restrict by, double* restrict bz,
+    double inv_dx, double inv_dy, double x0, double y0,
     npy_intp nx, npy_intp ny
 ) {
-    
+
     double gx[3];
     double gy[3];
     double hx[3];
     double hy[3];
-    
-    double x_over_dx = (x - x0) / dx;
-    double y_over_dy = (y - y0) / dy;
 
-    npy_intp ix1 = (int)floor(x_over_dx + 0.5);
-    get_gx(ix1 - x_over_dx, gx);
+    double x_over_dx = (x - x0) * inv_dx;
+    double y_over_dy = (y - y0) * inv_dy;
 
-    npy_intp ix2 = (int)floor(x_over_dx);
-    get_gx(ix2 - x_over_dx + 0.5, hx);
+    // Fast pre-computation with (int) - safe if result passes bounds check
+    int ix1_fast = (int)(x_over_dx + 0.5);
+    int ix2_fast = (int)x_over_dx;
+    int iy1_fast = (int)(y_over_dy + 0.5);
+    int iy2_fast = (int)y_over_dy;
 
-    npy_intp iy1 = (int)floor(y_over_dy + 0.5);
-    get_gx(iy1 - y_over_dy, gy);
+    int use_fast_path = (ix2_fast > 0 && ix2_fast < nx - 1 && ix1_fast > 0 && ix1_fast < nx - 1 &&
+                         iy2_fast > 0 && iy2_fast < ny - 1 && iy1_fast > 0 && iy1_fast < ny - 1);
 
-    npy_intp iy2 = (int)floor(y_over_dy);
-    get_gx(iy2 - y_over_dy + 0.5, hy);
+    if (use_fast_path) {
+        get_gx(ix1_fast - x_over_dx, gx);
+        get_gx(ix2_fast - x_over_dx + 0.5, hx);
+        get_gx(iy1_fast - y_over_dy, gy);
+        get_gx(iy2_fast - y_over_dy + 0.5, hy);
 
-    *ex_part = interp_field(ex, hx, gy, ix2, iy1, nx, ny);
-    *ey_part = interp_field(ey, gx, hy, ix1, iy2, nx, ny);
-    *ez_part = interp_field(ez, gx, gy, ix1, iy1, nx, ny);
+        *ex_part = interp_field_fast(ex, hx, gy, ix2_fast, iy1_fast, ny);
+        *ey_part = interp_field_fast(ey, gx, hy, ix1_fast, iy2_fast, ny);
+        *ez_part = interp_field_fast(ez, gx, gy, ix1_fast, iy1_fast, ny);
+        *bx_part = interp_field_fast(bx, gx, hy, ix1_fast, iy2_fast, ny);
+        *by_part = interp_field_fast(by, hx, gy, ix2_fast, iy1_fast, ny);
+        *bz_part = interp_field_fast(bz, hx, hy, ix2_fast, iy2_fast, ny);
+    } else {
+        npy_intp ix1 = (int)floor(x_over_dx + 0.5);
+        get_gx(ix1 - x_over_dx, gx);
+        npy_intp ix2 = (int)floor(x_over_dx);
+        get_gx(ix2 - x_over_dx + 0.5, hx);
+        npy_intp iy1 = (int)floor(y_over_dy + 0.5);
+        get_gx(iy1 - y_over_dy, gy);
+        npy_intp iy2 = (int)floor(y_over_dy);
+        get_gx(iy2 - y_over_dy + 0.5, hy);
 
-    *bx_part = interp_field(bx, gx, hy, ix1, iy2, nx, ny);
-    *by_part = interp_field(by, hx, gy, ix2, iy1, nx, ny);
-    *bz_part = interp_field(bz, hx, hy, ix2, iy2, nx, ny);
+        *ex_part = interp_field_safe(ex, hx, gy, ix2, iy1, nx, ny);
+        *ey_part = interp_field_safe(ey, gx, hy, ix1, iy2, nx, ny);
+        *ez_part = interp_field_safe(ez, gx, gy, ix1, iy1, nx, ny);
+
+        *bx_part = interp_field_safe(bx, gx, hy, ix1, iy2, nx, ny);
+        *by_part = interp_field_safe(by, hx, gy, ix2, iy1, nx, ny);
+        *bz_part = interp_field_safe(bz, hx, hy, ix2, iy2, nx, ny);
+    }
 }
 
 
@@ -178,44 +207,88 @@ static PyObject* unified_boris_pusher_cpu_2d(PyObject* self, PyObject* args) {
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        for (npy_intp ip = 0; ip < npart[ipatch]; ip++) {
-            if (is_dead[ipatch][ip]) continue;
-            if (isnan(x[ipatch][ip]) || isnan(y[ipatch][ip])) continue;
-            
+        // Cache patch-local pointers to avoid double indirection
+        double* x_patch = x[ipatch];
+        double* y_patch = y[ipatch];
+        double* ux_patch = ux[ipatch];
+        double* uy_patch = uy[ipatch];
+        double* uz_patch = uz[ipatch];
+        double* inv_gamma_patch = inv_gamma[ipatch];
+        double* ex_part_patch = ex_part[ipatch];
+        double* ey_part_patch = ey_part[ipatch];
+        double* ez_part_patch = ez_part[ipatch];
+        double* bx_part_patch = bx_part[ipatch];
+        double* by_part_patch = by_part[ipatch];
+        double* bz_part_patch = bz_part[ipatch];
+        npy_bool* is_dead_patch = is_dead[ipatch];
+        double* w_patch = w[ipatch];
+        
+        double* ex_field = ex[ipatch];
+        double* ey_field = ey[ipatch];
+        double* ez_field = ez[ipatch];
+        double* bx_field = bx[ipatch];
+        double* by_field = by[ipatch];
+        double* bz_field = bz[ipatch];
+        double* rho_field = rho[ipatch];
+        double* jx_field = jx[ipatch];
+        double* jy_field = jy[ipatch];
+        double* jz_field = jz[ipatch];
+        
+        double x0_patch = x0[ipatch];
+        double y0_patch = y0[ipatch];
+        npy_intp npart_patch = npart[ipatch];
+        
+        const double efactor = q * dt / (2 * m * LIGHT_SPEED);
+        const double bfactor = q * dt / (2 * m);
+        const double cdt_half = LIGHT_SPEED * 0.5 * dt;
+        const double q_over_dx_dy = q / (dx * dy);
+        const double q_over_dy_dt = q / (dy * dt);
+        const double q_over_dx_dt = q / (dx * dt);
+        const double inv_dx = 1.0 / dx;
+        const double inv_dy = 1.0 / dy;
+
+        // Phase 1: position push, interpolation, Boris push, position push
+        for (npy_intp ip = 0; ip < npart_patch; ip++) {
+            if (is_dead_patch[ip]) continue;
             push_position_2d(
-                &x[ipatch][ip], &y[ipatch][ip], 
-                ux[ipatch][ip], uy[ipatch][ip], inv_gamma[ipatch][ip], 
-                0.5*dt
+                &x_patch[ip], &y_patch[ip],
+                ux_patch[ip], uy_patch[ip], inv_gamma_patch[ip],
+                cdt_half
             );
             interpolation_2d(
-                x[ipatch][ip], y[ipatch][ip], 
-                &ex_part[ipatch][ip], &ey_part[ipatch][ip], &ez_part[ipatch][ip], 
-                &bx_part[ipatch][ip], &by_part[ipatch][ip], &bz_part[ipatch][ip], 
-                ex[ipatch], ey[ipatch], ez[ipatch], 
-                bx[ipatch], by[ipatch], bz[ipatch], 
-                dx, dy, x0[ipatch], y0[ipatch], 
+                x_patch[ip], y_patch[ip],
+                &ex_part_patch[ip], &ey_part_patch[ip], &ez_part_patch[ip],
+                &bx_part_patch[ip], &by_part_patch[ip], &bz_part_patch[ip],
+                ex_field, ey_field, ez_field,
+                bx_field, by_field, bz_field,
+                inv_dx, inv_dy, x0_patch, y0_patch,
                 nx, ny
             );
             boris(
-                &ux[ipatch][ip], &uy[ipatch][ip], &uz[ipatch][ip], &inv_gamma[ipatch][ip],
-                ex_part[ipatch][ip], ey_part[ipatch][ip], ez_part[ipatch][ip], 
-                bx_part[ipatch][ip], by_part[ipatch][ip], bz_part[ipatch][ip],
-                q, m, dt
+                &ux_patch[ip], &uy_patch[ip], &uz_patch[ip], &inv_gamma_patch[ip],
+                ex_part_patch[ip], ey_part_patch[ip], ez_part_patch[ip],
+                bx_part_patch[ip], by_part_patch[ip], bz_part_patch[ip],
+                efactor, bfactor
             );
             push_position_2d(
-                &x[ipatch][ip], &y[ipatch][ip], 
-                ux[ipatch][ip], uy[ipatch][ip], inv_gamma[ipatch][ip], 
-                0.5*dt
-            );
-            current_deposit_2d(
-                rho[ipatch], jx[ipatch], jy[ipatch], jz[ipatch], 
-                x[ipatch][ip], y[ipatch][ip], 
-                ux[ipatch][ip], uy[ipatch][ip], uz[ipatch][ip], inv_gamma[ipatch][ip],
-                nx, ny,
-                dx, dy, x0[ipatch], y0[ipatch], dt, w[ipatch][ip], q
+                &x_patch[ip], &y_patch[ip],
+                ux_patch[ip], uy_patch[ip], inv_gamma_patch[ip],
+                cdt_half
             );
         }
 
+        // Phase 2: current deposit
+        for (npy_intp ip = 0; ip < npart_patch; ip++) {
+            if (is_dead_patch[ip]) continue;
+            current_deposit_2d_fast(
+                rho_field, jx_field, jy_field, jz_field,
+                x_patch[ip], y_patch[ip],
+                ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                nx, ny,
+                dx, dy, x0_patch, y0_patch, dt, w_patch[ip],
+                q_over_dx_dy, q_over_dy_dt, q_over_dx_dt
+            );
+        }
     }
     // acquire GIL
     Py_END_ALLOW_THREADS
