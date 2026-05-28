@@ -156,7 +156,7 @@ class Laser2D(Laser):
         r = abs(f.yaxis[0, :] - sim.dy/2 - y0)
         return r
     
-    def _get_phi(self, sim: Simulation3D, patch: Patch2D) -> NDArray[np.float64]:
+    def _get_phi(self, sim: Simulation2D, patch: Patch2D) -> NDArray[np.float64]:
         f = patch.fields
         y0 = self.y0 or sim.Ly/2
         phi = np.arctan2(0.0, f.yaxis[0, :] - sim.dy/2 - y0)
@@ -456,7 +456,7 @@ class GaussianLaser(Laser):
         self._is_lg = False
         self.l = l
         self.p = p
-        if l > 0 or p > 0:
+        if l != 0 or p > 0:
             self._is_lg = True
             self.lg_norm = np.sqrt(2 * factorial(p) / (pi * factorial(p + abs(l))))
             self.lg_norm /= np.sqrt(2/pi) # let GS (p=0, l=0) norm=1
@@ -491,7 +491,7 @@ class GaussianLaser(Laser):
         x_rel = sim.cpml_thickness * sim.dx
         boundary_w, boundary_R, boundary_psi = self._gaussian_beam_params(x_rel)
 
-       # r is 2D or 3D depending on the simulation dimension
+        # r is 2D or 3D depending on the simulation dimension
         r = self._get_r(sim, patch)
 
         # lg mode
