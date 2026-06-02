@@ -31,7 +31,7 @@ def fill_particles_2d(density_func, xaxis_list, yaxis_list, npatches, dens_min, 
         w = w_list[ip]
         ipart = 0
         
-        gen = rand_gens[ipatch]
+        gen = rand_gens[ip]
         
         for x_grid in xaxis:
             for y_grid in yaxis:
