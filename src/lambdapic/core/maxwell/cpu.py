@@ -45,7 +45,8 @@ def update_efield_patches_2d(
     dx, dy, dt,
     nx, ny, n_guard
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ex = ex_list[ipatch]
         ey = ey_list[ipatch]
         ez = ez_list[ipatch]
@@ -68,7 +69,8 @@ def update_bfield_patches_2d(
     dx, dy, dt,
     nx, ny, n_guard
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ex = ex_list[ipatch]
         ey = ey_list[ipatch]
         ez = ez_list[ipatch]
@@ -123,7 +125,8 @@ def update_efield_patches_3d(
     dx, dy, dz, dt,
     nx, ny, nz, n_guard
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ex = ex_list[ipatch]
         ey = ey_list[ipatch]
         ez = ez_list[ipatch]
@@ -146,7 +149,8 @@ def update_bfield_patches_3d(
     dx, dy, dz, dt,
     nx, ny, nz, n_guard
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ex = ex_list[ipatch]
         ey = ey_list[ipatch]
         ez = ez_list[ipatch]

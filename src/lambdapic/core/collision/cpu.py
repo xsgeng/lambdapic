@@ -144,7 +144,8 @@ def debye_length_patches(
     total_density_list: List[NDArray[np.float64]],
     reset: bool=False
 ):
-    for ipatch in prange(len(part_list)):
+    for _ipatch in prange(len(part_list)):
+        ipatch = np.int64(_ipatch)
         if reset:
             debye_length_inv_square_list[ipatch].fill(0)
         for icell in range(bucket_bound_min_list[ipatch].size):
@@ -232,7 +233,8 @@ def constrain_debye_length_patches(
     debye_length_inv_square_list: List[NDArray[np.float64]],
     total_density_list: List[NDArray[np.float64]],
 ):
-    for ipatch in prange(len(debye_length_inv_square_list)):
+    for _ipatch in prange(len(debye_length_inv_square_list)):
+        ipatch = np.int64(_ipatch)
         for icell in range(debye_length_inv_square_list[ipatch].size):
             inv_d2 = debye_length_inv_square_list[ipatch].flat[icell]
             if inv_d2 <= 0:
@@ -286,7 +288,8 @@ def intra_collision_patches(
     cell_vol: float, dt: float,
     gen_list: List[np.random.Generator]
 ):
-    for ipatch in prange(len(part_list)):
+    for _ipatch in prange(len(part_list)):
+        ipatch = np.int64(_ipatch)
         for icell in range(bucket_bound_min_list[ipatch].size):
             ip_start = bucket_bound_min_list[ipatch].flat[icell]
             ip_end   = bucket_bound_max_list[ipatch].flat[icell]
@@ -330,7 +333,8 @@ def inter_collision_patches(
     cell_vol: float, dt: float,
     gen_list: List[np.random.Generator]
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         for icell in range(bucket_bound_min1_list[ipatch].size):
             ip_start1 = bucket_bound_min1_list[ipatch].flat[icell]
             ip_end1   = bucket_bound_max1_list[ipatch].flat[icell]

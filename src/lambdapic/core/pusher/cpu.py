@@ -1,3 +1,4 @@
+import numpy as np
 from numba import njit, prange
 from scipy.constants import c
 
@@ -15,7 +16,8 @@ def boris_push_patches(
     is_dead_list,
     npatches, q, m, dt
 ) -> None:
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ux = ux_list[ipatch]
         uy = uy_list[ipatch]
         uz = uz_list[ipatch]
@@ -41,7 +43,8 @@ def photon_push_patches(
     npatches,
 ) -> None:
     """ Update inv_gamma only. """
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ux = ux_list[ipatch]
         uy = uy_list[ipatch]
         uz = uz_list[ipatch]
@@ -74,7 +77,8 @@ def push_position_patches_2d(
     is_dead_list, 
     npatches, dt,
 ) -> None:
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         x = x_list[ipatch]
         y = y_list[ipatch]
 

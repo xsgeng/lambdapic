@@ -25,7 +25,8 @@ def update_chi_patches(
     npatches,
     chi_list,
 ) -> None:
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ux = ux_list[ipatch]
         uy = uy_list[ipatch]
         uz = uz_list[ipatch]
@@ -68,7 +69,8 @@ def radiation_event_patches(
     delta_list,
     integral_photon_prob_along_delta, photon_prob_rate_total_table
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         inv_gamma = inv_gamma_list[ipatch]
 
         tau_e = tau_list[ipatch]
@@ -98,7 +100,8 @@ def pairproduction_event_patches(
     delta_list,
     integral_pair_prob_along_delta, pair_prob_rate_total_table
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         inv_gamma = inv_gamma_list[ipatch]
         tau_gamma = tau_list[ipatch]
         chi_gamma = chi_list[ipatch]
@@ -124,7 +127,8 @@ def create_photon_patches_2d(
     delta_list, event_list,
     npatches,
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         x_ele = x_ele_list[ipatch]
         y_ele = y_ele_list[ipatch]
         ux_ele = ux_ele_list[ipatch]
@@ -164,7 +168,8 @@ def create_pair_patches_2d(
     delta_list, event_list,
     npatches,
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         x_pho = x_pho_list[ipatch]
         y_pho = y_pho_list[ipatch]
         ux_pho = ux_pho_list[ipatch]
@@ -213,7 +218,8 @@ def create_photon_patches_3d(
     delta_list, event_list,
     npatches,
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         x_ele = x_ele_list[ipatch]
         y_ele = y_ele_list[ipatch]
         z_ele = z_ele_list[ipatch]
@@ -255,7 +261,8 @@ def create_pair_patches_3d(
     delta_list, event_list,
     npatches,
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         x_pho = x_pho_list[ipatch]
         y_pho = y_pho_list[ipatch]
         z_pho = z_pho_list[ipatch]
@@ -303,7 +310,8 @@ def photon_recoil_patches(
     event_list, delta_list, is_dead_list,
     npatches,
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         ux = ux_list[ipatch]
         uy = uy_list[ipatch]
         uz = uz_list[ipatch]
@@ -327,7 +335,8 @@ def photon_recoil_patches(
 def remove_photon_patches(
     event_list, is_dead_list, npatches
 ):
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         event = event_list[ipatch]
         is_dead = is_dead_list[ipatch]
         npart = len(is_dead)
@@ -370,7 +379,8 @@ def get_particle_extension_size(event, pho_is_dead):
 def get_particle_extension_size_patches(event_list, is_dead_list, npatches):
     num_to_extend = np.zeros(npatches, dtype='int64')
 
-    for ipatch in prange(npatches):
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
         event = event_list[ipatch]
         is_dead = is_dead_list[ipatch]
 
