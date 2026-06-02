@@ -242,7 +242,7 @@ class Simulation:
             truncate_existing=config.truncate_log
         )
         
-        logger.info("Simulation instance created")
+        rank_log("Simulation instance created", MPIManager.get_default_comm())
         self.initialized = False
         # Collision system placeholders; configured via add_collision()
         self._collision_groups: Optional[Sequence[Sequence[Species]]] = None
@@ -378,7 +378,7 @@ class Simulation:
         
         for s in self.species:
             npart = self.patches.add_species(s, aux_attrs=s._aux_attrs)
-            logger.info(f"Rank {rank}: Adding {npart:,} macro particles to {s.name}")
+            logger.debug(f"Rank {rank}: Adding {npart:,} macro particles to {s.name}")
             
                 
         rank_log("Creating random generators", comm)
@@ -413,7 +413,7 @@ class Simulation:
         self.load_balancer = LoadBalancer(self.patches, self.mpi)
 
         self.initialized = True
-        logger.success(f"Rank {rank}: Initialization complete")
+        rank_log(f"Rank {rank}: Initialization complete", comm)
 
         comm.Barrier()
 
