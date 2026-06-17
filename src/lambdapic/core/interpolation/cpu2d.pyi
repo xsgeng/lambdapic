@@ -1,9 +1,21 @@
-from ..particles import ParticlesBase
 from ..fields import Fields
-from typing import List
+from ..particles import ParticlesBase
+
 
 def interpolation_patches_2d(
-    particles_list: List[ParticlesBase], 
-    fields_list: List[Fields], 
-    npatches: int, 
-) -> None: ...
+    particles_list: list[ParticlesBase],
+    fields_list: list[Fields],
+    npatches: int,
+) -> None:
+    """Interpolate 2D field values to particles on each patch.
+
+    Parameters
+    ----------
+    particles_list : list[ParticlesBase]
+        Particle objects for each patch.
+    fields_list : list[Fields]
+        Field objects for each patch.
+    npatches : int
+        Number of patches to process.
+    """
+    ...

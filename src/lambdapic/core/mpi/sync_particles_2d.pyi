@@ -1,44 +1,51 @@
 import numpy as np
 from mpi4py.MPI import Comm
-from ..particles import Particles
+
+from ..particles import ParticlesBase
 from ..patch.patch import Patch
 
+
 def get_npart_to_extend_2d(
-    particles_list: list[Particles],
+    particles_list: list[ParticlesBase],
     patch_list: list[Patch],
     comm: Comm,
-    npatches: int, dx: float, dy: float
+    npatches: int,
+    dx: float,
+    dy: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Count the number of particles to be extended and return the number of new particles.
+    """Count incoming particles and required particle-array extension in 2D.
 
     Parameters
     ----------
-    particles_list : list[Particles]
-        List of particle objects.
+    particles_list : list[ParticlesBase]
+        Particle containers for the local patches. Each particle
+        container must provide ``x``, ``y``, ``npart``, and ``is_dead``.
     patch_list : list[Patch]
-        List of patch objects.
+        Patch containers matching ``particles_list`` order. Each patch
+        provides neighbor indices, neighbor ranks, global patch index, and 2D
+        patch bounds.
     comm : Comm
-        MPI communicator.
+        MPI communicator used to exchange outgoing-particle counts.
     npatches : int
-        Number of patches.
+        Number of local patches represented in ``particles_list`` and
+        ``patch_list``.
     dx : float
-        Grid spacing in the x-direction.
+        Cell size in the x direction.
     dy : float
-        Grid spacing in the y-direction.
+        Cell size in the y direction.
 
     Returns
     -------
     tuple[np.ndarray, np.ndarray, np.ndarray]
-        A tuple containing three numpy arrays:
-        - npart_to_extend: Number of particles to extend.
-        - npart_incoming: Number of incoming particles.
-        - npart_outgoing: Number of outgoing particles.
+        Tuple of three NumPy arrays: ``npart_to_extend`` with shape
+        ``(npatches,)``, ``npart_incoming`` with shape ``(npatches, 8)``, and
+        ``npart_outgoing`` with shape ``(npatches, 8)``.
     """
-    pass
+    ...
+
 
 def fill_particles_from_boundary_2d(
-    particles_list: list[Particles],
+    particles_list: list[ParticlesBase],
     patch_list: list[Patch],
     npart_incoming_array: np.ndarray,
     npart_outgoing_array: np.ndarray,
@@ -46,28 +53,53 @@ def fill_particles_from_boundary_2d(
     npatches: int,
     dx: float,
     dy: float,
-    attrs: list[str]
+    xmin_global: float,
+    xmax_global: float,
+    ymin_global: float,
+    ymax_global: float,
+    attrs: list[str],
 ) -> None:
-    """
-    Fill particles from boundary using MPI.
+    """Move outgoing particles into neighboring 2D patches across MPI ranks.
 
     Parameters
     ----------
-    particles_list : list[Particles]
-        List of particle objects.
+    particles_list : list[ParticlesBase]
+        Particle containers for the local patches. Each particle
+        container must provide ``x``, ``y``, ``is_dead``, and every array named
+        in ``attrs``.
     patch_list : list[Patch]
-        List of patch objects.
+        Patch containers matching ``particles_list`` order. Each patch
+        provides neighbor indices, neighbor ranks, global patch index, and 2D
+        patch bounds.
     npart_incoming_array : np.ndarray
-        Array of incoming particle counts.
+        Incoming particle counts per local patch and 2D
+        boundary, as returned by ``get_npart_to_extend_2d``.
     npart_outgoing_array : np.ndarray
-        Array of outgoing particle counts.
+        Outgoing particle counts per local patch and 2D
+        boundary, as returned by ``get_npart_to_extend_2d``.
     comm : Comm
-        MPI communicator.
+        MPI communicator used to exchange particle attribute buffers.
     npatches : int
-        Number of patches.
+        Number of local patches represented in ``particles_list`` and
+        ``patch_list``.
     dx : float
-        Grid spacing in the x-direction.
+        Cell size in the x direction.
     dy : float
-        Grid spacing in the y-direction.
+        Cell size in the y direction.
+    xmin_global : float
+        Minimum x coordinate of the global domain.
+    xmax_global : float
+        Maximum x coordinate of the global domain.
+    ymin_global : float
+        Minimum y coordinate of the global domain.
+    ymax_global : float
+        Maximum y coordinate of the global domain.
+    attrs : list[str]
+        Particle attribute names to exchange. Must include ``"x"`` and
+        ``"y"`` so periodic wrapping can be applied.
+
+    Returns
+    -------
+    None
     """
-    pass
+    ...

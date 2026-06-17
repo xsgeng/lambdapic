@@ -109,7 +109,7 @@ def _run_rebalance_test(sim, comm, rank, store_func, verify_func, npatches):
 
     if rank == 0:
         print("Starting rebalance...")
-    sim.rebalance()
+    sim.load_balancer()
     if rank == 0:
         print("Rebalance completed")
 

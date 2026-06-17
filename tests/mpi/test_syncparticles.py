@@ -106,6 +106,7 @@ def test_syncparticles():
         npart_outgoing, 
         comm, 
         9, 1.0, 1.0, 
+        0, 5*nrankx*1, 0, 5*nranky*1, 
         patches[0].particles[0].attrs
     )
     
