@@ -418,3 +418,57 @@ def test_ring_too_thin_raises():
 
     with pytest.raises(AssertionError):
         sim.initialize()
+
+
+def test_masked_regions_are_nan():
+    from pathlib import Path
+    import tempfile
+    import h5py
+
+    from lambdapic.callback.utils import get_fields
+    from lambdapic.callback.hdf5 import SaveFieldsToHDF5
+
+    um = 1e-6
+    l0 = 0.8 * um
+    nx = ny = 64
+    dx = dy = l0 / 20
+    npatch_x = npatch_y = 8
+    Lx = nx * dx
+    Ly = ny * dy
+
+    mask = ring_mask(
+        r_inner=0.2 * Lx,
+        r_outer=0.45 * Lx,
+        cx=Lx / 2,
+        cy=Ly / 2,
+    )
+
+    sim = _MaskSimulation(
+        nx=nx, ny=ny, dx=dx, dy=dy,
+        npatch_x=npatch_x, npatch_y=npatch_y,
+        mask=mask,
+    )
+
+    ele = Electron(density=lambda x, y: 0.0, ppc=1)
+    sim.add_species([ele])
+    sim.initialize()
+
+    assert hasattr(sim, 'domain_mask')
+    assert not sim.domain_mask.all()
+    assert sim.domain_mask.any()
+
+    fields = get_fields(sim, ['ex'])
+    ex = fields[0]
+    assert ex is not None
+    assert np.all(np.isnan(ex[~sim.domain_mask]))
+    assert np.all(np.isfinite(ex[sim.domain_mask]))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        hdf5_cb = SaveFieldsToHDF5(prefix=tmpdir, interval=1, components=['ex'])
+        hdf5_cb(sim)
+
+        filename = Path(tmpdir) / f"{sim.itime:06d}.h5"
+        with h5py.File(filename, 'r') as f:
+            h5_ex = f['ex'][()]
+        assert np.all(np.isnan(h5_ex[~sim.domain_mask]))
+        assert np.all(np.isfinite(h5_ex[sim.domain_mask]))
