@@ -2,6 +2,9 @@
 
 import pytest
 import numpy as np
+from scipy.constants import c, e, epsilon_0, m_e, pi
+
+from lambdapic import Electron
 from lambdapic.core.patch.patch import Patches, Patch2D, Boundary2D
 from lambdapic.core.boundary.utils import has_pml
 from lambdapic._mask_simulation import _MaskSimulation
@@ -263,3 +266,155 @@ def test_periodic_boundary_ignored():
     assert len(right_edge_patches) > 0
     for p in right_edge_patches:
         assert p.neighbor_index[Boundary2D.XMAX] == -1
+
+
+def test_ring_field_damping():
+    """Field-only test: PML should damp energy near the inner ring boundary."""
+    um = 1e-6
+    l0 = 0.8 * um
+    nx = ny = 160
+    dx = dy = l0 / 20
+    npatch_x = npatch_y = 16
+    Lx = nx * dx
+    Ly = ny * dy
+    cpml_thickness = 6
+
+    mask = ring_mask(
+        r_inner=0.2 * Lx,
+        r_outer=0.45 * Lx,
+        cx=Lx / 2,
+        cy=Ly / 2,
+    )
+
+    sim = _MaskSimulation(
+        nx=nx, ny=ny, dx=dx, dy=dy,
+        npatch_x=npatch_x, npatch_y=npatch_y,
+        cpml_thickness=cpml_thickness,
+        mask=mask,
+    )
+
+    ele = Electron(density=lambda x, y: 0.0, ppc=1)
+    sim.add_species([ele])
+    sim.initialize()
+
+    r_inj = 0.2 * Lx + cpml_thickness * dx + 2 * dx
+    angle = pi / 4
+    xc0 = Lx / 2 + r_inj * np.cos(angle)
+    yc0 = Ly / 2 + r_inj * np.sin(angle)
+    sigma = 3 * dx
+    A = 1e12
+
+    for p in sim.patches:
+        xaxis = p.fields.xaxis
+        yaxis = p.fields.yaxis
+        x, y = np.meshgrid(xaxis, yaxis, indexing='ij')
+        p.fields.ey[:, :] = A * np.exp(-((x - xc0)**2 + (y - yc0)**2) / sigma**2)
+        p.fields.bz[:, :] = p.fields.ey[:, :] / c
+
+    def pml_energy():
+        total = 0.0
+        for p in sim.patches:
+            ng = p.fields.n_guard
+            nx_p = p.nx
+            ny_p = p.ny
+            ex = p.fields.ex[ng:ng + nx_p, ng:ng + ny_p]
+            ey = p.fields.ey[ng:ng + nx_p, ng:ng + ny_p]
+            ez = p.fields.ez[ng:ng + nx_p, ng:ng + ny_p]
+            bx = p.fields.bx[ng:ng + nx_p, ng:ng + ny_p]
+            by = p.fields.by[ng:ng + nx_p, ng:ng + ny_p]
+            bz = p.fields.bz[ng:ng + nx_p, ng:ng + ny_p]
+            in_pml = np.zeros((nx_p, ny_p), dtype=bool)
+            if p.neighbor_index[Boundary2D.XMIN] < 0:
+                in_pml[:cpml_thickness, :] = True
+            if p.neighbor_index[Boundary2D.XMAX] < 0:
+                in_pml[nx_p - cpml_thickness:, :] = True
+            if p.neighbor_index[Boundary2D.YMIN] < 0:
+                in_pml[:, :cpml_thickness] = True
+            if p.neighbor_index[Boundary2D.YMAX] < 0:
+                in_pml[:, ny_p - cpml_thickness:] = True
+            if np.any(in_pml):
+                energy = ex**2 + ey**2 + ez**2 + c**2 * (bx**2 + by**2 + bz**2)
+                total += np.sum(energy[in_pml])
+        return total
+
+    E0 = pml_energy()
+    sim.run(nsteps=50)
+    E1 = pml_energy()
+
+    assert E1 < E0 * 0.99, f"PML did not damp energy: E0={E0}, E1={E1}"
+    assert sim.itime == 50
+
+
+def test_ring_run_no_crash():
+    """Full simulation with particles: verify no crash and finite arrays."""
+    um = 1e-6
+    l0 = 0.8 * um
+    omega0 = 2 * pi * c / l0
+    nc = epsilon_0 * m_e * omega0**2 / e**2
+    nx = ny = 160
+    dx = dy = l0 / 20
+    npatch_x = npatch_y = 16
+    Lx = nx * dx
+    Ly = ny * dy
+
+    r_inner = 0.2 * Lx
+    r_outer = 0.45 * Lx
+
+    mask = ring_mask(r_inner, r_outer, cx=Lx / 2, cy=Ly / 2)
+
+    sim = _MaskSimulation(
+        nx=nx, ny=ny, dx=dx, dy=dy,
+        npatch_x=npatch_x, npatch_y=npatch_y,
+        mask=mask,
+    )
+
+    def density(n0):
+        def _density(x, y):
+            r = ((x - Lx / 2)**2 + (y - Ly / 2)**2) ** 0.5
+            if r_inner * 1.2 < r < r_outer * 0.8:
+                return n0
+            return 0.0
+        return _density
+
+    ele = Electron(density=density(0.01 * nc), ppc=2)
+    sim.add_species([ele])
+    sim.initialize()
+    sim.run(nsteps=10)
+
+    assert sim.itime == 10
+    for p in sim.patches:
+        particles = p.particles[0]
+        alive = ~particles.is_dead
+        assert np.all(np.isfinite(particles.x[alive]))
+        assert np.all(np.isfinite(particles.y[alive]))
+        assert np.all(np.isfinite(particles.ux[alive]))
+        assert np.all(np.isfinite(particles.uy[alive]))
+
+
+def test_ring_too_thin_raises():
+    """A ring thinner than 2 patches violates the PML constraint."""
+    nx = ny = 64
+    dx = dy = 1e-8
+    npatch_x = npatch_y = 8
+    Lx = nx * dx
+    Ly = ny * dy
+
+    patch_width = Lx / npatch_x
+    mask = ring_mask(
+        r_inner=0.25 * Lx,
+        r_outer=0.25 * Lx + 0.5 * patch_width,
+        cx=Lx / 2,
+        cy=Ly / 2,
+    )
+
+    sim = _MaskSimulation(
+        nx=nx, ny=ny, dx=dx, dy=dy,
+        npatch_x=npatch_x, npatch_y=npatch_y,
+        mask=mask,
+    )
+
+    ele = Electron(density=lambda x, y: 0.01, ppc=1)
+    sim.add_species([ele])
+
+    with pytest.raises(AssertionError):
+        sim.initialize()
