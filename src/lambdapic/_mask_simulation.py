@@ -67,6 +67,18 @@ class _MaskSimulation(Simulation):
             },
         )
         patches.update_lists()
+
+        # Build domain mask: True where a patch exists
+        import numpy as np
+
+        self.domain_mask = np.zeros((self.nx, self.ny), dtype=bool)
+        for p in patches.patches:
+            s = np.s_[
+                p.ipatch_x * self.nx_per_patch:(p.ipatch_x + 1) * self.nx_per_patch,
+                p.ipatch_y * self.ny_per_patch:(p.ipatch_y + 1) * self.ny_per_patch,
+            ]
+            self.domain_mask[s] = True
+
         return patches
 
     def _init_pml(self) -> None:
