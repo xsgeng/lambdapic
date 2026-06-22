@@ -90,6 +90,8 @@ def get_fields_2d(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray
                 for ipatch_y in range(npatch_y):
                     index = patch_index_map.get((ipatch_x, ipatch_y))
                     if index is None:
+                        if not hasattr(sim, 'domain_mask'):
+                            raise KeyError((ipatch_x, ipatch_y))
                         continue
                     s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
                               ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
@@ -325,7 +327,11 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                         if x_info is None or y_info is None:
                             continue
                         index = patch_index_map.get((ipatch_x, ipatch_y))
-                        if index is None or index in local_patches:
+                        if index is None:
+                            if not hasattr(sim, 'domain_mask'):
+                                raise KeyError((ipatch_x, ipatch_y))
+                            continue
+                        if index in local_patches:
                             continue
                         sim.mpi.comm.Recv(buf, tag=index)
                         local_x, out_x, num_x = x_info
@@ -345,7 +351,11 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                                   ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
                         # local
                         index = patch_index_map.get((ipatch_x, ipatch_y))
-                        if index is None or index in local_patches:
+                        if index is None:
+                            if not hasattr(sim, 'domain_mask'):
+                                raise KeyError((ipatch_x, ipatch_y))
+                            continue
+                        if index in local_patches:
                             continue
                         #remote
                         else:

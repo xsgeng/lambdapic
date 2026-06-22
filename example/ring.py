@@ -11,18 +11,15 @@ domain edge absorb outgoing waves via PML.
 """
 
 import numpy as np
-from scipy.constants import c, e, epsilon_0, m_e, pi
 
 from lambdapic import (
     Electron,
     ExtractSpeciesDensity,
-    GaussianLaser2D,
     SetTemperature,
     PlotFields,
     Proton,
     SaveFieldsToHDF5,
     SaveSpeciesDensityToHDF5,
-    Species,
     c,
     e,
     epsilon_0,

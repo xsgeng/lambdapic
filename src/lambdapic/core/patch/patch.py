@@ -501,6 +501,8 @@ class Patches:
                 # valid neighbour after wrapping
                 neighbor_index = patch_index_map.get((ni, nj))
                 if neighbor_index is None:
+                    if len(patch_index_map) == npatch_x * npatch_y:
+                        raise KeyError((ni, nj))
                     continue
                 p.set_neighbor_index(**{name: neighbor_index})
     
@@ -584,6 +586,8 @@ class Patches:
                 # By this point (ni, nj, nk) is guaranteed to be a valid coordinate
                 neighbor_index = patch_index_map.get((ni, nj, nk))
                 if neighbor_index is None:
+                    if len(patch_index_map) == npatch_x * npatch_y * npatch_z:
+                        raise KeyError((ni, nj, nk))
                     continue
                 p.set_neighbor_index(**{name: neighbor_index})
 
