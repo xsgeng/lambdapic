@@ -88,10 +88,12 @@ def get_fields_2d(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray
             buf = np.zeros((nx_per_patch+2*ng, ny_per_patch+2*ng))
             for ipatch_x in range(npatch_x):
                 for ipatch_y in range(npatch_y):
+                    index = patch_index_map.get((ipatch_x, ipatch_y))
+                    if index is None:
+                        continue
                     s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
                               ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
                     # local
-                    index = patch_index_map[(ipatch_x, ipatch_y)]
                     if index in local_patches:
                         p = patches[local_patches[index]]
                         field_[s] = getattr(p.fields, field)[:-2*ng, :-2*ng]
@@ -319,8 +321,8 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                         y_info = _compute_patch_slice(sim.ny, sy, ipatch_y * ny_per_patch, ny_per_patch)
                         if x_info is None or y_info is None:
                             continue
-                        index = patch_index_map[(ipatch_x, ipatch_y)]
-                        if index in local_patches:
+                        index = patch_index_map.get((ipatch_x, ipatch_y))
+                        if index is None or index in local_patches:
                             continue
                         sim.mpi.comm.Recv(buf, tag=index)
                         local_x, out_x, num_x = x_info
@@ -339,8 +341,8 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                         s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
                                   ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
                         # local
-                        index = patch_index_map[(ipatch_x, ipatch_y)]
-                        if index in local_patches:
+                        index = patch_index_map.get((ipatch_x, ipatch_y))
+                        if index is None or index in local_patches:
                             continue
                         #remote
                         else:
