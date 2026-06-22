@@ -499,7 +499,9 @@ class Patches:
                         continue
 
                 # valid neighbour after wrapping
-                neighbor_index = patch_index_map[(ni, nj)]
+                neighbor_index = patch_index_map.get((ni, nj))
+                if neighbor_index is None:
+                    continue
                 p.set_neighbor_index(**{name: neighbor_index})
     
     def init_rect_neighbor_index_3d(self, npatch_x: int, npatch_y: int, npatch_z: int, boundary_conditions: dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']], patch_index_map: dict[tuple, int]={}):
@@ -580,7 +582,9 @@ class Patches:
                         continue
 
                 # By this point (ni, nj, nk) is guaranteed to be a valid coordinate
-                neighbor_index = patch_index_map[(ni, nj, nk)]
+                neighbor_index = patch_index_map.get((ni, nj, nk))
+                if neighbor_index is None:
+                    continue
                 p.set_neighbor_index(**{name: neighbor_index})
 
     def init_neighbor_rank_2d(self, patch_rank_map: dict[int, int]={}):
