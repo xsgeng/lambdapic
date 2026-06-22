@@ -218,6 +218,8 @@ class _HDF5SliceWriter:
         with h5py.File(filename, 'w', driver='mpio', comm=comm) as f:
             for comp in components:
                 dset = f.create_dataset(comp, data=np.zeros(shape, dtype='f8'), chunks=chunk_size)
+                if hasattr(sim, 'domain_mask'):
+                    dset[:] = np.nan
                 comm.Barrier()
                 for ip, p in enumerate(sim.patches):
                     offsets = self._patch_offsets(p, sim, ndim)
@@ -243,7 +245,9 @@ class _HDF5SliceWriter:
         if rank == 0:
             with h5py.File(filename, 'w') as f:
                 for comp in components:
-                    f.create_dataset(comp, data=np.zeros(shape, dtype='f8'), chunks=chunk_size)
+                    dset = f.create_dataset(comp, data=np.zeros(shape, dtype='f8'), chunks=chunk_size)
+                    if hasattr(sim, 'domain_mask'):
+                        dset[:] = np.nan
         comm.Barrier()
 
         with h5py.File(filename, 'a', locking=False) as f:
