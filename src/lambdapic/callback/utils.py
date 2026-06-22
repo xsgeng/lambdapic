@@ -102,6 +102,9 @@ def get_fields_2d(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray
                         sim.mpi.comm.Recv(buf, tag=index)
                         field_[s] = buf[:-2*ng, :-2*ng]
                         
+            if hasattr(sim, 'domain_mask'):
+                field_[~sim.domain_mask] = np.nan
+
             ret.append(field_)
         else: # other ranks
             req = []
@@ -348,7 +351,10 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                         else:
                             sim.mpi.comm.Recv(buf, tag=index)
                             self.density[s] = buf
-        
+
+            if hasattr(sim, 'domain_mask'):
+                self.density[~sim.domain_mask] = np.nan
+
         else:
             req = []
             for ip, p in enumerate(sim.patches):
