@@ -3,6 +3,16 @@
 import pytest
 import numpy as np
 from lambdapic.core.patch.patch import Patches, Patch2D, Boundary2D
+from lambdapic.core.boundary.utils import has_pml
+from lambdapic._mask_simulation import _MaskSimulation
+
+
+def ring_mask(r_inner: float, r_outer: float, cx: float = 0.0, cy: float = 0.0):
+    """Return a mask function for an annular (ring) domain."""
+    def _mask(x: float, y: float) -> bool:
+        r = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+        return r_inner <= r <= r_outer
+    return _mask
 
 
 def test_sparse_neighbor_index_2d():
@@ -121,3 +131,135 @@ def test_rect_neighbor_index_2d_regression():
     assert p11.neighbor_index[Boundary2D.XMAXYMIN] == 2  # (2,0)
     assert p11.neighbor_index[Boundary2D.XMINYMAX] == 8  # (0,2)
     assert p11.neighbor_index[Boundary2D.XMAXYMAX] == 10  # (2,2)
+
+
+def _ring_sim():
+    """Return a _MaskSimulation with a centered annular mask."""
+    nx = ny = 64
+    dx = dy = 1e-8
+    npatch_x = npatch_y = 8
+    Lx = nx * dx
+    Ly = ny * dy
+    mask = ring_mask(
+        r_inner=0.2 * Lx,
+        r_outer=0.45 * Lx,
+        cx=Lx / 2,
+        cy=Ly / 2,
+    )
+    return _MaskSimulation(
+        nx=nx, ny=ny, dx=dx, dy=dy,
+        npatch_x=npatch_x, npatch_y=npatch_y,
+        mask=mask,
+    )
+
+
+def test_mask_simulation_create_patches():
+    """Patches are created only where the mask is True at patch centers."""
+    sim = _ring_sim()
+    patches = sim.create_patches()
+
+    expected = 0
+    for j in range(sim.npatch_y):
+        for i in range(sim.npatch_x):
+            xc = (i + 0.5) * sim.Lx / sim.npatch_x
+            yc = (j + 0.5) * sim.Ly / sim.npatch_y
+            if sim.mask(xc, yc):
+                expected += 1
+
+    assert patches.npatches == expected
+    assert patches.indices == list(range(patches.npatches))
+    for p in patches.patches:
+        assert 0 <= p.ipatch_x < sim.npatch_x
+        assert 0 <= p.ipatch_y < sim.npatch_y
+
+
+def test_mask_simulation_neighbor_indices():
+    """Face neighbor indices are >=0 exactly when the neighbor patch exists."""
+    sim = _ring_sim()
+    patches = sim.create_patches()
+    selected = {(p.ipatch_x, p.ipatch_y) for p in patches.patches}
+    face_dirs = {
+        Boundary2D.XMIN: (-1, 0),
+        Boundary2D.XMAX: (1, 0),
+        Boundary2D.YMIN: (0, -1),
+        Boundary2D.YMAX: (0, 1),
+    }
+
+    for p in patches.patches:
+        for bound, (di, dj) in face_dirs.items():
+            ni, nj = p.ipatch_x + di, p.ipatch_y + dj
+            neighbor_exists = (ni, nj) in selected
+            assert (p.neighbor_index[bound] >= 0) == neighbor_exists
+
+    edge_patches = [
+        p for p in patches.patches
+        if any(p.neighbor_index[b] < 0 for b in face_dirs)
+    ]
+    assert len(edge_patches) > 0
+
+
+def test_mask_simulation_pml_attachment():
+    """PML is attached exactly on faces without neighbors."""
+    sim = _ring_sim()
+    sim.initialize()
+    faces = (
+        Boundary2D.XMIN,
+        Boundary2D.XMAX,
+        Boundary2D.YMIN,
+        Boundary2D.YMAX,
+    )
+
+    for p in sim.patches:
+        missing_count = sum(1 for b in faces if p.neighbor_index[b] < 0)
+        assert len(p.pml_boundary) == missing_count
+        assert len(p.pml_boundary) <= 2
+        if len(p.pml_boundary) == 2:
+            x_count = sum(has_pml(p.pml_boundary, b) for b in ("xmin", "xmax"))
+            y_count = sum(has_pml(p.pml_boundary, b) for b in ("ymin", "ymax"))
+            assert x_count == 1
+            assert y_count == 1
+
+
+def test_ring_mask_helper():
+    """The ring_mask helper returns True only inside the annulus."""
+    m = ring_mask(1.0, 2.0, 0.0, 0.0)
+    assert m(1.5, 0.0) is True
+    assert m(0.5, 0.0) is False
+    assert m(2.5, 0.0) is False
+    assert m(0.0, 1.5) is True
+
+
+def test_empty_mask_raises():
+    """A mask that excludes every patch must raise an assertion."""
+    sim = _MaskSimulation(
+        nx=64, ny=64, dx=1e-8, dy=1e-8,
+        npatch_x=8, npatch_y=8,
+        mask=lambda x, y: False,
+    )
+    with pytest.raises(AssertionError, match="mask produced no patches"):
+        sim.create_patches()
+
+
+def test_periodic_boundary_ignored():
+    """Periodic wrapping is disabled; mask class forces all-open PML neighbors."""
+    nx = ny = 64
+    dx = dy = 1e-8
+    npatch_x = npatch_y = 8
+    Lx = nx * dx
+    Ly = ny * dy
+    sim = _MaskSimulation(
+        nx=nx, ny=ny, dx=dx, dy=dy,
+        npatch_x=npatch_x, npatch_y=npatch_y,
+        boundary_conditions={
+            "xmin": "periodic",
+            "xmax": "periodic",
+            "ymin": "periodic",
+            "ymax": "periodic",
+        },
+        mask=lambda x, y: x < Lx / 2,
+    )
+    patches = sim.create_patches()
+    right_edge_patches = [p for p in patches.patches if p.ipatch_x == npatch_x // 2 - 1]
+    assert len(right_edge_patches) > 0
+    for p in right_edge_patches:
+        assert p.neighbor_index[Boundary2D.XMAX] == -1
