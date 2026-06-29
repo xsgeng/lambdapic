@@ -61,6 +61,10 @@ def fill_particles_from_boundary_2d(
 ) -> None:
     """Move outgoing particles into neighboring 2D patches across MPI ranks.
 
+    This is a convenience wrapper that calls
+    :func:`fill_particles_from_boundary_2d_start` followed by
+    :func:`fill_particles_from_boundary_2d_wait`.
+
     Parameters
     ----------
     particles_list : list[ParticlesBase]
@@ -97,6 +101,62 @@ def fill_particles_from_boundary_2d(
     attrs : list[str]
         Particle attribute names to exchange. Must include ``"x"`` and
         ``"y"`` so periodic wrapping can be applied.
+
+    Returns
+    -------
+    None
+    """
+    ...
+
+
+def fill_particles_from_boundary_2d_start(
+    particles_list: list[ParticlesBase],
+    patch_list: list[Patch],
+    npart_incoming_array: np.ndarray,
+    npart_outgoing_array: np.ndarray,
+    comm: Comm,
+    npatches: int,
+    dx: float,
+    dy: float,
+    xmin_global: float,
+    xmax_global: float,
+    ymin_global: float,
+    ymax_global: float,
+    attrs: list[str],
+) -> object:
+    """Post non-blocking MPI sends/receives for cross-rank particle exchange.
+
+    Packs outgoing particles into send buffers, marks them as dead in the
+    local arrays, and posts ``MPI_Isend`` / ``MPI_Irecv`` for every
+    cross-rank boundary.  Returns an opaque capsule handle that must be
+    passed to :func:`fill_particles_from_boundary_2d_wait`.
+
+    The caller **must not** modify particle arrays or call ``extend``
+    between ``_start`` and ``_wait``.
+
+    Parameters
+    ----------
+    Same as :func:`fill_particles_from_boundary_2d`.
+
+    Returns
+    -------
+    object
+        Opaque capsule handle for :func:`fill_particles_from_boundary_2d_wait`.
+    """
+    ...
+
+
+def fill_particles_from_boundary_2d_wait(handle: object) -> None:
+    """Finalise an asynchronous particle sync started by ``_start``.
+
+    Waits for all receives, unpacks incoming particles into dead slots
+    (applying periodic boundary wrapping), waits for sends, and frees
+    all temporary buffers.
+
+    Parameters
+    ----------
+    handle : object
+        Capsule returned by :func:`fill_particles_from_boundary_2d_start`.
 
     Returns
     -------
