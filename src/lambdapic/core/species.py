@@ -15,6 +15,9 @@ from .utils.enable_mixin import EnableMixin
 
 Profile = Callable[[float, float, float], float] | Callable[[float, float], float]
 
+_ALL_SPECIES: list["Species"] = []
+
+
 class SpeciesConfig(BaseModel):
     name: str = Field(..., description="Name of the particle species")
     charge: int = Field(..., description="Charge number (e.g. -1 for electron, +1 for proton)")
@@ -105,6 +108,24 @@ class Species(EnableMixin):
 
         self._aux_attrs: list[str] = []
         self._ispec: int | None = None
+
+        _ALL_SPECIES.append(self)
+
+    def is_compatible(self, dimension: int) -> bool:
+        """Return True if this species' density/ppc profiles fit the given dimension.
+
+        Plain Python functions whose argument count differs from ``dimension``
+        are incompatible (compile_jit would raise). ints/floats and already-jitted
+        callables are treated as dimension-agnostic.
+        """
+        for func in (self.density, self.ppc):
+            if func is None:
+                continue
+            if inspect.isfunction(func) and not is_jitted(func):
+                if func.__code__.co_argcount != dimension:
+                    return False
+        return True
+
         
     @property
     def ispec(self) -> int:
