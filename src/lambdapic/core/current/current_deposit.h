@@ -80,6 +80,8 @@ __attribute__((always_inline)) inline static void current_deposit_2d(
     double factor_dt_vz = factor * dt * vz;
     const double one_twelfth = 1.0 / 12.0;
 
+    // These bounds are correct only when a particle crosses at most one cell
+    // per step (|dcell| <= 1), which is the usual PIC CFL condition.
     int i_start = dcell_x < 0 ? 0 : 1;
     int i_end = dcell_x > 0 ? 5 : 4;
     int j_start = dcell_y < 0 ? 0 : 1;
@@ -171,6 +173,8 @@ __attribute__((always_inline)) inline static void current_deposit_2d_fast(
     double factor_dt_vz = charge_density * vz;
     const double one_twelfth = 1.0 / 12.0;
 
+    // These bounds are correct only when a particle crosses at most one cell
+    // per step (|dcell| <= 1), which is the usual PIC CFL condition.
     int i_start = dcell_x < 0 ? 0 : 1;
     int i_end = dcell_x > 0 ? 5 : 4;
     int j_start = dcell_y < 0 ? 0 : 1;
@@ -272,6 +276,8 @@ __attribute__((always_inline)) inline static void current_deposit_3d_fast(
     double factor_dy = q_over_dx_dz_dt * w;
     double factor_dz = q_over_dx_dy_dt * w;
 
+    // These bounds are correct only when a particle crosses at most one cell
+    // per step (|dcell| <= 1), which is the usual PIC CFL condition.
     int i_start = dcell_x < 0 ? 0 : 1;
     int i_end = dcell_x > 0 ? 5 : 4;
     int j_start = dcell_y < 0 ? 0 : 1;

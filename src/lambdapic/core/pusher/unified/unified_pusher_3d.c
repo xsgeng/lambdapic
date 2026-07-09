@@ -321,6 +321,7 @@ static PyObject* unified_boris_pusher_cpu_3d(PyObject* self, PyObject* args) {
         // Phase 1: position push, interpolation, Boris push, position push
         for (npy_intp ip = 0; ip < npart_patch; ip++) {
             if (is_dead_patch[ip]) continue;
+            if (isnan(x_patch[ip]) || isnan(y_patch[ip]) || isnan(z_patch[ip])) continue;
             push_position_3d(
                 &x_patch[ip], &y_patch[ip], &z_patch[ip],
                 ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
@@ -351,6 +352,7 @@ static PyObject* unified_boris_pusher_cpu_3d(PyObject* self, PyObject* args) {
         // Phase 2: current deposit
         for (npy_intp ip = 0; ip < npart_patch; ip++) {
             if (is_dead_patch[ip]) continue;
+            if (isnan(x_patch[ip]) || isnan(y_patch[ip]) || isnan(z_patch[ip])) continue;
             current_deposit_3d_fast(
                 rho_field, jx_field, jy_field, jz_field,
                 x_patch[ip], y_patch[ip], z_patch[ip],
