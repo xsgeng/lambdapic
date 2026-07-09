@@ -88,10 +88,14 @@ def get_fields_2d(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray
             buf = np.zeros((nx_per_patch+2*ng, ny_per_patch+2*ng))
             for ipatch_x in range(npatch_x):
                 for ipatch_y in range(npatch_y):
+                    index = patch_index_map.get((ipatch_x, ipatch_y))
+                    if index is None:
+                        if not hasattr(sim, 'domain_mask'):
+                            raise KeyError((ipatch_x, ipatch_y))
+                        continue
                     s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
                               ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
                     # local
-                    index = patch_index_map[(ipatch_x, ipatch_y)]
                     if index in local_patches:
                         p = patches[local_patches[index]]
                         field_[s] = getattr(p.fields, field)[:-2*ng, :-2*ng]
@@ -100,6 +104,9 @@ def get_fields_2d(sim: Simulation, fields: Sequence[str]) -> Sequence[np.ndarray
                         sim.mpi.comm.Recv(buf, tag=index)
                         field_[s] = buf[:-2*ng, :-2*ng]
                         
+            if hasattr(sim, 'domain_mask'):
+                field_[~sim.domain_mask] = np.nan
+
             ret.append(field_)
         else: # other ranks
             req = []
@@ -319,7 +326,11 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                         y_info = _compute_patch_slice(sim.ny, sy, ipatch_y * ny_per_patch, ny_per_patch)
                         if x_info is None or y_info is None:
                             continue
-                        index = patch_index_map[(ipatch_x, ipatch_y)]
+                        index = patch_index_map.get((ipatch_x, ipatch_y))
+                        if index is None:
+                            if not hasattr(sim, 'domain_mask'):
+                                raise KeyError((ipatch_x, ipatch_y))
+                            continue
                         if index in local_patches:
                             continue
                         sim.mpi.comm.Recv(buf, tag=index)
@@ -339,14 +350,21 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
                         s = np.s_[ipatch_x*nx_per_patch:ipatch_x*nx_per_patch+nx_per_patch,\
                                   ipatch_y*ny_per_patch:ipatch_y*ny_per_patch+ny_per_patch]
                         # local
-                        index = patch_index_map[(ipatch_x, ipatch_y)]
+                        index = patch_index_map.get((ipatch_x, ipatch_y))
+                        if index is None:
+                            if not hasattr(sim, 'domain_mask'):
+                                raise KeyError((ipatch_x, ipatch_y))
+                            continue
                         if index in local_patches:
                             continue
                         #remote
                         else:
                             sim.mpi.comm.Recv(buf, tag=index)
                             self.density[s] = buf
-        
+
+            if hasattr(sim, 'domain_mask'):
+                self.density[~sim.domain_mask] = np.nan
+
         else:
             req = []
             for ip, p in enumerate(sim.patches):
