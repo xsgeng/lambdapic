@@ -32,7 +32,7 @@ from .core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
 from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
-from .core.species import Electron, Photon, Species
+from .core.species import Electron, Photon, Species, _ALL_SPECIES
 from .core.utils.logger import configure_logger, logger, rank_log
 from .core.utils.progress_bar import ProgressBar
 from .core.utils.terminal import is_terminal
@@ -310,6 +310,8 @@ class Simulation:
             logger.info(f"Boundary conditions: {self.boundary_conditions}")
             logger.info(f"CPML thickness: {self.cpml_thickness}")
         
+        self._add_default_species_if_empty()
+
         patches_list = [Patches(self.dimension) for _ in range(comm_size)]
         if rank == 0:
             logger.info("Creating patches on rank 0")
@@ -548,6 +550,24 @@ class Simulation:
         # Assign ispec
         for ispec, s in enumerate(self.species):
             s.ispec = ispec
+
+    def _add_default_species_if_empty(self) -> None:
+        """Auto-register globally-defined species when none were added.
+
+        If the user constructed ``Species`` instances but forgot to call
+        ``add_species()``, fall back to the module-level ``_ALL_SPECIES``
+        registry. Only dimension-compatible species are registered. This is a
+        convenience and is logged at warning level. No-op if species were
+        already added or the simulation is already initialized.
+        """
+        if not self.species and not self.initialized and _ALL_SPECIES:
+            compatible = [s for s in _ALL_SPECIES if s.is_compatible(self.dimension)]
+            if compatible:
+                logger.warning(
+                    "No species added via add_species(); auto-registering "
+                    f"{len(compatible)} Species: {[s.name for s in compatible]}"
+                )
+                self.add_species(list(compatible))
 
     def add_collision(self, collision_groups: Sequence[Sequence[Species]]):
         """
@@ -851,6 +871,8 @@ class Simulation:
         if callbacks is None:
             callbacks = []
         stage_callbacks = SimulationCallbacks(callbacks, self)
+
+        self._add_default_species_if_empty()
 
         if not self.initialized:
             self.initialize()
