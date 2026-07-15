@@ -45,6 +45,9 @@ class ProgressBar:
         Log progress every N iterations when not in terminal. Default: min(100, total//10).
     maxinterval : float, optional
         Maximum seconds between tqdm display updates. Default: None (tqdm default 60.0).
+    slurm : bool, optional
+        Update SLURM job comment with progress percentage. Default: None (auto-detect from
+        SLURM_JOB_ID environment variable).
     position : int, optional
         Line offset for tqdm display. Default: None.
 

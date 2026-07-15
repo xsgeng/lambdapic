@@ -26,7 +26,9 @@ When calling ``run()``, a :class:`~lambdapic.core.utils.progress_bar.ProgressBar
 created automatically. The progress bar detects whether the output is a terminal or
 a log file and adapts its display accordingly: in terminals it uses ``tqdm`` for an
 interactive progress bar, and in non-terminal environments it emits structured log
-messages at regular intervals.
+messages at regular intervals. When running under SLURM, the progress bar also
+updates the job comment with the completion percentage so that queue status tools
+reflect live progress.
 
 Dynamic Load Balancing
 ~~~~~~~~~~~~~~~~~~~~~~

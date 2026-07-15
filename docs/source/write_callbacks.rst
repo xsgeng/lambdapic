@@ -11,6 +11,8 @@ The :code:`stage` specifies when the callback should be called. Leave it empty t
 The :code:`interval` specifies how frequent the callback should be called. It can be a number or a function that returns a boolean.
 :code:`interval = lambda sim: sim.itime == 42` means the callback will be called at the 42nd iteration.
 
+The decorator also stores both :code:`stage` and :code:`interval` as attributes on the wrapper, so they can be inspected programmatically.
+
 By passing to the :code:`sim.run(1000, callbacks=[your callbacks])`, they will be sequentially called by the :code:`Simulation.run` method.
 
 .. note::
@@ -21,6 +23,27 @@ By passing to the :code:`sim.run(1000, callbacks=[your callbacks])`, they will b
     callbacks inheriting from :code:`Callback` share this terminal-aware behavior.
 
 .. autoclass:: lambdapic.callback.callback.callback
+
+Class-based callbacks
+~~~~~~~~~~~~~~~~~~~~~
+
+Built-in callbacks inherit from the :code:`Callback` base class. For class-based callbacks, define a :code:`DEFAULT_STAGE` class attribute and assign it to :code:`self.stage` in :code:`__init__`. This pattern lets users override the stage at runtime by assigning a different value to :code:`self.stage` after instantiation.
+
+.. code-block:: python
+
+    from lambdapic.callback.callback import Callback
+
+    class MyCallback(Callback):
+        DEFAULT_STAGE = "start"
+        def __init__(self):
+            self.stage = self.DEFAULT_STAGE
+            self.interval = 1
+        def _call(self, sim):
+            print(f"Step {sim.itime}")
+
+    cb = MyCallback()
+    # Override the stage at runtime if desired
+    cb.stage = "maxwell_1"
 
 Hello world
 ~~~~~~~~~~~~

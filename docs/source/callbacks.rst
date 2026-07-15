@@ -67,6 +67,8 @@ Use :any:`SimpleLaser2D` or :any:`SimpleLaser3D`. Supports additional parameters
 
 - ``y0``, ``z0``: laser center position (defaults to ``Ly/2``, ``Lz/2``)
 - ``angle_y``, ``angle_z``: incident angle in y and z direction (defaults to 0; ``angle_z`` is not implemented and must be 0)
+- ``pol_angle``: polarization angle in radians (default 0, y-polarization)
+- ``ellipticity``: ellipticity in [-1, 1] (default 0). 0 is linear, ±1 is circular. Positive and negative values give opposite handedness. The cycle-averaged intensity is conserved, so each axis peaks at ``a0/sqrt(2)`` for circular polarization.
 - ``cep``: carrier envelope phase (default: 0)
 
 .. autoclass:: lambdapic.callback.laser.SimpleLaser
@@ -99,9 +101,23 @@ Utility callbacks
 SetTemperature
 ~~~~~~~~~~~~~~
 
-Set the temperature of a species to a given value in eV.
+Set the temperature of a species to a given value in eV. Also supports an ``add`` parameter to add the thermal momenta on top of existing values instead of replacing them.
 
 .. autoclass:: lambdapic.callback.utils.SetTemperature
+
+SetMomentum
+~~~~~~~~~~~
+
+Set the particle momenta (``ux``, ``uy``, ``uz``) to specific values. Also supports an ``add`` parameter to add the target momenta to the existing ones instead of replacing them.
+
+.. autoclass:: lambdapic.callback.utils.SetMomentum
+
+SetMomentumAndTemperature
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Set bulk momentum and temperature (eV) together. The momentum is set first, then the thermal spread is added on top. Also supports an ``add`` parameter to add to existing values instead of replacing them.
+
+.. autoclass:: lambdapic.callback.utils.SetMomentumAndTemperature
 
 ExtractSpeciesDensity
 ~~~~~~~~~~~~~~~~~~~~~
