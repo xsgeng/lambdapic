@@ -26,7 +26,7 @@ from lambdapic import (
     m_e,
     pi,
 )
-from lambdapic._mask_simulation import _MaskSimulation
+from lambdapic.simulation._mask_simulation import _MaskSimulation
 
 
 # --- physical constants ---

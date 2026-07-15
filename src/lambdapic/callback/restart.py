@@ -152,6 +152,8 @@ class RestartDump(Callback):
 
         # inc by 1, since restart is called before itime inc
         sim.itime += 1
+        # keep time in sync with itime
+        sim.time = sim.itime * sim.dt
         comm.Barrier()
 
         logger.info(f"Rank {rank}: Checkpoint loaded from {ckpt_dir}, itime={sim.itime}")

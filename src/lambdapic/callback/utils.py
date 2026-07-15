@@ -266,8 +266,9 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
         If you want to save the density to file, use :any:`SaveSpeciesDensityToHDF5` instead.
     """
 
-    stage = "current_deposition"
+    DEFAULT_STAGE = "current_deposition"
     def __init__(self, sim: Simulation, species: Species, interval: Union[int, float, Callable] = 100, slice: tuple[int | slice, ...] | None = None) -> None:
+        self.stage = self.DEFAULT_STAGE
         self.species = species
         self.interval = interval
         self.prev_rho = None
@@ -495,8 +496,7 @@ class MovingWindow:
         - Updates patch neighbor relationships after shifts
         - Removes PML boundaries when moving starts
     """
-    stage = "start"
-    
+    DEFAULT_STAGE = "start"
     def __init__(
         self, 
         velocity: Union[float, Callable[[float], float]], 
@@ -504,6 +504,7 @@ class MovingWindow:
         inject_particles: bool = True,
         stop_inject_time: Optional[float] = None,
     ):
+        self.stage = self.DEFAULT_STAGE
         self.velocity = velocity
         self.start_time = start_time
         self.inject_particles = inject_particles
@@ -583,6 +584,7 @@ class MovingWindow:
                 for k in pml.__dict__:
                     if k.startswith('psi'):
                         pml.__dict__[k].fill(0.0)
+
 
         for sorter in sim.sorter:
             sorter.generate_field_lists()
@@ -837,18 +839,99 @@ class MovingWindow:
                 gens
             )
 
+class SetMomentum(Callback):
+    """
+    Callback to set the particle momenta (ux, uy, uz) to specific values.
+    
+    Parameters:
+        species (Species): The target species whose momenta are to be set.
+        momentum (List[float|int]): List of momentum components [ux, uy, uz] to set.
+        interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply,
+            defaults to run at the first timestep only once.
+        add (bool): If True, add the momentum to the existing momentum, otherwise set the momentum to the target values
+    """
+    
+    DEFAULT_STAGE = "init"
+    def __init__(self, species: Species, momentum: List[float|int], interval: Union[int, float, Callable]|None = None, add: bool = False) -> None:
+        self.stage = self.DEFAULT_STAGE
+        self.species = species
+        self.momentum = momentum
+        self.add = add
+        
+        if interval is None:
+            self.interval = lambda sim: sim.itime == 0
+        else:
+            self.interval = interval
+
+    def _call(self, sim: Simulation) -> None:
+        ispec = self.species.ispec
+        ux_target, uy_target, uz_target = self.momentum
+        
+        for p in sim.patches:
+            part = p.particles[ispec]
+            alive = part.is_alive
+            n: int = alive.sum()
+            if n == 0:
+                continue
+                
+            # Set momentum components to target values
+            if self.add:
+                part.ux[alive] += ux_target
+                part.uy[alive] += uy_target
+                part.uz[alive] += uz_target
+            else:
+                part.ux[alive] = ux_target
+                part.uy[alive] = uy_target
+                part.uz[alive] = uz_target
+            
+            # Update inverse gamma factor from the resulting momenta
+            part.inv_gamma[alive] = 1 / np.sqrt(1 + part.ux[alive]**2 + part.uy[alive]**2 + part.uz[alive]**2)
+
+
+class SetMomentumAndTemperature(Callback):
+    """
+    Callback to set the temperature (in units of eV) with central momenta (ux, uy, uz).
+
+    Parameters:
+        species (Species): The target species whose momenta are to be set.
+        momentum (List[float|int]): List of momentum components [ux, uy, uz] to set.
+        temperature (float): Temperature in units of eV.
+        interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
+        add (bool): If True, add the momentum to the existing momentum, otherwise set the momentum to the target values
+    """
+
+    DEFAULT_STAGE = "init"
+    def __init__(self, species: Species, momentum: List[float|int], temperature: float|int|List[float|int], interval: Union[int, float, Callable]|None = None, add: bool = False) -> None:
+        self.stage = self.DEFAULT_STAGE
+        self.add = add
+        if interval is None:
+            self.interval = lambda sim: sim.itime == 0
+        else:
+            self.interval = interval
+
+        self._set_momentum = SetMomentum(species, momentum, interval, add=add)
+        self._set_temperature = SetTemperature(species, temperature, interval, add=True)
+
+    def _call(self, sim: Simulation) -> None:
+        # Set bulk momentum first, then add thermal spread on top.
+        # SetTemperature runs last with add=True so inv_gamma is recomputed
+        # from the total (bulk + thermal) momenta.
+        self._set_momentum._call(sim)
+        self._set_temperature._call(sim)
+
 class SetTemperature(Callback):
     """
     Callback to set the particle momenta (ux, uy, uz) for a species to a relativistic Maxwell-Jüttner distribution
     with the specified temperature (in units of eV).
 
-    Args:
+    Parameters:
         species (Species): The target species whose temperature is to be set.
         temperature (float): Temperature in units of eV.
         interval (int or callable): Frequency (in timesteps) or callable(sim) for when to apply, defaults to run at the first timestep only once.
+        add (bool): If True, add the temperature to the existing temperature, otherwise set the temperature to the target values
     """
     DEFAULT_STAGE = "init"
-    def __init__(self, species: Species, temperature: float|int|List[float|int], interval: Union[int, float, Callable]|None = None) -> None:
+    def __init__(self, species: Species, temperature: float|int|List[float|int], interval: Union[int, float, Callable]|None = None, add: bool = False) -> None:
         self.stage = self.DEFAULT_STAGE
         self.species = species
 
@@ -861,6 +944,8 @@ class SetTemperature(Callback):
             self.interval = lambda sim: sim.itime == 0
         else:
             self.interval = interval
+
+        self.add = add
 
     def _call(self, sim: Simulation) -> None:
         ispec = self.species.ispec
@@ -875,9 +960,14 @@ class SetTemperature(Callback):
             thetax = self.temperature[0]*e / (self.species.m * c**2)
             ux, uy, uz = self.sample_maxwell_juttner(n, thetax, rand_gen)
             # stretch to simulate temperature anisotropy
-            part.ux[alive] = ux
-            part.uy[alive] = uy * self.temperature[1]/self.temperature[0]
-            part.uz[alive] = uz * self.temperature[2]/self.temperature[0]
+            if self.add:
+                part.ux[alive] += ux
+                part.uy[alive] += uy * self.temperature[1]/self.temperature[0]
+                part.uz[alive] += uz * self.temperature[2]/self.temperature[0]
+            else:
+                part.ux[alive] = ux
+                part.uy[alive] = uy * self.temperature[1]/self.temperature[0]
+                part.uz[alive] = uz * self.temperature[2]/self.temperature[0]
             part.inv_gamma[alive] = 1 / np.sqrt(1 + part.ux[alive]**2 + part.uy[alive]**2 + part.uz[alive]**2)
 
     @staticmethod

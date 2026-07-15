@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .simulation import Simulation
-from .core.patch.patch import Patch2D, Patches, Boundary2D
-from .core.boundary.cpml import PMLXmin, PMLXmax, PMLYmin, PMLYmax
+from . import Simulation
+from ..core.patch.patch import Patch2D, Patches, Boundary2D
+from ..core.boundary.cpml import PMLXmin, PMLXmax, PMLYmin, PMLYmax
 
 
 @dataclass

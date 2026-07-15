@@ -1,11 +1,11 @@
-# print("Using optical depth method.")
 import os
 from math import isnan
 
+from loguru import logger
 from numba import boolean, float64, int64, njit, prange, void
 from numpy import log, random
 
-if os.environ.get("LIBPIC_USE_SIGMOID_SAMPLING") == "1":
+if os.environ.get("LAMBDAPIC_USE_SIGMOID_SAMPLING") == "1":
     from .optical_depth_tables_sigmoid import (
         _integral_photon_prob_along_delta,
         _integral_pair_prob_along_delta,
@@ -17,7 +17,7 @@ if os.environ.get("LIBPIC_USE_SIGMOID_SAMPLING") == "1":
         pair_delta_from_chi_delta_table,
         photon_delta_from_chi_delta_table,
     )
-    print("Using sigmoid sampling.")
+    logger.info("Using sigmoid sampling.")
 else:
     from .optical_depth_tables import (
         _integral_photon_prob_along_delta,

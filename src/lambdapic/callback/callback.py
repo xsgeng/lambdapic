@@ -33,9 +33,17 @@ def _interval_triggered(sim: Simulation, interval: int | float | Callable) -> bo
                 "Simulation instance must provide `time` when using float interval callbacks."
             )
 
-        return (time_value % interval) < sim.dt
+        dt_reference = getattr(sim, "dt", None)
+
+        if dt_reference is None:
+            raise AttributeError(
+                "Simulation instance must provide `dt` when using float interval callbacks."
+            )
+
+        return (time_value % interval) < dt_reference
 
     return True
+
 
 def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> Callable:
     """
@@ -94,6 +102,7 @@ def callback(stage: Optional[str] = None, interval: int|float|Callable = 1) -> C
         
         # Add stage attribute and execute method
         wrapper.stage = stage
+        wrapper.interval = interval
         
         return wrapper
     

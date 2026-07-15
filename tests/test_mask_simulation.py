@@ -7,7 +7,7 @@ from scipy.constants import c, e, epsilon_0, m_e, pi
 from lambdapic import Electron
 from lambdapic.core.patch.patch import Patches, Patch2D, Boundary2D
 from lambdapic.core.boundary.utils import has_pml
-from lambdapic._mask_simulation import _MaskSimulation
+from lambdapic.simulation._mask_simulation import _MaskSimulation
 
 
 def ring_mask(r_inner: float, r_outer: float, cx: float = 0.0, cy: float = 0.0):

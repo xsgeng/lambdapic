@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Callable, ClassVar, Dict, List, Literal, Optional, Sequence
+from typing import Callable, ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
 import mpi4py
 import numpy as np
@@ -10,33 +10,33 @@ from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 from yaspin import yaspin
 
-from .core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
-from .core.collision.collision import Collision
-from .core.current.deposition import (
+from ..core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
+from ..core.collision.collision import Collision
+from ..core.current.deposition import (
     CurrentDeposition,
     CurrentDeposition2D,
     CurrentDeposition3D,
 )
-from .core.fields import Fields2D, Fields3D
-from .core.interpolation.field_interpolation import (
+from ..core.fields import Fields2D, Fields3D
+from ..core.interpolation.field_interpolation import (
     FieldInterpolation,
     FieldInterpolation2D,
     FieldInterpolation3D,
 )
-from .core.maxwell.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
-from .core.mpi.load_balancer import LoadBalancer
-from .core.mpi.mpi_manager import MPIManager
-from .core.patch.metis import compute_rank
-from .core.patch.patch import Patch2D, Patch3D, Patches
-from .core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
-from .core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
-from .core.qed.radiation import NonlinearComptonLCFA, RadiationBase
-from .core.sort.particle_sort import ParticleSort2D, ParticleSort3D
-from .core.species import Electron, Photon, Species, _ALL_SPECIES
-from .core.utils.logger import configure_logger, logger, rank_log
-from .core.utils.progress_bar import ProgressBar
-from .core.utils.terminal import is_terminal
-from .core.utils.timer import Timer
+from ..core.maxwell.solver.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
+from ..core.mpi.load_balancer import LoadBalancer
+from ..core.mpi.mpi_manager import MPIManager
+from ..core.patch.metis import compute_rank
+from ..core.patch.patch import Patch2D, Patch3D, Patches
+from ..core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
+from ..core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
+from ..core.qed.radiation import NonlinearComptonLCFA, RadiationBase
+from ..core.sort.particle_sort import ParticleSort2D, ParticleSort3D
+from ..core.species import Electron, Photon, Species, _ALL_SPECIES
+from ..core.utils.logger import configure_logger, logger, rank_log
+from ..core.utils.progress_bar import ProgressBar
+from ..core.utils.terminal import is_terminal
+from ..core.utils.timer import Timer
 from .utils import (
     auto_patch_2d,
     auto_patch_3d,
@@ -233,6 +233,7 @@ class Simulation:
         self.species: list[Species] = []
         
         self.itime = 0
+        self.time = 0.0
         self.random_seed = config.random_seed
         self.rand_gen: Optional[np.random.Generator] = None # will be initialized after mpi initialization
 
@@ -266,15 +267,6 @@ class Simulation:
                 npatch_x, npatch_y = None, None
 
             self.npatch_x, self.npatch_y = comm.bcast((npatch_x, npatch_y))
-
-    @property
-    def time(self) -> float:
-        """Get the current simulation time in seconds.
-        
-        Returns:
-            Current simulation time (itime * dt)
-        """
-        return self.itime * self.dt
     
     def initialize(self):
         """Initialize the simulation components.
@@ -682,6 +674,7 @@ class Simulation:
                     continue
             self.pairproduction.append(None)
 
+
     def _init_sorter(self):
         self.sorter: list[ParticleSort2D] = []
         if self._collision_groups:
@@ -690,7 +683,7 @@ class Simulation:
         else:
             for s in self.patches.species:
                 self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
-
+                
     def _init_random_generator(self) -> None:
         """Create MPI-level generators for each rank.
         
@@ -846,7 +839,6 @@ class Simulation:
             self.collision.generate_field_lists()
             self.collision.generate_particle_lists()
 
-        # Update particle lists for all modules
         self.update_lists()
 
 
@@ -928,7 +920,7 @@ class Simulation:
             position=1,
         )
 
-        for self.istep in range(self.itime, nsteps_total-self.itime):
+        for self.istep in range(self.itime, nsteps_total):
             pbar.update(1)
 
             # start of simulation stages
@@ -952,6 +944,7 @@ class Simulation:
             with Timer("maxwell_1"):
                 stage_callbacks.run('maxwell_1')
                 
+
             for ispec, s in enumerate(self.patches.species):
                 if not s.is_enabled():
                     continue
@@ -1103,6 +1096,7 @@ class Simulation:
                 restart_cb._call(self)
                 return
             
+            self.time += self.dt
             self.itime += 1
 
 
@@ -1149,8 +1143,13 @@ class Simulation:
             nsteps_total = nsteps + self.itime
         else:
             raise RuntimeError("This should never be reached")
+        
         return nsteps_total
 
+    def get_cfl(self):
+        return self.dt / ((self.dx**-2 + self.dy**-2)**-0.5 / c)
+    
+    
 Simulation2D = Simulation
 
 @dataclass
@@ -1364,6 +1363,9 @@ class Simulation3D(Simulation):
         Handles deposition of particle currents onto the grid.
         """
         self.current_depositor = CurrentDeposition3D(self.patches)
+    
+    def get_cfl(self):
+        return self.dt / ((self.dx**-2 + self.dy**-2 + self.dz**-2)**-0.5 / c)
         
 class SimulationCallbacks:
     """Manages the execution of callbacks at different simulation stages."""
@@ -1375,7 +1377,7 @@ class SimulationCallbacks:
             callbacks: List of callback objects
             simulation: The simulation instance to pass to callbacks
         """
-        from .callback.callback import callback
+        from ..callback.callback import callback
 
         if not hasattr(simulation, "STAGES") or not hasattr(simulation, "DEFAULT_STAGE"):
             raise AttributeError("Simulation class does not define STAGES or DEFAULT_STAGE")
@@ -1422,3 +1424,21 @@ class SimulationCallbacks:
             Useful for checking which stages will trigger callback execution.
         """
         return [stage for stage, callbacks in self.stage_callbacks.items() if callbacks]
+
+    def has_triggered_callbacks(self, stage: str) -> bool:
+        """Check if any callback for the given stage is triggered at current sim state.
+        
+        Args:
+            stage: The simulation stage to check.
+            
+        Returns:
+            True if at least one callback is registered for the stage and its
+            interval condition is satisfied for the current simulation state.
+        """
+        from ..callback.callback import _interval_triggered
+
+        for cb in self.stage_callbacks.get(stage, []):
+            interval = getattr(cb, 'interval', 1)
+            if _interval_triggered(self.simulation, interval):
+                return True
+        return False

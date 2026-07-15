@@ -60,6 +60,7 @@ sim = Simulation(
     dx=dx,
     dy=dy,
     sim_time=100e-15,
+    log_file="photons.log"
 )
 
 ele = Electron(density=density(5*nc), ppc=10, radiation="photons")
@@ -82,14 +83,10 @@ def npho(sim: Simulation):
     npart = sim.mpi.comm.reduce(npart)
     if sim.mpi.rank == 0:
         logger.info(f"nphoton = {npart}")
-
-@callback("current_deposition", interval=interval)
-def prune(sim: Simulation):
-    for ipatch, p in enumerate(sim.patches):
-        p.particles[sim.ispec].prune()
     
 if __name__ == "__main__":
-    sim.run(callbacks=[
+    sim.run(
+        callbacks=[
             laser, 
             n_ele := ExtractSpeciesDensity(sim, ele, interval),
             PlotFields(
@@ -100,6 +97,5 @@ if __name__ == "__main__":
                 prefix='photons', interval=interval,
             ),
             npho,
-            prune,
         ]
     )

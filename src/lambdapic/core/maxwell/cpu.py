@@ -21,7 +21,6 @@ def update_efield_2d(
             ey[i, j] += bfactor * (-(bz[i, j] - bz[i-1, j]) / dx) - jfactor * jy[i, j]
             ez[i, j] += bfactor * ( (by[i, j] - by[i-1, j]) / dx - (bx[i, j] - bx[i, j-1]) / dy) - jfactor * jz[i, j]
 
-
 @njit(cache=True, inline='always')
 def update_bfield_2d(
     ex, ey, ez, 
@@ -59,7 +58,6 @@ def update_efield_patches_2d(
 
         update_efield_2d(ex, ey, ez, bx, by, bz, jx, jy, jz, dx, dy, dt, nx, ny, n_guard)
 
-
 @jit_spinner
 @njit(parallel=True, cache=True)
 def update_bfield_patches_2d(
@@ -79,7 +77,6 @@ def update_bfield_patches_2d(
         bz = bz_list[ipatch]
 
         update_bfield_2d(ex, ey, ez, bx, by, bz, dx, dy, dt, nx, ny, n_guard)
-
 
 '''3D functions'''
 @njit(cache=True, inline='always')

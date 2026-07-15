@@ -1,17 +1,18 @@
-
+from typing import Tuple
 import numpy as np
 from numba import typed
 from scipy.constants import c, e, epsilon_0, mu_0
 
-from ..utils.pickle_list import PickleableTypedList
+from ...utils.pickle_list import PickleableTypedList
 
-from ..boundary.cpml import (PMLX, PMLY, PMLZ, update_bfield_cpml_patches_2d,
+from ...boundary.cpml import (PMLX, PMLY, PMLZ,
+                             update_bfield_cpml_patches_2d,
                              update_efield_cpml_patches_2d,
                              update_bfield_cpml_patches_3d,
                              update_efield_cpml_patches_3d)
-from ..patch import Patches
+from ...patch import Patches
 
-from .cpu import (update_bfield_patches_2d, update_bfield_patches_3d,
+from ..cpu import (update_bfield_patches_2d, update_bfield_patches_3d,
                   update_efield_patches_2d, update_efield_patches_3d)
 
 
@@ -250,3 +251,4 @@ class MaxwellSolver3D(MaxwellSolver):
             for p in self.patches_pml_boundary:
                 for pml in p.pml_boundary:
                     pml.advance_b_currents(dt)
+
