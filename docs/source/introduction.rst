@@ -36,7 +36,7 @@ The package provides built-in callbacks for common diagnostics, such as saving t
 
 **Physics**:
 
-- Built-in support for intense laser interactions with angle, offset, CEP, and addition
+- Built-in support for intense laser interactions with angle, offset, ellipticity, CEP, and addition
 - QED processes (photon emission, pair production)
 - Efficient user-defined profile evaluation via Numba jit
 - [WIP] Collision & Nuclear physics

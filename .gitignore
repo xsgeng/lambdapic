@@ -46,10 +46,15 @@ dist/
 *.h5
 .coverage*
 *.log
+*.npz
 
 benchmark/
+notebooks/
 
 __*/
 *.txt
 
+example/*/
+uv.lock
+makefile
 docs/_build

@@ -67,7 +67,8 @@ sim = Simulation(
     npatch_x=10,
     npatch_y=10,
     dt_cfl=0.99,
-    sim_time=100e-15
+    sim_time=100e-15,
+    log_file="lwfa.log"
 )
 
 ele = Electron(density=density(ne), ppc=10)
@@ -78,7 +79,8 @@ sim.add_species([ele, carbon, proton])
 
 interval = 10e-15
 if __name__ == "__main__":
-    sim.run(2001, callbacks=[
+    sim.run(
+        callbacks=[
             movingwindow,
             laser,
             n_ele := ExtractSpeciesDensity(sim, ele, interval),

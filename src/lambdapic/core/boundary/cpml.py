@@ -131,7 +131,7 @@ class PML(Boundary):
     def advance_b_currents(self, dt):
         """ Advance the CPML psi_b """
         raise NotImplementedError
-
+    
 class PMLX(PML):
     def __init__(self, fields: Fields, thickness: int = 6, kappa_max: float = 20, a_max: float = 0.15, sigma_max: float = 0.7) -> None:
         super().__init__(fields, thickness, kappa_max, a_max, sigma_max)
@@ -163,6 +163,7 @@ class PMLX(PML):
         else:
             update_psi_x_and_b_2d(self.kappa_bx, self.sigma_bx, self.a_bx, self.ny, dt, self.dx, self.bfield_start, self.bfield_end, 
                                self.fields.ey, self.fields.ez, self.fields.by, self.fields.bz, self.psi_by_x, self.psi_bz_x)
+
 
 class PMLY(PML):
     def __init__(self, fields: Fields, thickness: int = 6, kappa_max: float = 20, a_max: float = 0.15, sigma_max: float = 0.7) -> None:
@@ -200,6 +201,7 @@ class PMLY(PML):
             update_psi_y_and_b_2d(self.kappa_by, self.sigma_by, self.a_by, self.nx, dt, self.dy, self.bfield_start, self.bfield_end, 
                            self.fields.ex, self.fields.ez, self.fields.bx, self.fields.bz, self.psi_bx_y, self.psi_bz_y)
 
+
 class PMLZ(PML):
     def __init__(self, fields: Fields, thickness: int = 6, kappa_max: float = 20, 
                 a_max: float = 0.15, sigma_max: float = 0.7) -> None:
@@ -226,7 +228,8 @@ class PMLZ(PML):
                                 self.fields.ex, self.fields.ey,
                                 self.fields.bx, self.fields.by,
                                 self.psi_bx_z, self.psi_by_z)
-                                
+
+
 class PMLXmin(PMLX):
     def init_parameters(self):
         # runs from 1.0 to nearly 0.0 (actually 0.0 at cpml_thickness+1)
@@ -356,7 +359,6 @@ def update_efield_cpml_2d(
             ez[i, j] += bfactor_x * ( (by[i, j] - by[i-1, j]) / dx) \
                       - bfactor_y * ( (bx[i, j] - bx[i, j-1]) / dy) - jfactor * jz[i, j]
 
-
 @njit(inline='always')
 def update_bfield_cpml_2d(
     ex, ey, ez, 
@@ -373,8 +375,6 @@ def update_bfield_cpml_2d(
             by[i, j] -= efactor_x * (-(ez[i+1, j] - ez[i, j]) / dx)
             bz[i, j] -= efactor_x * ( (ey[i+1, j] - ey[i, j]) / dx) \
                       - efactor_y * ( (ex[i, j+1] - ex[i, j]) / dy)
-
-
 
 @jit_spinner
 @njit(parallel=True, cache=True)
@@ -498,8 +498,8 @@ def update_efield_cpml_patches_3d(
         kappa_ey = kappa_ey_list[ipatch]
         kappa_ez = kappa_ez_list[ipatch]
 
-        update_efield_cpml_3d(ex, ey, ez, bx, by, bz, jx, jy, jz, 
-                            kappa_ex, kappa_ey, kappa_ez, 
+        update_efield_cpml_3d(ex, ey, ez, bx, by, bz, jx, jy, jz,
+                            kappa_ex, kappa_ey, kappa_ez,
                             dx, dy, dz, dt, nx, ny, nz, n_guard)
 
 @jit_spinner

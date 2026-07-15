@@ -78,8 +78,9 @@ def _update_laser_bfields_3d(
 
         
 class Laser:
+    DEFAULT_STAGE: str = "_laser"
     def __init__(self) -> None:
-        self.stage = "_laser"
+        self.stage = self.DEFAULT_STAGE
         self.disabled = False
         self.side = "xmin"
         self.tstop = np.inf
@@ -283,10 +284,10 @@ class SimpleLaser(Laser):
         For more accurate physics including proper beam evolution, wavefront curvature,
         and Gouy phase, use the GaussianLaser class instead.
     """
-    def __init__(self, a0: float, w0: float, ctau: float, 
+    def __init__(self, a0: float, w0: float, ctau: float,
                  y0: float|None=None, z0: float|None=None, angle_y: float=0, angle_z: float=0,
-                 tstop: float|None=None, pol_angle: float = 0.0, cep: float = 0.0, 
-                 l0: float=0.8e-6, side="xmin"):
+                 tstop: float|None=None, pol_angle: float = 0.0, ellipticity: float = 0.0,
+                 cep: float = 0.0, l0: float=0.8e-6, side="xmin"):
         """
         Parameters:
             sim: Simulation object that this laser will be injected into
@@ -299,9 +300,12 @@ class SimpleLaser(Laser):
             angle_z: NOT IMPLEMENTED. Must be 0.
             tstop: Time at which the laser pulse should stop (default: 2*ctau)
             pol_angle: Polarization angle in radians (default: 0.0 for y-polarization)
+            ellipticity: Ellipticity parameter in range [-1, 1] (default: 0.0).
+                0 means linear polarization, ±1 means circular polarization.
+                Positive and negative values correspond to opposite handedness.
             cep: Carrier envelope phase (default: 0.0)
             l0: Laser wavelength (default: 800nm)
-        
+
         Raises:
             ValueError: If parameters are invalid (negative or zero values)
         """
@@ -309,16 +313,19 @@ class SimpleLaser(Laser):
         # Parameter validation
         if any(p <= 0 for p in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
-        
+
         if side not in ["xmin"]:
             raise NotImplementedError("Invalid side: only 'xmin' is supported.")
-        
+
         if abs(angle_y) >= pi/2:
             raise ValueError("Angle_y must be in range (-pi/2, pi/2)")
-        
+
         if angle_z != 0:
             raise NotImplementedError("Angle_z is not implemented")
-        
+
+        if abs(ellipticity) > 1:
+            raise ValueError("Ellipticity must be in range [-1, 1]")
+
         self.a0 = a0
         self.l0 = l0
         self.omega0 = 2 * pi * c / l0
@@ -331,6 +338,7 @@ class SimpleLaser(Laser):
         self.tstop = 2*ctau if tstop is None else c*tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
+        self.ellipticity = ellipticity
         self.cep = cep
         self.side = side
 
@@ -343,10 +351,9 @@ class SimpleLaser(Laser):
     def _calculate_bound_fields(self, sim: Simulation, patch: Patch) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Calculate ey_source and ez_source for this laser."""
         time = sim.time
-        
+
         if c*time >= self.tstop:
             return None, None
-
 
         if self.side == "xmin":
             y, z, r = self._get_boundary_coordinates(sim, patch)
@@ -359,14 +366,23 @@ class SimpleLaser(Laser):
         t_rot = c*time - y * np.sin(self.angle_y)
         tprof = np.sin(t_rot/(2*self.ctau)*pi)**2 * (t_rot < 2*self.ctau)
 
-        # Calculate base field amplitude with:
-        # - Gaussian transverse profile: exp(-r²/w0²)
-        # - Temporal oscillation: sin(ω₀t + transverse_phase)
-        # - Smooth temporal envelope: tprof
-        efield = self.E0 * np.exp(-r_rot**2/self.w0**2) * np.sin(self.omega0 * time + self.cep + transverse_phase) * tprof
+        # Amplitude envelope (Gaussian transverse profile + temporal envelope)
+        amp = self.E0 * np.exp(-r_rot**2/self.w0**2) * tprof
+        phase = self.omega0 * time + self.cep + transverse_phase
 
-        ey_source = efield * np.cos(self.pol_angle) * np.cos(self.angle_y)
-        ez_source = efield * np.sin(self.pol_angle) * np.cos(self.angle_z)
+        # Ellipticity decomposition: major and minor axis amplitudes.
+        # Convention: cycle-averaged intensity is conserved across ellipticity.
+        # Linear (ellipticity=0) peaks at a0 on one axis; circular (±1) splits
+        # the energy equally, so each axis peaks at a0/sqrt(2).
+        norm = np.sqrt(1 + self.ellipticity**2)
+        major = 1.0 / norm
+        minor = self.ellipticity / norm
+
+        cos_pol = np.cos(self.pol_angle)
+        sin_pol = np.sin(self.pol_angle)
+
+        ey_source = amp * (major * cos_pol * np.sin(phase) - minor * sin_pol * np.cos(phase)) * np.cos(self.angle_y)
+        ez_source = amp * (major * sin_pol * np.sin(phase) + minor * cos_pol * np.cos(phase)) * np.cos(self.angle_z)
         return ey_source, ez_source
 
     
@@ -396,10 +412,10 @@ class GaussianLaser(Laser):
         including proper beam evolution and phase effects. Use this for
         realistic simulations where these effects matter.
     """
-    def __init__(self, a0: float, l0: float, w0: float, ctau: float, 
+    def __init__(self, a0: float, l0: float, w0: float, ctau: float,
                  x0: float|None=None, y0: float|None=None, z0: float|None=None,
-                 tstop: float|None=None, pol_angle: float = 0.0, cep: float = 0.0,
-                 focus_position: float = 0.0, side: str = "xmin",
+                 tstop: float|None=None, pol_angle: float = 0.0, ellipticity: float = 0.0,
+                 cep: float = 0.0, focus_position: float = 0.0, side: str = "xmin",
                  l: int=0, p: int=0, # Laguerre Gaussian laser index
                  ):
         """
@@ -413,6 +429,9 @@ class GaussianLaser(Laser):
             z0: z position of the laser center (default: 0). No effect for 2D laser.
             tstop: Time to stop injection (default: 6*ctau)
             pol_angle: Polarization angle in radians (default: 0.0 for y-polarization)
+            ellipticity: Ellipticity parameter in range [-1, 1] (default: 0.0).
+                0 means linear polarization, ±1 means circular polarization.
+                Positive and negative values correspond to opposite handedness.
             cep: Carrier envelope phase (default: 0.0)
             focus_position: Position of laser focus relative to boundary (default: 0.0)
             side: Injection boundary ('xmin' or 'xmax') (default: 'xmin')
@@ -424,9 +443,12 @@ class GaussianLaser(Laser):
         # Parameter validation
         if any(par <= 0 for par in [a0, l0, w0, ctau]):
             raise ValueError("All parameters (a0, l0, w0, ctau) must be positive")
-        
+
         if side not in ["xmin"]:
             raise ValueError("Invalid side: only 'xmin' is implemented.")
+
+        if abs(ellipticity) > 1:
+            raise ValueError("Ellipticity must be in range [-1, 1]")
             
         if not isinstance(p, int) or p < 0:
             raise ValueError("Number of radial nodes p must be a non-negative integer")
@@ -445,6 +467,7 @@ class GaussianLaser(Laser):
         self.tstop = 6*ctau if tstop is None else c*tstop
         self.E0 = a0 * m_e * c * self.omega0 / e
         self.pol_angle = pol_angle
+        self.ellipticity = ellipticity
         self.cep = cep
         self.focus_position = focus_position
         self.side = side
@@ -513,10 +536,22 @@ class GaussianLaser(Laser):
                 (2*self.p+abs(self.l)+1) * boundary_psi # Gouy phase
                 - phase_lg)                  # Vortex
 
-        # Set fields based on polarization
-        efield = amp * np.sin(phase) * tprof
-        ey_source = efield * np.cos(self.pol_angle)
-        ez_source = efield * np.sin(self.pol_angle)
+        # Amplitude envelope
+        amp = amp * tprof
+
+        # Ellipticity decomposition: major and minor axis amplitudes.
+        # Convention: cycle-averaged intensity is conserved across ellipticity.
+        # Linear (ellipticity=0) peaks at a0 on one axis; circular (±1) splits
+        # the energy equally, so each axis peaks at a0/sqrt(2).
+        norm = np.sqrt(1 + self.ellipticity**2)
+        major = 1.0 / norm
+        minor = self.ellipticity / norm
+
+        cos_pol = np.cos(self.pol_angle)
+        sin_pol = np.sin(self.pol_angle)
+
+        ey_source = amp * (major * cos_pol * np.sin(phase) - minor * sin_pol * np.cos(phase))
+        ez_source = amp * (major * sin_pol * np.sin(phase) + minor * cos_pol * np.cos(phase))
         return ey_source, ez_source
 
 class GaussianLaser2D(Laser2D, GaussianLaser):

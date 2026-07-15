@@ -331,7 +331,6 @@ class SaveFieldsToHDF5(Callback):
             if invalid:
                 raise ValueError(f"Invalid field components: {invalid}")
             self.components = list(components)
-
         self.slice = slice
         self._normalized_slice = None
         

@@ -1,5 +1,5 @@
 import re
-from .core.species import Species
+from ..core.species import Species
 from packaging.version import Version, InvalidVersion
 import numpy as np
 
@@ -59,7 +59,7 @@ def is_version_outdated(local: str, remote: str) -> bool:
         return False
 
 def get_num_threads() -> int:
-    from .core.pusher.unified import unified_pusher_2d
+    from ..core.pusher.unified import unified_pusher_2d
     from threadpoolctl import threadpool_info
     for info in threadpool_info():
         if info['internal_api'] == 'openmp':

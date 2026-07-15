@@ -204,7 +204,6 @@ def boost_to_lab(
     
     return px, py, pz
 
-
 @jitclass
 class IntraPairingIterator:
     """Iterator for generating intra-species collision pairs.
@@ -418,3 +417,61 @@ class InterPairingIterator:
         ipair_ret = self.ipair
         self.ipair += 1
         return ipair_ret, ip1_abs, ip2_abs, w_corr, dt_corr_f
+
+
+@njit
+def search_dead(is_dead: NDArray[np.bool_], istart: int) -> int:
+    npart = len(is_dead)
+    for i in range(istart, npart, 8):
+        if i+8 <= npart:
+            if is_dead[i:i+8].view(np.uint64):
+                for j in range(i, i+8):
+                    if is_dead[j]:
+                        return j
+        else:
+            for j in range(i, npart):
+                if is_dead[j]:
+                    return j
+    
+    return -1  # No dead particle found
+
+@njit
+def insert_at(part: ParticleData, istart: int, 
+              x: float, y: float, z: float, 
+              ux: float, uy: float, uz: float, w: float) -> int:
+    """
+    Insert a particle at the first available dead position in the particle array.
+    
+    Parameters:
+        part (ParticleData): Particle data structure containing arrays
+        istart (int): Starting index for dead particles
+        x,y,z (float): Position coordinates
+        ux,uy,uz (float): Momentum components (normalized by mc)
+        w (float): Particle weight
+    """
+    ipart = search_dead(part.is_dead, istart)
+    if ipart == -1:
+        print("No dead particle found to insert at.")
+        return ipart
+    
+    part.x[ipart] = x
+    part.y[ipart] = y
+    part.z[ipart] = z
+    part.ux[ipart] = ux
+    part.uy[ipart] = uy
+    part.uz[ipart] = uz
+    part.inv_gamma[ipart] = 1.0 / sqrt(ux*ux + uy*uy + uz*uz + 1.0)
+    part.w[ipart] = w
+    part.is_dead[ipart] = False
+
+    return ipart  # Return the index of the inserted particle for next search
+
+@jit_spinner
+@njit(parallel=True, cache=True)
+def sum_dead(part_list: List[ParticleData]) -> NDArray[np.int64]:
+    """Sum the number of dead particles across all particle arrays."""
+    npart_dead = np.zeros(len(part_list), dtype=np.int64)
+    for ip in prange(len(part_list)):
+        npart_dead[ip] = np.sum(part_list[ip].is_dead)
+    
+    return npart_dead

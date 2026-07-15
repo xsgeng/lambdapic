@@ -7,7 +7,7 @@
 ```
 .
 ├── src/lambdapic/           # Main package
-│   ├── simulation.py        # Simulation, Simulation2D, Simulation3D, SimulationCallbacks
+│   ├── simulation/        # Simulation, Simulation2D, Simulation3D, SimulationCallbacks
 │   ├── callback/            # Callback decorator + built-in callbacks
 │   ├── cli/                 # Typer CLI (lambdapic command)
 │   └── core/                # Physics engine

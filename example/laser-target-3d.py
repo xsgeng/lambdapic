@@ -70,19 +70,18 @@ def read_density(sim: Simulation3D):
         return
     
     with h5py.File(f'laser-target-3d/{sim.itime:06d}.h5', 'r', locking=False) as f:
-        ey_data[:, :] = f['ey'][..., nz//2]
+        ey_data[:, :] = f['ey'][..., 0]
 
     with h5py.File(f'laser-target-3d/{ele.name}_{sim.itime:06d}.h5', 'r', locking=False) as f:
-        ne_data[:, :] = f['density'][..., nz//2]
+        ne_data[:, :] = f['density'][..., 0]
 
 diag_interval = 100
 if __name__ == "__main__":
     sim.run(
-        1001, 
         callbacks=[
             laser,
-            SaveFieldsToHDF5('laser-target-3d', diag_interval, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho']),
-            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d', diag_interval),
+            SaveFieldsToHDF5('laser-target-3d', diag_interval, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho'], slice=np.s_[..., nz//2]),
+            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d', diag_interval, slice=np.s_[..., nz//2]),
             read_density,
             PlotFields(
                 [
