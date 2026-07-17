@@ -9,60 +9,11 @@ The flexibility of λPIC makes it easy to implement plugins, allowing developers
 
 Visit the [documentation](https://lambdapic.readthedocs.io/) for installation and usage instructions.
 
-## Core Classes
-```mermaid
-classDiagram
-    Patches --> Patch : contains
-
-    Patch --> ParticlesBase : contains
-    Patch --> Fields : contains
-    Patch --> PML : contains
-
-    Patch <|-- Patch2D~Patch~
-    Patch <|-- Patch3D~Patch~
-
-    RadiationBase --> Patches : contains
-    PairProductionBase --> Patches : contains
-    CurrentDeposition --> Patches : contains
-    PusherBase --> Patches : contains
-    FieldInterpolation --> Patches : contains
-    MaxwellSolver --> Patches : contains
-    MPIManager --> Patches : contains
-
-    Pydantic.BaseModel <|-- Species
-    Species <|-- XXX~Species~
-    Species <|-- Electron~Species~
-    Species --> ParticlesBase : creates
-
-    class Patch {
-        index: int
-        *_neighbor_index: int
-    }
-
-    class Patches {
-        sync_particles()
-        sync_guard_fields()
-        sync_currents()
-    }
-
-    class ParticlesBase {
-        x,y,z ...: NDArray[float]
-        is_dead: NDArray[bool]
-    }
-
-    class Fields {
-        ex, ey, ...: NDArray[float]
-    }
-
-    class Species {
-        name, q, m, ...
-        density: Callable
-    }
-```
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+A detailed class diagram is available in the [documentation](docs/core-classes.md).
 
 ## Development Status
 
@@ -76,7 +27,7 @@ This project is licensed under the GPL-3.0 License.
 
 If you use λPIC in your research, please cite:
 
-- Xuesong Geng, Yunwei Cui, Lingang Zhang, and Liangliang Ji, *λPIC: A callback-centric particle-in-cell framework*, arXiv:2607.13507 [physics.comp-ph] (2026). https://arxiv.org/abs/2607.13507
+- *λPIC: A callback-centric particle-in-cell framework*, arXiv:2607.13507 [physics.comp-ph] (2026). https://arxiv.org/abs/2607.13507
 
 BibTeX:
 
