@@ -3,37 +3,84 @@ Installation & Usage
 
 System Requirements
 -------------------
-- Python with headers, tested on 3.12
-- GCC >= 9.3 (for building from source)
-- Conda (recommended for dependency management)
+- Python 3.13 (with headers)
+- GCC >= 9.3 (for building from source or packages without wheels)
+- A working MPI implementation (e.g. MPICH, OpenMPI) and ``mpicc`` wrapper
+- ``uv`` (recommended for dependency management)
 
 Installation
---------------------
+------------
 
-1. Install prebuilt packages from Conda (recommended)
+1. Install ``uv``
 
-First install prebuilt packages from conda like mpi4py and h5py which can be difficult to build:
+   If you do not already have ``uv`` installed, see the `uv installation guide <https://docs.astral.sh/uv/getting-started/installation/>`_.
+
+2. Create a virtual environment
+
+   .. code-block:: bash
+
+      uv venv --python 3.13 .venv
+      source .venv/bin/activate
+
+3. Install ``mpi4py`` from source
+
+   ``mpi4py`` is a compile-time dependency of λPIC. Build it with the system MPI compiler so it matches your MPI environment.
+
+   .. code-block:: bash
+
+      CC=mpicc uv pip install --no-binary=mpi4py --no-cache -U mpi4py
+
+4. (Optional) Install ``h5py`` with MPI support
+
+   λPIC works with the standard serial ``h5py`` wheels. If you need parallel HDF5 output, build ``h5py`` against an MPI-enabled HDF5 library:
+
+   .. code-block:: bash
+
+      CC=mpicc HDF5_MPI=ON uv pip install --no-binary=h5py h5py
+
+   The serial version is sufficient for most use cases.
+
+5. Install λPIC
+
+   From PyPI (recommended for most users):
+
+   .. code-block:: bash
+
+      uv pip install lambdapic
+
+   From source (for development or custom builds):
+
+   .. code-block:: bash
+
+      git clone https://github.com/xsgeng/lambdapic.git
+      cd lambdapic
+      uv pip install -e .
+
+   With test dependencies:
+
+   .. code-block:: bash
+
+      uv pip install -e ".[test]"
+
+   .. note::
+
+      ``mpi4py`` must be installed (step 3) before installing λPIC from source, because it is required during the build.
+
+Alternative: Using Conda
+------------------------
+
+If you prefer Conda, create an equivalent environment:
 
 .. code-block:: bash
 
-   conda create -n lambdapic python==3.12 mpi4py h5py numpy scipy
+   conda create -n lambdapic python==3.13 mpi4py h5py numpy scipy
    conda activate lambdapic
 
-2. Install λPIC
-
-From PyPI (recommended for most users):
+Then install λPIC with ``pip`` or ``uv pip`` inside the activated environment:
 
 .. code-block:: bash
 
    pip install lambdapic
-
-From source (for development or custom builds):
-
-.. code-block:: bash
-
-   git clone https://github.com/xsgeng/lambdapic.git
-   cd lambdapic
-   pip install .
 
 Running Examples
 ----------------
@@ -93,6 +140,6 @@ This is useful in HPC environments when you want to modify & re-run the simulati
 Troubleshooting
 ---------------
 
-- If you encounter build errors, ensure you have GCC 9.3 or newer installed
-- For MPI-related issues, verify mpi4py is working in your conda environment
-- Building from source requires development headers for Python and MPI
+- If you encounter build errors, ensure you have GCC 9.3 or newer and a working ``mpicc`` wrapper
+- For MPI-related issues, verify ``mpi4py`` is working in your environment
+- Building from source requires development headers for Python, MPI, and (if building parallel HDF5) HDF5

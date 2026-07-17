@@ -1,6 +1,6 @@
 name: lambdapic
 dependencies:
-  - python==3.12
+  - python==3.13
   - mpi4py
   - mpich
   - c-compiler
