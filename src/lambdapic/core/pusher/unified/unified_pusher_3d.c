@@ -6,6 +6,11 @@
 #include "../../utils/cutils.h"
 #include "../../current/current_deposit.h"
 
+// Particle block size for strip mining. The per-strip working set
+// (14 arrays x 8 B x 256 = 28.7 KB) is sized to fit a typical 32 KB L1
+// data cache across the passes below.
+#define STRIP_SIZE 256
+
 
 __attribute__((always_inline)) inline static void boris(
     double* restrict ux, double* restrict uy, double* restrict uz, double* restrict inv_gamma,
@@ -318,49 +323,110 @@ static PyObject* unified_boris_pusher_cpu_3d(PyObject* self, PyObject* args) {
         const double inv_dy = 1.0 / dy;
         const double inv_dz = 1.0 / dz;
 
-        // Phase 1: position push, interpolation, Boris push, position push
-        for (npy_intp ip = 0; ip < npart_patch; ip++) {
-            if (is_dead_patch[ip]) continue;
-            if (isnan(x_patch[ip]) || isnan(y_patch[ip]) || isnan(z_patch[ip])) continue;
-            push_position_3d(
-                &x_patch[ip], &y_patch[ip], &z_patch[ip],
-                ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
-                cdt_half
-            );
-            interpolation_3d(
-                x_patch[ip], y_patch[ip], z_patch[ip],
-                &ex_part_patch[ip], &ey_part_patch[ip], &ez_part_patch[ip],
-                &bx_part_patch[ip], &by_part_patch[ip], &bz_part_patch[ip],
-                ex_field, ey_field, ez_field,
-                bx_field, by_field, bz_field,
-                inv_dx, inv_dy, inv_dz, x0_patch, y0_patch, z0_patch,
-                nx, ny, nz
-            );
-            boris(
-                &ux_patch[ip], &uy_patch[ip], &uz_patch[ip], &inv_gamma_patch[ip],
-                ex_part_patch[ip], ey_part_patch[ip], ez_part_patch[ip],
-                bx_part_patch[ip], by_part_patch[ip], bz_part_patch[ip],
-                efactor, bfactor
-            );
-            push_position_3d(
-                &x_patch[ip], &y_patch[ip], &z_patch[ip],
-                ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
-                cdt_half
-            );
-        }
+        // Strip-mine over particle blocks: the strip working set stays
+        // L1-resident across the passes below. Each strip is checked for
+        // dead/NaN particles with a branch-free reduction; clean strips take
+        // the split path whose Boris loop is free of branches and vectorizes
+        // well (vector sqrt + FMA), dirty strips fall back to the scalar
+        // fused loops with per-particle checks.
+        for (npy_intp s = 0; s < npart_patch; s += STRIP_SIZE) {
+            npy_intp e = s + STRIP_SIZE;
+            if (e > npart_patch) e = npart_patch;
 
-        // Phase 2: current deposit
-        for (npy_intp ip = 0; ip < npart_patch; ip++) {
-            if (is_dead_patch[ip]) continue;
-            if (isnan(x_patch[ip]) || isnan(y_patch[ip]) || isnan(z_patch[ip])) continue;
-            current_deposit_3d_fast(
-                rho_field, jx_field, jy_field, jz_field,
-                x_patch[ip], y_patch[ip], z_patch[ip],
-                ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
-                nx, ny, nz,
-                dx, dy, dz, x0_patch, y0_patch, z0_patch, dt, w_patch[ip],
-                q_over_dx_dy_dz, q_over_dy_dz_dt, q_over_dx_dz_dt, q_over_dx_dy_dt
-            );
+            int clean_strip = 1;
+            for (npy_intp ip = s; ip < e; ip++) {
+                clean_strip &= !(is_dead_patch[ip] | isnan(x_patch[ip]) | isnan(y_patch[ip]) | isnan(z_patch[ip]));
+            }
+
+            if (clean_strip) {
+                // Phase 1 (clean): position push + interpolation
+                for (npy_intp ip = s; ip < e; ip++) {
+                    push_position_3d(
+                        &x_patch[ip], &y_patch[ip], &z_patch[ip],
+                        ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                        cdt_half
+                    );
+                    interpolation_3d(
+                        x_patch[ip], y_patch[ip], z_patch[ip],
+                        &ex_part_patch[ip], &ey_part_patch[ip], &ez_part_patch[ip],
+                        &bx_part_patch[ip], &by_part_patch[ip], &bz_part_patch[ip],
+                        ex_field, ey_field, ez_field,
+                        bx_field, by_field, bz_field,
+                        inv_dx, inv_dy, inv_dz, x0_patch, y0_patch, z0_patch,
+                        nx, ny, nz
+                    );
+                }
+                // Boris + position push (branch-free, vectorizes)
+                for (npy_intp ip = s; ip < e; ip++) {
+                    boris(
+                        &ux_patch[ip], &uy_patch[ip], &uz_patch[ip], &inv_gamma_patch[ip],
+                        ex_part_patch[ip], ey_part_patch[ip], ez_part_patch[ip],
+                        bx_part_patch[ip], by_part_patch[ip], bz_part_patch[ip],
+                        efactor, bfactor
+                    );
+                    push_position_3d(
+                        &x_patch[ip], &y_patch[ip], &z_patch[ip],
+                        ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                        cdt_half
+                    );
+                }
+                // Phase 2 (clean): current deposit, no per-particle checks
+                for (npy_intp ip = s; ip < e; ip++) {
+                    current_deposit_3d_fast(
+                        rho_field, jx_field, jy_field, jz_field,
+                        x_patch[ip], y_patch[ip], z_patch[ip],
+                        ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                        nx, ny, nz,
+                        dx, dy, dz, x0_patch, y0_patch, z0_patch, dt, w_patch[ip],
+                        q_over_dx_dy_dz, q_over_dy_dz_dt, q_over_dx_dz_dt, q_over_dx_dy_dt
+                    );
+                }
+            } else {
+                // Phase 1: position push, interpolation, Boris push, position push
+                for (npy_intp ip = s; ip < e; ip++) {
+                    if (is_dead_patch[ip]) continue;
+                    if (isnan(x_patch[ip]) || isnan(y_patch[ip]) || isnan(z_patch[ip])) continue;
+                    push_position_3d(
+                        &x_patch[ip], &y_patch[ip], &z_patch[ip],
+                        ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                        cdt_half
+                    );
+                    interpolation_3d(
+                        x_patch[ip], y_patch[ip], z_patch[ip],
+                        &ex_part_patch[ip], &ey_part_patch[ip], &ez_part_patch[ip],
+                        &bx_part_patch[ip], &by_part_patch[ip], &bz_part_patch[ip],
+                        ex_field, ey_field, ez_field,
+                        bx_field, by_field, bz_field,
+                        inv_dx, inv_dy, inv_dz, x0_patch, y0_patch, z0_patch,
+                        nx, ny, nz
+                    );
+                    boris(
+                        &ux_patch[ip], &uy_patch[ip], &uz_patch[ip], &inv_gamma_patch[ip],
+                        ex_part_patch[ip], ey_part_patch[ip], ez_part_patch[ip],
+                        bx_part_patch[ip], by_part_patch[ip], bz_part_patch[ip],
+                        efactor, bfactor
+                    );
+                    push_position_3d(
+                        &x_patch[ip], &y_patch[ip], &z_patch[ip],
+                        ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                        cdt_half
+                    );
+                }
+
+                // Phase 2: current deposit
+                for (npy_intp ip = s; ip < e; ip++) {
+                    if (is_dead_patch[ip]) continue;
+                    if (isnan(x_patch[ip]) || isnan(y_patch[ip]) || isnan(z_patch[ip])) continue;
+                    current_deposit_3d_fast(
+                        rho_field, jx_field, jy_field, jz_field,
+                        x_patch[ip], y_patch[ip], z_patch[ip],
+                        ux_patch[ip], uy_patch[ip], uz_patch[ip], inv_gamma_patch[ip],
+                        nx, ny, nz,
+                        dx, dy, dz, x0_patch, y0_patch, z0_patch, dt, w_patch[ip],
+                        q_over_dx_dy_dz, q_over_dy_dz_dt, q_over_dx_dz_dt, q_over_dx_dy_dt
+                    );
+                }
+            }
         }
     }
     // acquire GIL
