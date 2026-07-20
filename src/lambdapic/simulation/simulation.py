@@ -1160,6 +1160,10 @@ class Simulation:
         with Timer("mpi.sync_currents (start)"):
             self._current_sync_handle = self.mpi.sync_currents_start()
 
+        if self._current_sync_handle is None:
+            # Single-rank fast path: nothing to wait for
+            self.current_synced = True
+
     def sync_currents_wait(self):
         """Wait for the asynchronous sync started by :meth:`sync_currents_start`.
 

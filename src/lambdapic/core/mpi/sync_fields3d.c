@@ -756,6 +756,8 @@ static PyObject* sync_currents_3d_start(PyObject* self, PyObject* args) {
             if (neighbor_rank < 0) {
                 send_buf[i] = NULL;
                 recv_buf[i] = NULL;
+                send_requests[i] = MPI_REQUEST_NULL;
+                recv_requests[i] = MPI_REQUEST_NULL;
                 continue;
             }
             int ix_src, ix_dst, nx_sync, 
@@ -804,6 +806,7 @@ static PyObject* sync_currents_3d_start(PyObject* self, PyObject* args) {
     handle->npatches = npatches;
     handle->nx = nx; handle->ny = ny; handle->nz = nz; handle->ng = ng;
     handle->NX = NX; handle->NY = NY; handle->NZ = NZ;
+    handle->finalized = 0;
 
     PyErr_Clear();
     return PyCapsule_New(handle, "sync_fields3d.currents", currents_destructor);
@@ -953,6 +956,7 @@ static PyObject* sync_guard_fields_3d_start(PyObject* self, PyObject* args) {
     handle->nattrs = nattrs;
     handle->npatches = npatches;
     handle->total_count = total_count;
+    handle->finalized = 0;
 
     PyErr_Clear();
     return PyCapsule_New(handle, "sync_fields3d.guard", field_guard_destructor);

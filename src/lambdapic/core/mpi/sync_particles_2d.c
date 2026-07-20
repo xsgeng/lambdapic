@@ -30,6 +30,47 @@ static const enum Boundary2D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
     XMINYMIN
 };
 
+/* ------------------------------------------------------------------ */
+/* MPI_TAG_UB check: particle tags scale as                           */
+/* (index*NUM_BOUNDARIES + ibound)*nspec + ispec, but the standard    */
+/* only guarantees MPI_TAG_UB >= 32767. Refuse to post if any tag     */
+/* this rank may generate exceeds it. Must be called with the GIL.    */
+/* ------------------------------------------------------------------ */
+
+static int check_tag_ub(
+    MPI_Comm comm, npy_intp npatches,
+    npy_intp **neighbor_index_list, npy_intp *index_list,
+    int nspec
+) {
+    int flag = 0;
+    void *attr = NULL;
+    MPI_Comm_get_attr(comm, MPI_TAG_UB, &attr, &flag);
+    if (!flag) {
+        return 0; /* implementation exposes no bound; assume unrestricted */
+    }
+    const long tag_ub = (long)*(int*)attr;
+
+    npy_intp max_index = 0;
+    for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
+        if (index_list[ipatch] > max_index) max_index = index_list[ipatch];
+        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+            npy_intp n = neighbor_index_list[ipatch][ibound];
+            if (n > max_index) max_index = n;
+        }
+    }
+    const npy_intp max_tag = (max_index*NUM_BOUNDARIES + (NUM_BOUNDARIES-1))*nspec + (nspec-1);
+    if (max_tag > tag_ub) {
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "particle sync tag %lld exceeds MPI_TAG_UB %ld "
+            "(max patch index %lld, nspec %d); reduce patch count or species",
+            (long long)max_tag, tag_ub, (long long)max_index, nspec
+        );
+        return -1;
+    }
+    return 0;
+}
+
 // Implementation of count_outgoing_particles function
 static void count_outgoing_particles(
     double* x, double* y, npy_bool* is_dead,
@@ -444,6 +485,7 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
     handle->Ly = Ly;
     handle->dx = dx;
     handle->dy = dy;
+    handle->finalized = 0;
 
     PyErr_Clear();
     return PyCapsule_New(handle, "sync_particles_2d.fill", particle_sync_destructor);
@@ -591,6 +633,12 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     AUTOFREE double *xmax_list = get_attr_double(patch_list, npatches, "xmax");
     AUTOFREE double *ymin_list = get_attr_double(patch_list, npatches, "ymin");
     AUTOFREE double *ymax_list = get_attr_double(patch_list, npatches, "ymax");
+
+    /* Gatekeeper for the whole per-species sync: fill_*_start uses the
+       same tag formula and is only called after this function. */
+    if (check_tag_ub(comm, npatches, neighbor_index_list, index_list, nspec) < 0) {
+        return NULL;
+    }
 
     // Adjust particle boundaries
     #pragma omp parallel for
