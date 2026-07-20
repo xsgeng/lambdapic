@@ -26,6 +26,7 @@ from ..core.interpolation.field_interpolation import (
 from ..core.maxwell.solver.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
 from ..core.mpi.load_balancer import LoadBalancer
 from ..core.mpi.mpi_manager import MPIManager
+from ..core.mpi.utils import abort_on_mpi_error
 from ..core.patch.metis import compute_rank
 from ..core.patch.patch import Patch2D, Patch3D, Patches
 from ..core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
@@ -845,6 +846,7 @@ class Simulation:
         self.update_lists()
 
 
+    @abort_on_mpi_error
     def run(self, nsteps: int|None = None, sim_time: float|None = None, callbacks: Optional[Sequence[Callable[['Simulation'], None]]] = None,
             stop_callback: Callable[..., bool] = lambda: False,):
         """Run the simulation for a specified number of steps or time duration.

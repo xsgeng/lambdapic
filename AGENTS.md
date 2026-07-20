@@ -89,11 +89,15 @@ pytest -n 10
 pytest -m "not mpi and not slow" -n 10
 
 # Run MPI tests
-mpirun -n 9 python -m pytest tests/mpi/ -m mpi
+mpirun -n 9 python -m pytest --with-mpi -n 0  -m mpi tests/mpi/
+
+# Build source distribution
+python -m build -s
 ```
 
 ## NOTES
 - `Simulation` is the 2D class; `Simulation2D` is only an alias.
 - Setting `npatch_x=0` / `npatch_y=0` triggers MPI-aware auto-patching.
 - The `batch` CLI subcommand is a TODO stub.
-- Some `TODO` markers note deferred work (e.g., iterator overflow risk, parallel numba particle extend).
+- Some `TODO` markers note deferred work (e.g., fusion iterator overflow risk, parallel numba particle extend).
+- `Simulation.run()` now abort the entire MPI job on an unhandled exception, preventing deadlocks when one rank fails while others are in a collective call.
