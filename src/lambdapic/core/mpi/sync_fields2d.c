@@ -211,6 +211,33 @@ void free_boundary_types(MPI_Datatype *mpi_types_bound, MPI_Datatype *mpi_types_
     }
 }
 
+/* Cache of committed boundary datatypes. The geometry (nx, ny, ng) is constant
+   during a run, so types are created once and reused across steps instead of
+   being created/committed/freed on every guard sync. */
+static struct {
+    int nx, ny, ng;
+    int initialized;
+    MPI_Datatype bound[NUM_BOUNDARIES];
+    MPI_Datatype guard[NUM_BOUNDARIES];
+} boundary_type_cache;
+
+static void get_boundary_types(int nx, int ny, int ng, MPI_Datatype **bound, MPI_Datatype **guard) {
+    if (!boundary_type_cache.initialized ||
+        boundary_type_cache.nx != nx || boundary_type_cache.ny != ny ||
+        boundary_type_cache.ng != ng) {
+        /* Do not free outdated types: in-flight handles may still reference
+           them. Geometry changes essentially never happen, so leaking the old
+           types is harmless. */
+        init_boundary_types(nx, ny, ng, boundary_type_cache.bound, boundary_type_cache.guard);
+        boundary_type_cache.nx = nx;
+        boundary_type_cache.ny = ny;
+        boundary_type_cache.ng = ng;
+        boundary_type_cache.initialized = 1;
+    }
+    *bound = boundary_type_cache.bound;
+    *guard = boundary_type_cache.guard;
+}
+
 void get_boundary_guards(
     enum Boundary2D ibound,
     int nx, int ny, int ng,
@@ -263,8 +290,6 @@ void get_boundary_guards(
 typedef struct {
     MPI_Request *send_requests;
     MPI_Request *recv_requests;
-    MPI_Datatype *types_bound;
-    MPI_Datatype *types_guard;
     double ***attrs_list;
     int nattrs;
     int npatches;
@@ -296,14 +321,10 @@ static void field_guard_destructor(PyObject* capsule) {
         Py_BEGIN_ALLOW_THREADS
         MPI_Waitall(h->total_count, h->send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(h->total_count, h->recv_requests, MPI_STATUSES_IGNORE);
-        if (h->types_bound) {
-            free_boundary_types(h->types_bound, h->types_guard);
-        }
         Py_END_ALLOW_THREADS
         free(h->send_requests);
         free(h->recv_requests);
     }
-    if (h->types_bound) { free(h->types_bound); free(h->types_guard); }
     if (h->attrs_list) {
         for (int i = 0; i < h->nattrs; i++) free(h->attrs_list[i]);
         free(h->attrs_list);
@@ -530,9 +551,8 @@ static PyObject* sync_guard_fields_2d_start(PyObject* self, PyObject* args) {
     npy_intp **neighbor_rank_list = get_attr_array_int(patches_list, npatches, "neighbor_rank");
     npy_intp *index_list = get_attr_int(patches_list, npatches, "index");
 
-    MPI_Datatype *types_bound = (MPI_Datatype*)malloc(NUM_BOUNDARIES * sizeof(MPI_Datatype));
-    MPI_Datatype *types_guard = (MPI_Datatype*)malloc(NUM_BOUNDARIES * sizeof(MPI_Datatype));
-    init_boundary_types(NX, NY, ng, types_bound, types_guard);
+    MPI_Datatype *types_bound, *types_guard;
+    get_boundary_types(NX, NY, ng, &types_bound, &types_guard);
 
     int total_count = npatches * NUM_BOUNDARIES * nattrs;
     MPI_Request *send_requests = (MPI_Request*)malloc(total_count * sizeof(MPI_Request));
@@ -573,8 +593,6 @@ static PyObject* sync_guard_fields_2d_start(PyObject* self, PyObject* args) {
     FieldGuardHandle* handle = (FieldGuardHandle*)malloc(sizeof(FieldGuardHandle));
     handle->send_requests = send_requests;
     handle->recv_requests = recv_requests;
-    handle->types_bound = types_bound;
-    handle->types_guard = types_guard;
     handle->attrs_list = attrs_list;
     handle->nattrs = nattrs;
     handle->npatches = npatches;
@@ -605,7 +623,6 @@ static PyObject* sync_guard_fields_2d_wait(PyObject* self, PyObject* args) {
             }
         }
     }
-    free_boundary_types(h->types_bound, h->types_guard);
     Py_END_ALLOW_THREADS
 
     for (int i = 0; i < h->nattrs; i++) {
@@ -614,8 +631,6 @@ static PyObject* sync_guard_fields_2d_wait(PyObject* self, PyObject* args) {
     free(h->attrs_list);
     free(h->send_requests);
     free(h->recv_requests);
-    free(h->types_bound);
-    free(h->types_guard);
     h->finalized = 1;
     Py_RETURN_NONE;
 }
