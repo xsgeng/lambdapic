@@ -1047,8 +1047,13 @@ class Simulation:
                         self.pairproduction[ispec].reaction()
 
             with Timer("mpi.sync_particles"):
+                # start all species first (species-separated MPI tags), then wait,
+                # so the per-species particle exchanges overlap in flight
+                particle_sync_handles = []
                 for ispec, s in enumerate(self.patches.species):
-                    self.mpi.sync_particles(ispec)
+                    particle_sync_handles.append(self.mpi.sync_particles_start(ispec))
+                for h in particle_sync_handles:
+                    self.mpi.sync_particles_wait(h)
 
             with Timer("sync_particles"):
                 self.patches.sync_particles()

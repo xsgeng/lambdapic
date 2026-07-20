@@ -99,7 +99,8 @@ class MPIManager2D(MPIManager):
             patch_list, 
             self.comm,
             self.patches.npatches, 
-            self.dx, self.dy
+            self.dx, self.dy,
+            ispec, len(self.patches.species)
         )
         for ipatch, p in enumerate(self.patches):
             if npart_to_extend[ipatch] > 0:
@@ -115,7 +116,8 @@ class MPIManager2D(MPIManager):
             self.patches.npatches, 
             self.dx, self.dy,
             self.patches.xmin_global, self.patches.xmax_global, self.patches.ymin_global, self.patches.ymax_global,
-            self.patches[0].particles[ispec].attrs
+            self.patches[0].particles[ispec].attrs,
+            ispec, len(self.patches.species)
         )
 
     def sync_particles_wait(self, handle: object) -> None:
@@ -188,7 +190,8 @@ class MPIManager3D(MPIManager):
             patch_list, 
             self.comm,
             self.patches.npatches, 
-            self.dx, self.dy, self.dz
+            self.dx, self.dy, self.dz,
+            ispec, len(self.patches.species)
         )
         for ipatch, p in enumerate(self.patches):
             if npart_to_extend[ipatch] > 0:
@@ -204,7 +207,8 @@ class MPIManager3D(MPIManager):
             self.patches.npatches, 
             self.dx, self.dy, self.dz,
             self.patches.xmin_global, self.patches.xmax_global, self.patches.ymin_global, self.patches.ymax_global, self.patches.zmin_global, self.patches.zmax_global,
-            self.patches[0].particles[ispec].attrs
+            self.patches[0].particles[ispec].attrs,
+            ispec, len(self.patches.species)
         )
 
     def sync_particles_wait(self, handle: object) -> None:

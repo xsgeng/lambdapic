@@ -13,6 +13,8 @@ def get_npart_to_extend_3d(
     dx: float,
     dy: float,
     dz: float,
+    ispec: int,
+    nspec: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Count incoming particles and required particle-array extension in 3D.
 
@@ -36,6 +38,11 @@ def get_npart_to_extend_3d(
         Cell size in the y direction.
     dz : float
         Cell size in the z direction.
+    ispec : int
+        Species index used to namespace MPI tags so that per-species syncs
+        can overlap in flight.
+    nspec : int
+        Total number of species; tag multiplier (must be >= 1).
 
     Returns
     -------
@@ -64,6 +71,8 @@ def fill_particles_from_boundary_3d(
     zmin_global: float,
     zmax_global: float,
     attrs: list[str],
+    ispec: int,
+    nspec: int,
 ) -> None:
     """Move outgoing particles into neighboring 3D patches across MPI ranks.
 
@@ -138,6 +147,8 @@ def fill_particles_from_boundary_3d_start(
     zmin_global: float,
     zmax_global: float,
     attrs: list[str],
+    ispec: int,
+    nspec: int,
 ) -> object:
     """Post non-blocking MPI sends/receives for cross-rank particle exchange.
 

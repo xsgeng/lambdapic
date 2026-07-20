@@ -62,7 +62,7 @@ def test_syncparticles():
     for p in patches:
         p.particles[0].x[:] += 1
         
-    npart_to_extend, npart_incoming, npart_outgoing = get_npart_to_extend_2d([p.particles[0] for p in patches], patches.patches, comm, 9, 1.0, 1.0)
+    npart_to_extend, npart_incoming, npart_outgoing = get_npart_to_extend_2d([p.particles[0] for p in patches], patches.patches, comm, 9, 1.0, 1.0, 0, 1)
     for ipatch, p in enumerate(patches):
         assert npart_to_extend[ipatch] >= npart_incoming[ipatch].sum()
         if p.rank % nrankx == 0:
@@ -107,7 +107,8 @@ def test_syncparticles():
         comm, 
         9, 1.0, 1.0, 
         0, 5*nrankx*1, 0, 5*nranky*1, 
-        patches[0].particles[0].attrs
+        patches[0].particles[0].attrs,
+        0, 1
     )
     
     # check num particles

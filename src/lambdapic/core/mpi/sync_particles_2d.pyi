@@ -12,6 +12,8 @@ def get_npart_to_extend_2d(
     npatches: int,
     dx: float,
     dy: float,
+    ispec: int,
+    nspec: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Count incoming particles and required particle-array extension in 2D.
 
@@ -33,6 +35,11 @@ def get_npart_to_extend_2d(
         Cell size in the x direction.
     dy : float
         Cell size in the y direction.
+    ispec : int
+        Species index used to namespace MPI tags so that per-species syncs
+        can overlap in flight.
+    nspec : int
+        Total number of species; tag multiplier (must be >= 1).
 
     Returns
     -------
@@ -58,6 +65,8 @@ def fill_particles_from_boundary_2d(
     ymin_global: float,
     ymax_global: float,
     attrs: list[str],
+    ispec: int,
+    nspec: int,
 ) -> None:
     """Move outgoing particles into neighboring 2D patches across MPI ranks.
 
@@ -123,6 +132,8 @@ def fill_particles_from_boundary_2d_start(
     ymin_global: float,
     ymax_global: float,
     attrs: list[str],
+    ispec: int,
+    nspec: int,
 ) -> object:
     """Post non-blocking MPI sends/receives for cross-rank particle exchange.
 

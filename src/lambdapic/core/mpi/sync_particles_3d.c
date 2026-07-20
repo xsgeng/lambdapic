@@ -378,9 +378,10 @@ static PyObject* fill_particles_from_boundary_3d_start(PyObject* self, PyObject*
     double xmin_global, xmax_global, ymin_global, ymax_global, zmin_global, zmax_global;
     npy_intp npatches;
     PyObject* attrs;
+    int ispec, nspec;
 
     if (!PyArg_ParseTuple(
-            args, "OOOOOndddddddddO", 
+            args, "OOOOOndddddddddOii", 
             &particles_list, 
             &patch_list,
             &npart_incoming_array,
@@ -389,7 +390,8 @@ static PyObject* fill_particles_from_boundary_3d_start(PyObject* self, PyObject*
             &npatches,
             &dx, &dy, &dz,
             &xmin_global, &xmax_global, &ymin_global, &ymax_global, &zmin_global, &zmax_global,
-            &attrs
+            &attrs,
+            &ispec, &nspec
         )
     ) {
         return NULL;
@@ -521,7 +523,7 @@ static PyObject* fill_particles_from_boundary_3d_start(PyObject* self, PyObject*
                 }
             }
             int index = index_list[ipatch];
-            int send_tag = index*NUM_BOUNDARIES + ibound;
+            int send_tag = (index*NUM_BOUNDARIES + ibound)*nspec + ispec;
 
             MPI_Isend(
                 attrs_send[ipatch * NUM_BOUNDARIES + ibound], nattrs*npart_outgoing[ipatch * NUM_BOUNDARIES + ibound], MPI_DOUBLE, 
@@ -550,7 +552,7 @@ static PyObject* fill_particles_from_boundary_3d_start(PyObject* self, PyObject*
             recv_requests[i] = MPI_REQUEST_NULL;
             continue;
         }
-        int recv_tag = neighbor_index_list[ipatch][ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
+        int recv_tag = (neighbor_index_list[ipatch][ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound])*nspec + ispec;
         MPI_Irecv(
             attrs_recv[i], nattrs*npart_incoming[i], MPI_DOUBLE,
             neighbor_rank, recv_tag, comm, &recv_requests[i]
@@ -717,14 +719,16 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
     PyObject* comm_py;
     double dx, dy, dz;
     npy_intp npatches;
+    int ispec, nspec;
 
     if (!PyArg_ParseTuple(
-            args, "OOOnddd", 
+            args, "OOOndddii", 
             &particles_list, 
             &patch_list,
             &comm_py,
             &npatches,
-            &dx, &dy, &dz
+            &dx, &dy, &dz,
+            &ispec, &nspec
         )
     ) {
         return NULL;
@@ -834,8 +838,8 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
         int index = index_list[ipatch];
         int neighbor_index = neighbor_index_list[ipatch][ibound];
         // Tag based on patch index and boundary
-        int send_tag = index*NUM_BOUNDARIES + ibound;
-        int recv_tag = neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
+        int send_tag = (index*NUM_BOUNDARIES + ibound)*nspec + ispec;
+        int recv_tag = (neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound])*nspec + ispec;
 
         // Thread-multiple access to MPI functions
         MPI_Isend(&npart_outgoing[i], 1, MPI_LONG, neighbor_rank, send_tag,
