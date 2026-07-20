@@ -539,6 +539,24 @@ static PyObject* fill_particles_from_boundary_3d_start(PyObject* self, PyObject*
         }
     }
 
+    // Post non-blocking receives so that incoming data can be transferred
+    // during the gap between _start and _wait
+    #pragma omp parallel for
+    for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES; i++) {
+        int ipatch = i / NUM_BOUNDARIES;
+        int ibound = i % NUM_BOUNDARIES;
+        int neighbor_rank = neighbor_rank_list[ipatch][ibound];
+        if (neighbor_rank < 0) {
+            recv_requests[i] = MPI_REQUEST_NULL;
+            continue;
+        }
+        int recv_tag = neighbor_index_list[ipatch][ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
+        MPI_Irecv(
+            attrs_recv[i], nattrs*npart_incoming[i], MPI_DOUBLE,
+            neighbor_rank, recv_tag, comm, &recv_requests[i]
+        );
+    }
+
     Py_END_ALLOW_THREADS
 
     free(x_list);
@@ -601,23 +619,10 @@ static PyObject* fill_particles_from_boundary_3d_wait(PyObject* self, PyObject* 
 
     Py_BEGIN_ALLOW_THREADS
 
-    // Post blocking receives (same as original monolithic code)
+    // Wait for the non-blocking receives posted in _start
     #pragma omp parallel for
     for (npy_intp i = 0; i < (npy_intp)total; i++) {
-        int ipatch = i / NUM_BOUNDARIES;
-        int ibound = i % NUM_BOUNDARIES;
-        int neighbor_rank = h->neighbor_rank_list[ipatch][ibound];
-        npy_intp npart_in = h->npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
-        if (neighbor_rank < 0) {
-            continue;
-        }
-
-        int neighbor_index = h->neighbor_index_list[ipatch][ibound];
-        int recv_tag = neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
-        MPI_Recv(
-            h->attrs_recv[ipatch * NUM_BOUNDARIES + ibound], h->nattrs*npart_in, MPI_DOUBLE,
-            neighbor_rank, recv_tag, h->comm, MPI_STATUS_IGNORE
-        );
+        MPI_Wait(&h->recv_requests[i], MPI_STATUS_IGNORE);
     }
 
     // Fill particles from received buffers
