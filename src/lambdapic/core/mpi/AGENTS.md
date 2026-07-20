@@ -24,7 +24,15 @@ src/lambdapic/core/mpi/
 
 ## CONVENTIONS
 - **Factory pattern**: `MPIManager.create()` returns a `MPIManager2D` or `MPIManager3D`.
-- **Single-rank fast path**: sync methods short-circuit when `size == 1`.
+- **Single-rank fast path**: sync methods short-circuit when `size == 1` (`_start` returns `None`, `_wait(None)` is a no-op).
+- **Split start/wait API**: every sync has `sync_*_start()` (posts non-blocking MPI, returns an opaque capsule handle) and `sync_*_wait(handle)` (completes + unpacks). The blocking `sync_*()` wrappers chain both and remain the default for callbacks.
+- **Dedicated communicators**: particle sync and current sync use `Dup()`'d communicators (`comm_particles`, `comm_currents`) so different sync kinds can overlap in flight without tag collisions. Guard-field syncs use the base `comm`. Dup'd comms are dropped on pickling and re-`Dup()`'d in `__setstate__` (checkpoint/restart safe).
+- **Species-namespaced tags**: particle sync tags are `(patch_index*NUM_BOUNDARIES + ibound)*nspec + ispec`, so per-species particle syncs may run concurrently (start all species, then wait all).
+- **Overlap invariants** (relied on by `Simulation.run`):
+  - `mpi.sync_*` only touches different-rank boundaries (`neighbor_rank >= 0`); `patches.sync_*` only same-rank ones. They write disjoint guard cells and may overlap.
+  - Current sync packs send buffers at `_start`, so fields may be modified freely until `_wait`; but `_wait` must precede the E-field update (J consumer) and any load-balance patch migration.
+  - Guard-field `Isend` reads field arrays directly (derived datatypes), so `_wait` must precede the next kernel writing those fields.
+- **Boundary derived datatypes are cached** per `(nx, ny[, nz], ng)` in `sync_fields*.c`; never freed (leak on geometry change is intentional).
 - **Serialization**: `LoadBalancer` uses `dill` (not std `pickle`) to move whole `Patch` objects between ranks.
 - **Load metric**: particle count + cell count weights drive METIS partitioning.
 
