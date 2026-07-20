@@ -18,6 +18,12 @@ class MPIManager:
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
 
+        # Dedicated communicators so that messages of different sync kinds can
+        # never match each other while overlapping in flight (tags are reused
+        # across sync kinds). Guard-field syncs keep the base comm.
+        self.comm_particles = self.comm.Dup()
+        self.comm_currents = self.comm.Dup()
+
         self.patches = patches
         self.dimension = patches.dimension
         self.n_guard = patches.n_guard
@@ -25,6 +31,19 @@ class MPIManager:
     @property
     def npatches(self) -> int:
         return self.patches.npatches
+
+    def __getstate__(self):
+        # Dup'd communicators cannot be pickled; they are re-created on restore
+        state = self.__dict__.copy()
+        state.pop('comm_particles', None)
+        state.pop('comm_currents', None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Comm.Dup is collective; restart load runs it on all ranks together
+        self.comm_particles = self.comm.Dup()
+        self.comm_currents = self.comm.Dup()
 
     @staticmethod
     def create(patches: Patches, comm: Optional[MPI.Comm]=None) -> "MPIManager":
@@ -90,6 +109,8 @@ class MPIManager2D(MPIManager):
         self.sync_particles_wait(h)
 
     def sync_particles_start(self, ispec: int) -> object:
+        if self.size == 1:
+            return None
         from . import sync_particles_2d
         particles_list = [p.particles[ispec] for p in self.patches]
         patch_list = self.patches.patches
@@ -97,7 +118,7 @@ class MPIManager2D(MPIManager):
         npart_to_extend, npart_incoming, npart_outgoing = sync_particles_2d.get_npart_to_extend_2d(
             particles_list, 
             patch_list, 
-            self.comm,
+            self.comm_particles,
             self.patches.npatches, 
             self.dx, self.dy,
             ispec, len(self.patches.species)
@@ -112,7 +133,7 @@ class MPIManager2D(MPIManager):
             patch_list, 
             npart_incoming, 
             npart_outgoing, 
-            self.comm, 
+            self.comm_particles, 
             self.patches.npatches, 
             self.dx, self.dy,
             self.patches.xmin_global, self.patches.xmax_global, self.patches.ymin_global, self.patches.ymax_global,
@@ -121,6 +142,8 @@ class MPIManager2D(MPIManager):
         )
 
     def sync_particles_wait(self, handle: object) -> None:
+        if handle is None:
+            return
         from . import sync_particles_2d
         sync_particles_2d.fill_particles_from_boundary_2d_wait(handle)
 
@@ -131,6 +154,8 @@ class MPIManager2D(MPIManager):
         self.sync_guard_fields_wait(h)
 
     def sync_guard_fields_start(self, attrs: list[str]) -> object:
+        if self.size == 1:
+            return None
         from . import sync_fields2d
         return sync_fields2d.sync_guard_fields_2d_start(
             [p.fields for p in self.patches],
@@ -141,6 +166,8 @@ class MPIManager2D(MPIManager):
         )
 
     def sync_guard_fields_wait(self, handle: object) -> None:
+        if handle is None:
+            return
         from . import sync_fields2d
         sync_fields2d.sync_guard_fields_2d_wait(handle)
 
@@ -151,15 +178,19 @@ class MPIManager2D(MPIManager):
         self.sync_currents_wait(h)
 
     def sync_currents_start(self) -> object:
+        if self.size == 1:
+            return None
         from . import sync_fields2d
         return sync_fields2d.sync_currents_2d_start(
             [p.fields for p in self.patches],
             self.patches.patches,
-            self.comm,
+            self.comm_currents,
             self.npatches, self.nx_per_patch, self.ny_per_patch, self.n_guard,
         )
 
     def sync_currents_wait(self, handle: object) -> None:
+        if handle is None:
+            return
         from . import sync_fields2d
         sync_fields2d.sync_currents_2d_wait(handle)
 
@@ -181,6 +212,8 @@ class MPIManager3D(MPIManager):
         self.sync_particles_wait(h)
 
     def sync_particles_start(self, ispec: int) -> object:
+        if self.size == 1:
+            return None
         from . import sync_particles_3d
         particles_list = [p.particles[ispec] for p in self.patches]
         patch_list = self.patches.patches
@@ -188,7 +221,7 @@ class MPIManager3D(MPIManager):
         npart_to_extend, npart_incoming, npart_outgoing = sync_particles_3d.get_npart_to_extend_3d(
             particles_list, 
             patch_list, 
-            self.comm,
+            self.comm_particles,
             self.patches.npatches, 
             self.dx, self.dy, self.dz,
             ispec, len(self.patches.species)
@@ -203,7 +236,7 @@ class MPIManager3D(MPIManager):
             patch_list, 
             npart_incoming, 
             npart_outgoing, 
-            self.comm, 
+            self.comm_particles, 
             self.patches.npatches, 
             self.dx, self.dy, self.dz,
             self.patches.xmin_global, self.patches.xmax_global, self.patches.ymin_global, self.patches.ymax_global, self.patches.zmin_global, self.patches.zmax_global,
@@ -212,6 +245,8 @@ class MPIManager3D(MPIManager):
         )
 
     def sync_particles_wait(self, handle: object) -> None:
+        if handle is None:
+            return
         from . import sync_particles_3d
         sync_particles_3d.fill_particles_from_boundary_3d_wait(handle)
 
@@ -222,6 +257,8 @@ class MPIManager3D(MPIManager):
         self.sync_guard_fields_wait(h)
 
     def sync_guard_fields_start(self, attrs: list[str]) -> object:
+        if self.size == 1:
+            return None
         from . import sync_fields3d
         return sync_fields3d.sync_guard_fields_3d_start(
             [p.fields for p in self.patches],
@@ -232,6 +269,8 @@ class MPIManager3D(MPIManager):
         )
 
     def sync_guard_fields_wait(self, handle: object) -> None:
+        if handle is None:
+            return
         from . import sync_fields3d
         sync_fields3d.sync_guard_fields_3d_wait(handle)
 
@@ -242,14 +281,18 @@ class MPIManager3D(MPIManager):
         self.sync_currents_wait(h)
 
     def sync_currents_start(self) -> object:
+        if self.size == 1:
+            return None
         from . import sync_fields3d
         return sync_fields3d.sync_currents_3d_start(
             [p.fields for p in self.patches],
             self.patches.patches,
-            self.comm,
+            self.comm_currents,
             self.npatches, self.nx_per_patch, self.ny_per_patch, self.nz_per_patch, self.n_guard,
         )
 
     def sync_currents_wait(self, handle: object) -> None:
+        if handle is None:
+            return
         from . import sync_fields3d
         sync_fields3d.sync_currents_3d_wait(handle)
