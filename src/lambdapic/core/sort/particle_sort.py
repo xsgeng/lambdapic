@@ -146,31 +146,25 @@ class ParticleSort2D:
         self.buf_list[ipatch] = np.full(particles.is_dead.size, 0, dtype=float)
 
     def _update_particle_lists(self) -> None:
-        """
-        Update particle lists of a species in a patch.
+        """Safety-net refresh of stale particle array references.
 
-        Parameters
-        ----------
-        ipatch : int
-            Patch index.
-        ispec : int
-            Species index.
+        Particle arrays are resized in place (``ndarray.resize``) and every
+        extension path goes through :meth:`update_particle_lists`, so the
+        references held by the sorter normally stay valid. This per-call check
+        therefore only pays for the rare cases: an attribute array object that
+        was replaced outright, or an index buffer that still needs to grow.
         """
 
         ispec = self.ispec
 
-        self.x_list = [p.particles[ispec].x for p in self.patches]
-        if self.dimension >= 2:
-            self.y_list = [p.particles[ispec].y for p in self.patches]
-        if self.dimension == 3:
-            self.z_list = [p.particles[ispec].z for p in self.patches]
-
-        self.attrs_list = [getattr(p.particles[ispec], attr) for p in self.patches for attr in self.attrs ]
-
-        self.is_dead_list = [p.particles[ispec].is_dead for p in self.patches]
-
         for ipatch, p in enumerate(self.patches):
-            npart = p.particles[ispec].npart
+            particles = p.particles[ispec]
+            if particles.x is not self.x_list[ipatch]:
+                # array object was replaced (not resized in place):
+                # refresh every reference of this patch
+                self.update_particle_lists(ipatch)
+                continue
+            npart = particles.npart
             if self.particle_index_list[ipatch].size < npart:
                 old_size = self.particle_index_list[ipatch].size
                 self.particle_index_list[ipatch].resize(npart, refcheck=False)

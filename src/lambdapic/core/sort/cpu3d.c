@@ -17,6 +17,7 @@ static void calculate_cell_index(
     memset(bucket_count, 0, sizeof(npy_int64) * nbin);
 
     icell = 0;
+
     for (ip = 0; ip < npart; ip++) {
         if (!is_dead[ip]) {
             ix = (npy_intp)floor((x[ip] - x0)/dx);
@@ -109,43 +110,43 @@ static npy_intp bucket_sort_3d(
 
     // move particles
     for (iattr = 0; iattr < nattrs; iattr++) {
-        memset(buf, 0, sizeof(double) * nbuf);
         // re-calculate counter for each attr
         bucket_start_counter[0] = 0;
         for (ibin = 1; ibin < nbin; ibin++) {
             bucket_start_counter[ibin] = bucket_start_counter[ibin-1] + bucket_count_not[ibin-1];
         }
 
-        for (ip = 0; ip < npart; ip++) {
-            if (particle_index[ip] != particle_index_ref[ip]) {
-                buf[bucket_start_counter[particle_index[ip]]] = attrs[iattr][ip];
-                bucket_start_counter[particle_index[ip]] += 1;
-            }
+        // gather only the misplaced particles: particle_index_target lists the
+        // mismatch slots in ascending order, so the per-bucket counter
+        // increments happen in the same order as a full scan over npart and
+        // the result is bitwise identical. The scatter fills buf[0..nbuf)
+        // exactly, so no memset is needed.
+        for (ibuf = 0; ibuf < nbuf; ibuf++) {
+            ip = particle_index_target[ibuf];
+            buf[bucket_start_counter[particle_index[ip]]] = attrs[iattr][ip];
+            bucket_start_counter[particle_index[ip]] += 1;
         }
-        
+
         // fill back
         for (ibuf = 0; ibuf < nbuf; ibuf++) {
             attrs[iattr][particle_index_target[ibuf]] = buf[ibuf];
         }
     }
 
-    // dead particles, same above
+    // dead particles, same as above. The fill-back overwrites every mismatch
+    // slot, so the old is_dead[ip]=1 preset during gather was redundant.
     npy_bool* is_dead_buf = (npy_bool*) buf;
-    memset(is_dead_buf, 0, sizeof(npy_bool) * nbuf);
-    // re-calculate counter for each attr
     bucket_start_counter[0] = 0;
     for (ibin = 1; ibin < nbin; ibin++) {
         bucket_start_counter[ibin] = bucket_start_counter[ibin-1] + bucket_count_not[ibin-1];
     }
 
-    for (ip = 0; ip < npart; ip++) {
-        if (particle_index[ip] != particle_index_ref[ip]) {
-            is_dead_buf[bucket_start_counter[particle_index[ip]]] = is_dead[ip];
-            is_dead[ip] = 1;
-            bucket_start_counter[particle_index[ip]] += 1;
-        }
+    for (ibuf = 0; ibuf < nbuf; ibuf++) {
+        ip = particle_index_target[ibuf];
+        is_dead_buf[bucket_start_counter[particle_index[ip]]] = is_dead[ip];
+        bucket_start_counter[particle_index[ip]] += 1;
     }
-    
+
     // fill back
     for (ibuf = 0; ibuf < nbuf; ibuf++) {
         is_dead[particle_index_target[ibuf]] = is_dead_buf[ibuf];

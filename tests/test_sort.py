@@ -147,6 +147,133 @@ class Test2D(unittest.TestCase):
         self.assertEqual(nbuf, 0)
         self.assertEqual(sorter.nbuf_last, 0)
 
+    def test_extend_resort(self):
+        """Sorting must stay correct after the particle arrays are extended.
+
+        Extension notifies sorter.update_particle_lists via the extended flag
+        and Simulation.update_lists; the per-patch index buffers are recreated
+        and the layout must remain a valid bucketed one.
+        """
+        self.sim.initialize()
+        sorter = self.sim.sorter[0]
+        sorter()
+
+        rng = np.random.default_rng(42)
+        n_add = 16
+        for ipatch, p in enumerate(self.sim.patches):
+            part = p.particles[0]
+            part.extend(n_add)
+            # revive the new (dead-by-default) slots inside this patch
+            part.x[-n_add:] = rng.uniform(
+                sorter.x0s[ipatch], sorter.x0s[ipatch] + sorter.nx_buckets*sorter.dx_buckets, n_add)
+            part.y[-n_add:] = rng.uniform(
+                sorter.y0s[ipatch], sorter.y0s[ipatch] + p.ny*p.dy, n_add)
+            part.ux[-n_add:] = 0.0
+            part.uy[-n_add:] = 0.0
+            part.uz[-n_add:] = 0.0
+            part.is_dead[-n_add:] = False
+
+        # the extended flag routes through Simulation.update_lists
+        self.sim.update_lists()
+
+        for ipatch, p in enumerate(self.sim.patches):
+            part = p.particles[0]
+            self.assertEqual(sorter.particle_index_list[ipatch].size, part.npart)
+
+        x_before = [p.particles[0].x.copy() for p in self.sim.patches]
+        sorter()
+
+        for ipatch, p in enumerate(self.sim.patches):
+            part = p.particles[0]
+            x, y = x_before[ipatch], part.y  # y unused below, positions unchanged by sort
+            ix = np.floor((x - sorter.x0s[ipatch]) / sorter.dx_buckets).astype(int)
+            ibin = np.clip(ix, 0, sorter.nx_buckets-1)  # 1D buckets, default order
+
+            np.testing.assert_array_equal(sorter.particle_index_list[ipatch], ibin)
+
+            cnt = np.bincount(ibin, minlength=sorter.nx_buckets).reshape(sorter.nx_buckets, 1)
+            np.testing.assert_array_equal(cnt, sorter.bucket_count_list[ipatch])
+
+            ix_sort = np.floor((part.x - sorter.x0s[ipatch]) / sorter.dx_buckets).astype(int)
+            ibin_sort = np.clip(ix_sort, 0, sorter.nx_buckets-1)
+            self.assertTrue((np.sort(ibin) == ibin_sort).all())
+
+    def test_sort_with_dead_particles(self):
+        """Dead particles are counted into the bucket of the previous slot
+        (inherit chain) and relocated consistently with the float attrs."""
+        self.sim.initialize()
+        sorter = self.sim.sorter[0]
+        self.assertEqual(sorter.ny_buckets, 1)  # 1D bucket path
+
+        rng = np.random.default_rng(123)
+        snaps = []
+        for ipatch, p in enumerate(self.sim.patches):
+            part = p.particles[0]
+            npart = part.npart
+            part.x[:] = rng.uniform(
+                sorter.x0s[ipatch], sorter.x0s[ipatch] + sorter.nx_buckets*sorter.dx_buckets, npart)
+            part.ux[:] = rng.normal(size=npart)  # per-particle tag
+            part.is_dead[:] = rng.random(npart) < 0.2
+            snaps.append((part.x.copy(), part.ux.copy(), part.is_dead.copy()))
+
+        sorter()
+
+        for ipatch, p in enumerate(self.sim.patches):
+            part = p.particles[0]
+            x_b, ux_b, dead_b = snaps[ipatch]
+
+            # multisets of (x, ux) are preserved exactly (bitwise relocation),
+            # separately among alive and dead particles
+            for dead_mask_b, dead_mask_a in ((~dead_b, ~part.is_dead), (dead_b, part.is_dead)):
+                self.assertEqual(dead_mask_a.sum(), dead_mask_b.sum())
+                key_b = np.lexsort((ux_b[dead_mask_b], x_b[dead_mask_b]))
+                key_a = np.lexsort((part.ux[dead_mask_a], part.x[dead_mask_a]))
+                np.testing.assert_array_equal(
+                    x_b[dead_mask_b][key_b], part.x[dead_mask_a][key_a])
+                np.testing.assert_array_equal(
+                    ux_b[dead_mask_b][key_b], part.ux[dead_mask_a][key_a])
+
+            # every alive particle sits in a slot range belonging to its bucket
+            alive = ~part.is_dead
+            ix = np.floor((part.x[alive] - sorter.x0s[ipatch]) / sorter.dx_buckets).astype(int)
+            ibin = np.clip(ix, 0, sorter.nx_buckets-1)
+            bmin = sorter.bucket_bound_min_list[ipatch].ravel()
+            bmax = sorter.bucket_bound_max_list[ipatch].ravel()
+            slots = np.nonzero(alive)[0]
+            self.assertTrue((bmin[ibin] <= slots).all())
+            self.assertTrue((slots < bmax[ibin]).all())
+
+            # bucket_count = alive histogram + dead counts per slot range
+            hist = np.bincount(ibin, minlength=sorter.nx_buckets)
+            dead_cumsum = np.concatenate([[0], np.cumsum(part.is_dead.astype(int))])
+            dead_per_bucket = dead_cumsum[bmax] - dead_cumsum[bmin]
+            np.testing.assert_array_equal(
+                sorter.bucket_count_list[ipatch].ravel(), hist + dead_per_bucket)
+
+    def test_all_dead_species(self):
+        """A species with no alive particle keeps the default ordering and
+        sorts to a no-op without crashing."""
+        self.sim.initialize()
+        sorter = self.sim.sorter[0]
+
+        for p in self.sim.patches:
+            p.particles[0].is_dead[:] = True
+
+        nbuf = sorter()
+        self.assertFalse(sorter.reverse_x)  # no live weight: default ordering
+        self.assertEqual(nbuf, 0)  # all dead inherit one chain: already sorted
+
+    def test_reverse_override_false(self):
+        """Explicit reverse_x=False wins over the -x drift auto-detection."""
+        self.sim.initialize()
+        sorter = self.sim.sorter[0]
+
+        for p in self.sim.patches:
+            p.particles[0].ux[:] = -1.0
+        sorter._reverse_x_override = False
+        sorter()
+        self.assertFalse(sorter.reverse_x)
+
 
 class TestDriftSymmetry(unittest.TestCase):
     """Regression test: sort cost must be symmetric w.r.t. drift direction.
