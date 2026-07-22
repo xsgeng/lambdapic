@@ -54,12 +54,23 @@ def analyze_timers(
                                 case_sensitive=False)
 ):
     """
-    Analyze TIMER information in log files, calculate total time and percentages by category
-    
+    Analyze TIMER information in log files, calculate total time and percentages by category.
+
+    If the provided filename is the main log file (e.g. ``log.txt``) and a
+    corresponding timer file (``log.timer.txt``) exists, the timer file is used
+    automatically.
+
     Examples:
         $ lambdapic timer-stat log.txt
+        $ lambdapic timer-stat log.timer.txt
         $ lambdapic timer-stat log.txt --sort name
     """
+    timer_path = Path(filename)
+    candidate = timer_path.with_name(timer_path.stem + ".timer" + timer_path.suffix)
+    if candidate != timer_path and candidate.exists():
+        typer.echo(f"Using timer file: {candidate}")
+        filename = str(candidate)
+
     # Parse log file
     category_times, category_counts = parse_log_file(filename)
     

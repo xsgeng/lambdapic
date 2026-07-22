@@ -37,7 +37,7 @@ from ..core.species import Electron, Photon, Species, _ALL_SPECIES
 from ..core.utils.logger import configure_logger, logger, rank_log
 from ..core.utils.progress_bar import ProgressBar
 from ..core.utils.terminal import is_terminal
-from ..core.utils.timer import Timer
+from ..core.utils.timer import Timer, set_timer_enabled
 from .utils import (
     auto_patch_2d,
     auto_patch_3d,
@@ -60,15 +60,19 @@ class SimulationConfig(BaseModel):
     n_guard: int = Field(3, gt=0, description="Number of guard cells")
     cpml_thickness: int = Field(6, gt=0, description="CPML boundary thickness")
     log_file: Optional[str] = Field(
-        None, 
+        None,
         description="Log file name (default: auto-generated based on timestamp)"
     )
     truncate_log: bool = Field(
-        True, 
+        True,
         description="Truncate existing log file"
     )
+    enable_timer: bool = Field(
+        False,
+        description="Enable performance timers and write them to a separate file"
+    )
     boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = Field(
-        {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'}, 
+        {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'},
         description="Boundary conditions for each side of the domain. Supported values: 'pml', 'periodic'"
     )
     random_seed: Optional[int] = Field(
@@ -131,8 +135,9 @@ class Simulation:
             Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
             Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
         cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
-        log_file (str, optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+        log_file (str, optional): Path to log file. If None, no log file is created and only console output is used. Defaults to None.
         truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
+        enable_timer (bool, optional): If True, enable performance timers and write them to a separate file derived from log_file (e.g. log.txt -> log.timer.txt). Defaults to False.
         random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
         comm (mpi4py.MPI.Comm, optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
     """
@@ -158,6 +163,7 @@ class Simulation:
     cpml_thickness: int = field(default=6)
     log_file: Optional[str] = field(default=None)
     truncate_log: bool = field(default=True)
+    enable_timer: bool = field(default=False)
     random_seed: Optional[int] = field(default=None)
     comm: Optional[mpi4py.MPI.Comm] = field(default=None)
 
@@ -200,6 +206,7 @@ class Simulation:
             cpml_thickness=self.cpml_thickness,
             log_file=self.log_file,
             truncate_log=self.truncate_log,
+            enable_timer=self.enable_timer,
             random_seed=self.random_seed
         )
         
@@ -241,8 +248,10 @@ class Simulation:
         # Configure logger
         configure_logger(
             sink=config.log_file,
-            truncate_existing=config.truncate_log
+            truncate_existing=config.truncate_log,
+            enable_timer=config.enable_timer
         )
+        set_timer_enabled(config.enable_timer)
         
         rank_log("Simulation instance created", MPIManager.get_default_comm())
         self.initialized = False
@@ -1229,8 +1238,9 @@ class Simulation3D(Simulation):
             Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'.
             Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
         cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
-        log_file (Optional[str], optional): Path to log file. If None, generates timestamp-based filename. Defaults to None.
+        log_file (str, optional): Path to log file. If None, no log file is created and only console output is used. Defaults to None.
         truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
+        enable_timer (bool, optional): If True, enable performance timers and write them to a separate file derived from log_file (e.g. log.txt -> log.timer.txt). Defaults to False.
         random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
         comm (Optional[mpi4py.MPI.Comm], optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
     """
@@ -1259,6 +1269,7 @@ class Simulation3D(Simulation):
             boundary_conditions=self.boundary_conditions,
             log_file=self.log_file,
             truncate_log=self.truncate_log,
+            enable_timer=self.enable_timer,
             random_seed=self.random_seed
         )
         self.dimension = 3
