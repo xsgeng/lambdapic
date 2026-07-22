@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Verify tag matches setuptools_scm version
+        id: check
+        run: |
+          python -m pip install --quiet setuptools_scm
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          SCM_VERSION="$(python -m setuptools_scm)"
+          echo "tag version:    $TAG_VERSION"
+          echo "setuptools_scm: $SCM_VERSION"
+          if [ "$TAG_VERSION" != "$SCM_VERSION" ]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' does not match setuptools_scm version '$SCM_VERSION'"
+            exit 1
+          fi
+          echo "version=$SCM_VERSION" >> "$GITHUB_OUTPUT"
+
+  build-sdist:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build and check sdist
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m build --sdist
+          twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*.tar.gz
+
+  github-release:
+    needs: [verify, build-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          VERSION="${{ needs.verify.outputs.version }}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { flag=1; next }
+            /^## / && flag { exit }
+            flag && /^\[[^]]*\]: / { next }   # strip version link definitions
+            flag { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::No CHANGELOG.md entry found for version '$VERSION' (expected a heading like '## [$VERSION] - YYYY-MM-DD')."
+            exit 1
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "$GITHUB_REF_NAME" =~ (rc|a|b)[0-9]*$ ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            $PRERELEASE_FLAG \
+            dist/*.tar.gz
+
+  publish-pypi:
+    needs: [verify, build-sdist, github-release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
