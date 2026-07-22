@@ -27,7 +27,8 @@ def sort_particles_patches_3d(
     particle_index_ref_list: list[NDArray[np.int64]],
     particle_index_target_list: list[NDArray[np.int64]],
     buf_list: list[NDArray[np.float64]],
-) -> None:
+    reverse_x: int,
+) -> int:
     """Sort particles in every 3D patch by bucket index.
 
     Parameters
@@ -80,10 +81,14 @@ def sort_particles_patches_3d(
         Per-patch work arrays receiving move targets.
     buf_list : list[NDArray[np.float64]]
         Per-patch floating-point scratch buffers.
+    reverse_x : int
+        Non-zero to mirror the x bucket numbering so bucket 0 sits at the
+        physical right edge (used for -x drifting species with 1D buckets).
 
     Returns
     -------
-    None
+    int
+        Total number of particles moved through the scratch buffers.
     """
     ...
 
@@ -105,6 +110,7 @@ def _calculate_cell_index(
     z0: float,
     particle_index: NDArray[np.int64],
     bucket_count: NDArray[np.int64],
+    reverse_x: int,
 ) -> None:
     """Calculate 3D cell indices and bucket counts for one patch.
 
@@ -142,6 +148,9 @@ def _calculate_cell_index(
         Output array receiving each particle's bucket index.
     bucket_count : NDArray[np.int64]
         Output array receiving particle counts per bucket.
+    reverse_x : int
+        Non-zero to mirror the x bucket numbering (out-of-bound coordinates
+        are clamped into the domain instead of lumped into the last bucket).
 
     Returns
     -------
