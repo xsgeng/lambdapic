@@ -92,9 +92,49 @@ class Collision(PickleableTypedList):
             self.total_density_list = typed.List(# type: ignore
                 [np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches]
             )
+        self._check_shared_bucket_ordering()
         self.bucket_bound_min_lists = [typed.List(s.bucket_bound_min_list) for s in self.sorter] # type: ignore
         self.bucket_bound_max_lists = [typed.List(s.bucket_bound_max_list) for s in self.sorter] # type: ignore
         self.gen_list = typed.List(self.gen.spawn(self.patches.npatches)) # type: ignore
+
+    def _check_shared_bucket_ordering(self) -> None:
+        """Verify that sorters in collision groups share the same bucket
+        ordering.
+
+        Inter-species collisions iterate both species' ``bucket_bound_*``
+        arrays in lockstep, so the sorters must use the same ``reverse_x``
+        setting. The per-species ``_decide_reverse_x`` auto-decision (1D-bucket
+        path only) can produce mismatched settings when a ``Collision`` is
+        constructed after ``sim.initialize()`` without ``add_collision`` — the
+        sorters were initialized as 1D-bucket and independently decided their
+        x numbering. A mismatch makes every bucket pair against an empty one
+        and the collision step silently becomes a no-op.
+
+        Raises:
+            ValueError: if two collision-group sorters have been sorted with
+                different ``reverse_x`` values.
+        """
+        collision_ispecs = set()
+        for group in self.collision_groups:
+            for s in group:
+                collision_ispecs.add(s.ispec)
+        reverse_by_ispec: Dict[int, bool] = {}
+        for ispec in collision_ispecs:
+            sorter = self.sorter[ispec]
+            if not hasattr(sorter, "reverse_x"):
+                continue
+            if sorter._reverse_decided:
+                reverse_by_ispec[ispec] = bool(sorter.reverse_x)
+        if len(set(reverse_by_ispec.values())) > 1:
+            raise ValueError(
+                f"Collision group sorters have inconsistent 'reverse_x' "
+                f"settings ({reverse_by_ispec}); inter-species collisions "
+                f"require shared bucket numbering. Register collision groups "
+                f"via Simulation.add_collision() before initialize() so "
+                f"sorters use 2D buckets (which force reverse_x=False), or "
+                f"pass reverse_x=False explicitly when constructing "
+                f"ParticleSort2D/3D."
+            )
 
     def __getstate__(self) -> Dict:
         state = super().__getstate__()

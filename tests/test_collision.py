@@ -45,6 +45,14 @@ def _setup_sim(nx=16, ny=16, dx=1e-6, dy=1e-6, npatch_x=2, npatch_y=2, ppc=100):
     e2 = Electron(density=lambda x, y: 1.0e29, ppc=ppc)
     sim.add_species([e1, e2])
 
+    # Register collision groups before initialize so _init_sorter creates
+    # 2D-bucket sorters (ny_buckets=patches.ny). 2D buckets force
+    # reverse_x=False in _decide_reverse_x, keeping both species' bucket
+    # numbering consistent for inter-species collisions. Without this,
+    # sorters would take the 1D-bucket path and _decide_reverse_x could
+    # mirror one species but not the other, silently breaking collisions.
+    sim.add_collision([[e1, e2]])
+
     sim.initialize()
 
     # Heat particles: sample relativistic Maxwell-Jüttner to ensure collisions
@@ -72,14 +80,12 @@ def _setup_sim(nx=16, ny=16, dx=1e-6, dy=1e-6, npatch_x=2, npatch_y=2, ppc=100):
 
 
 def _setup_inter_collision(sim: Simulation, lnLambda: float = 2.0) -> Collision:
-    # collision group with both species to enable inter-species collisions
-    species = sim.patches.species
-    groups = [[species[0], species[1]]]
-    coll = Collision(groups, sim.patches, sim.sorter, sim.rand_gen)
-
+    # sim.collision was created by add_collision() + initialize(); its
+    # bucket_bound_*_lists hold references that were refreshed by the
+    # post-heating sort in _setup_sim. Only debye length and lnLambda
+    # remain to be set.
+    coll = sim.collision
     coll.lnLambda = lnLambda
-    coll.generate_particle_lists()
-    coll.generate_field_lists()
     coll.calculate_debye_length()
     return coll
 
@@ -205,3 +211,44 @@ def test_intra_collision_alters_only_target_species():
         assert np.allclose(p.particles[1].ux, ux1[ip])
         assert np.allclose(p.particles[1].uy, uy1[ip])
         assert np.allclose(p.particles[1].uz, uz1[ip])
+
+
+def test_inter_collision_errors_on_mismatched_reverse_x():
+    """Regression for the flaky inter-species collision test introduced by
+    the perf/sort-drift-symmetry merge.
+
+    The merge added ``_decide_reverse_x``, which mirrors the x bucket
+    numbering per-species based on its w-weighted mean ux. Inter-species
+    collisions iterate both species' bucket bounds in lockstep, so a
+    mismatched ``reverse_x`` between the two species pairs every bucket
+    against an empty one and the collision step silently becomes a no-op.
+
+    The Collision module must reject this misconfiguration with a clear
+    error rather than silently doing nothing.
+    """
+    # Build a sim WITHOUT add_collision so sorters take the 1D-bucket path
+    # (the misconfigured path that _decide_reverse_x can break).
+    sim = Simulation(
+        nx=16, ny=16, dx=1e-6, dy=1e-6,
+        npatch_x=2, npatch_y=2, random_seed=1234,
+    )
+    e1 = Electron(density=lambda x, y: 1.0e29, ppc=100)
+    e2 = Electron(density=lambda x, y: 1.0e29, ppc=100)
+    sim.add_species([e1, e2])
+    sim.initialize()
+    for sorter in sim.sorter:
+        sorter()
+
+    # Force the exact mismatched state that _decide_reverse_x can produce
+    # for 1D-bucket sorters with opposite mean-ux signs.
+    sim.sorter[0].reverse_x = True
+    sim.sorter[0]._reverse_decided = True
+    sim.sorter[1].reverse_x = False
+    sim.sorter[1]._reverse_decided = True
+
+    species = sim.patches.species
+    groups = [[species[0], species[1]]]
+    coll = Collision(groups, sim.patches, sim.sorter, sim.rand_gen)
+    coll.generate_particle_lists()
+    with pytest.raises(ValueError, match="reverse_x"):
+        coll.generate_field_lists()
