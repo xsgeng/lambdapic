@@ -72,6 +72,47 @@ static const enum Boundary3D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
     XMINYMINZMIN
 };
 
+/* ------------------------------------------------------------------ */
+/* MPI_TAG_UB check: particle tags scale as                           */
+/* (index*NUM_BOUNDARIES + ibound)*nspec + ispec, but the standard    */
+/* only guarantees MPI_TAG_UB >= 32767. Refuse to post if any tag     */
+/* this rank may generate exceeds it. Must be called with the GIL.    */
+/* ------------------------------------------------------------------ */
+
+static int check_tag_ub(
+    MPI_Comm comm, npy_intp npatches,
+    npy_intp **neighbor_index_list, npy_intp *index_list,
+    int nspec
+) {
+    int flag = 0;
+    void *attr = NULL;
+    MPI_Comm_get_attr(comm, MPI_TAG_UB, &attr, &flag);
+    if (!flag) {
+        return 0; /* implementation exposes no bound; assume unrestricted */
+    }
+    const long tag_ub = (long)*(int*)attr;
+
+    npy_intp max_index = 0;
+    for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
+        if (index_list[ipatch] > max_index) max_index = index_list[ipatch];
+        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+            npy_intp n = neighbor_index_list[ipatch][ibound];
+            if (n > max_index) max_index = n;
+        }
+    }
+    const npy_intp max_tag = (max_index*NUM_BOUNDARIES + (NUM_BOUNDARIES-1))*nspec + (nspec-1);
+    if (max_tag > tag_ub) {
+        PyErr_Format(
+            PyExc_RuntimeError,
+            "particle sync tag %lld exceeds MPI_TAG_UB %ld "
+            "(max patch index %lld, nspec %d); reduce patch count or species",
+            (long long)max_tag, tag_ub, (long long)max_index, nspec
+        );
+        return -1;
+    }
+    return 0;
+}
+
 // Implementation of count_outgoing_particles function
 static void count_outgoing_particles(
     double* x, double* y, double* z, npy_bool* is_dead,
@@ -301,8 +342,75 @@ static void handle_periodic(
     }
 }
 
-PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
-    // Parse input arguments
+
+/* ------------------------------------------------------------------ */
+/* Handle struct for split _start/_wait particle fill                  */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    MPI_Comm comm;
+    MPI_Request *send_requests;
+    MPI_Request *recv_requests;
+    double **attrs_send;
+    double **attrs_recv;
+    double **attrs_list;
+    npy_bool **is_dead_list;
+    npy_intp *npart_incoming;
+    npy_intp **neighbor_index_list;
+    npy_intp **neighbor_rank_list;
+    double *xmin_list, *xmax_list, *ymin_list, *ymax_list, *zmin_list, *zmax_list;
+    int nattrs;
+    int npatches;
+    int iattr_x, iattr_y, iattr_z;
+    double xmin_global, xmax_global, ymin_global, ymax_global, zmin_global, zmax_global;
+    double Lx, Ly, Lz, dx, dy, dz;
+    int finalized;
+} ParticleSyncHandle;
+
+
+/* ------------------------------------------------------------------ */
+/* Capsule destructor (safety net if _wait not called)                */
+/* ------------------------------------------------------------------ */
+
+static void particle_sync_destructor(PyObject* capsule) {
+    ParticleSyncHandle* h = (ParticleSyncHandle*)PyCapsule_GetPointer(capsule, "sync_particles_3d.fill");
+    if (!h) { PyErr_Clear(); return; }
+    if (h->finalized) { free(h); return; }
+
+    int total = h->npatches * NUM_BOUNDARIES;
+    if (h->send_requests) {
+        Py_BEGIN_ALLOW_THREADS
+        MPI_Waitall(total, h->send_requests, MPI_STATUSES_IGNORE);
+        MPI_Waitall(total, h->recv_requests, MPI_STATUSES_IGNORE);
+        Py_END_ALLOW_THREADS
+        free(h->send_requests);
+        free(h->recv_requests);
+    }
+    if (h->attrs_send) {
+        for (int i = 0; i < total; i++) {
+            free(h->attrs_send[i]);
+            free(h->attrs_recv[i]);
+        }
+        free(h->attrs_send);
+        free(h->attrs_recv);
+    }
+    free(h->attrs_list);
+    free(h->is_dead_list);
+    free(h->npart_incoming);
+    free(h->neighbor_index_list);
+    free(h->neighbor_rank_list);
+    free(h->xmin_list); free(h->xmax_list);
+    free(h->ymin_list); free(h->ymax_list);
+    free(h->zmin_list); free(h->zmax_list);
+    free(h);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* fill_particles_from_boundary_3d: _start / _wait / wrapper          */
+/* ------------------------------------------------------------------ */
+
+static PyObject* fill_particles_from_boundary_3d_start(PyObject* self, PyObject* args) {
     PyObject* particles_list;
     PyObject* patch_list;
     PyArrayObject* npart_incoming_array, *npart_outgoing_array;
@@ -311,9 +419,10 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
     double xmin_global, xmax_global, ymin_global, ymax_global, zmin_global, zmax_global;
     npy_intp npatches;
     PyObject* attrs;
+    int ispec, nspec;
 
     if (!PyArg_ParseTuple(
-            args, "OOOOOndddddddddO", 
+            args, "OOOOOndddddddddOii", 
             &particles_list, 
             &patch_list,
             &npart_incoming_array,
@@ -322,17 +431,16 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
             &npatches,
             &dx, &dy, &dz,
             &xmin_global, &xmax_global, &ymin_global, &ymax_global, &zmin_global, &zmax_global,
-            &attrs
+            &attrs,
+            &ispec, &nspec
         )
     ) {
         return NULL;
     }
-    // Get MPI communicator from Python object
     MPI_Comm *comm_p = NULL;
     comm_p = PyMPIComm_Get(comm_py);
     MPI_Comm comm = *comm_p;
-    
-    // Get MPI rank and size
+
     int rank, size;
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
@@ -341,28 +449,26 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
     double Ly = ymax_global - ymin_global;
     double Lz = zmax_global - zmin_global;
 
-    // Get attributes with cleanup attributes
-    AUTOFREE double **x_list = get_attr_array_double(particles_list, npatches, "x");
-    AUTOFREE double **y_list = get_attr_array_double(particles_list, npatches, "y");
-    AUTOFREE double **z_list = get_attr_array_double(particles_list, npatches, "z");
-    AUTOFREE npy_intp *npart_list = get_attr_int(particles_list, npatches, "npart");
-    AUTOFREE npy_bool **is_dead_list = get_attr_array_bool(particles_list, npatches, "is_dead");
+    double **x_list = get_attr_array_double(particles_list, npatches, "x");
+    double **y_list = get_attr_array_double(particles_list, npatches, "y");
+    double **z_list = get_attr_array_double(particles_list, npatches, "z");
+    npy_intp *npart_list = get_attr_int(particles_list, npatches, "npart");
+    npy_bool **is_dead_list = get_attr_array_bool(particles_list, npatches, "is_dead");
     
-    AUTOFREE npy_intp **neighbor_index_list = get_attr_array_int(patch_list, npatches, "neighbor_index");
-    AUTOFREE npy_intp **neighbor_rank_list = get_attr_array_int(patch_list, npatches, "neighbor_rank");
-    AUTOFREE npy_intp *index_list = get_attr_int(patch_list, npatches, "index");
+    npy_intp **neighbor_index_list = get_attr_array_int(patch_list, npatches, "neighbor_index");
+    npy_intp **neighbor_rank_list = get_attr_array_int(patch_list, npatches, "neighbor_rank");
+    npy_intp *index_list = get_attr_int(patch_list, npatches, "index");
 
-    AUTOFREE double *xmin_list = get_attr_double(patch_list, npatches, "xmin");
-    AUTOFREE double *xmax_list = get_attr_double(patch_list, npatches, "xmax");
-    AUTOFREE double *ymin_list = get_attr_double(patch_list, npatches, "ymin");
-    AUTOFREE double *ymax_list = get_attr_double(patch_list, npatches, "ymax");
-    AUTOFREE double *zmin_list = get_attr_double(patch_list, npatches, "zmin");
-    AUTOFREE double *zmax_list = get_attr_double(patch_list, npatches, "zmax");
+    double *xmin_list = get_attr_double(patch_list, npatches, "xmin");
+    double *xmax_list = get_attr_double(patch_list, npatches, "xmax");
+    double *ymin_list = get_attr_double(patch_list, npatches, "ymin");
+    double *ymax_list = get_attr_double(patch_list, npatches, "ymax");
+    double *zmin_list = get_attr_double(patch_list, npatches, "zmin");
+    double *zmax_list = get_attr_double(patch_list, npatches, "zmax");
 
     int nattrs = PyList_Size(attrs);
     Py_ssize_t iattr_x = -1, iattr_y = -1, iattr_z = -1;
-     // Create array of attribute arrays
-    AUTOFREE double **attrs_list = malloc(nattrs * npatches * sizeof(double*));
+    double **attrs_list = malloc(nattrs * npatches * sizeof(double*));
     for (Py_ssize_t iattr = 0; iattr < nattrs; iattr++) {
         PyObject *attr_name = PyList_GetItem(attrs, iattr);
 
@@ -383,7 +489,6 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    // Adjust particle boundaries
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
         xmin_list[ipatch] -= 0.5 * dx;
@@ -394,20 +499,21 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
         zmax_list[ipatch] += 0.5 * dz;
     }
 
-    // Get arrays for particle counts
-    npy_intp *npart_incoming = (npy_intp*) PyArray_DATA(npart_incoming_array);
+    npy_intp *npart_incoming_src = (npy_intp*) PyArray_DATA(npart_incoming_array);
     npy_intp *npart_outgoing = (npy_intp*) PyArray_DATA(npart_outgoing_array);
 
-    // send and recv buffers
-    AUTOFREE double **attrs_send = (double **)malloc(npatches * NUM_BOUNDARIES * sizeof(double *));
-    AUTOFREE double **attrs_recv = (double **)malloc(npatches * NUM_BOUNDARIES * sizeof(double *));
+    int total = npatches * NUM_BOUNDARIES;
+    npy_intp *npart_incoming = (npy_intp*)malloc(total * sizeof(npy_intp));
+    memcpy(npart_incoming, npart_incoming_src, total * sizeof(npy_intp));
+    double **attrs_send = (double **)malloc(total * sizeof(double *));
+    double **attrs_recv = (double **)malloc(total * sizeof(double *));
 
-    // Allocate MPI request arrays
-    AUTOFREE MPI_Request *send_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    MPI_Request *send_requests = (MPI_Request*)malloc(total * sizeof(MPI_Request));
+    MPI_Request *recv_requests = (MPI_Request*)malloc(total * sizeof(MPI_Request));
 
     Py_BEGIN_ALLOW_THREADS
 
-    // fill send buffers and send
+    // fill send buffers and post sends
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
         double *x = x_list[ipatch];
@@ -458,7 +564,7 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
                 }
             }
             int index = index_list[ipatch];
-            int send_tag = index*NUM_BOUNDARIES + ibound;
+            int send_tag = (index*NUM_BOUNDARIES + ibound)*nspec + ispec;
 
             MPI_Isend(
                 attrs_send[ipatch * NUM_BOUNDARIES + ibound], nattrs*npart_outgoing[ipatch * NUM_BOUNDARIES + ibound], MPI_DOUBLE, 
@@ -476,82 +582,176 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
         }
     }
 
-    // recv
+    // Post non-blocking receives so that incoming data can be transferred
+    // during the gap between _start and _wait
     #pragma omp parallel for
     for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES; i++) {
         int ipatch = i / NUM_BOUNDARIES;
         int ibound = i % NUM_BOUNDARIES;
         int neighbor_rank = neighbor_rank_list[ipatch][ibound];
-        npy_intp npart_in = npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
         if (neighbor_rank < 0) {
+            recv_requests[i] = MPI_REQUEST_NULL;
             continue;
         }
-
-        int neighbor_index = neighbor_index_list[ipatch][ibound];
-        // Tag based on patch index and boundary
-        int recv_tag = neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
-        MPI_Recv(
-            attrs_recv[ipatch * NUM_BOUNDARIES + ibound], nattrs*npart_in, MPI_DOUBLE, 
-            neighbor_rank, recv_tag, comm, MPI_STATUS_IGNORE
+        int recv_tag = (neighbor_index_list[ipatch][ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound])*nspec + ispec;
+        MPI_Irecv(
+            attrs_recv[i], nattrs*npart_incoming[i], MPI_DOUBLE,
+            neighbor_rank, recv_tag, comm, &recv_requests[i]
         );
     }
 
-    // Fill particles from buffer
+    Py_END_ALLOW_THREADS
+
+    free(x_list);
+    free(y_list);
+    free(z_list);
+    free(npart_list);
+    free(index_list);
+
+    ParticleSyncHandle* handle = (ParticleSyncHandle*)malloc(sizeof(ParticleSyncHandle));
+    handle->comm = comm;
+    handle->send_requests = send_requests;
+    handle->recv_requests = recv_requests;
+    handle->attrs_send = attrs_send;
+    handle->attrs_recv = attrs_recv;
+    handle->attrs_list = attrs_list;
+    handle->is_dead_list = is_dead_list;
+    handle->npart_incoming = npart_incoming;
+    handle->neighbor_index_list = neighbor_index_list;
+    handle->neighbor_rank_list = neighbor_rank_list;
+    handle->xmin_list = xmin_list;
+    handle->xmax_list = xmax_list;
+    handle->ymin_list = ymin_list;
+    handle->ymax_list = ymax_list;
+    handle->zmin_list = zmin_list;
+    handle->zmax_list = zmax_list;
+    handle->nattrs = nattrs;
+    handle->npatches = npatches;
+    handle->iattr_x = iattr_x;
+    handle->iattr_y = iattr_y;
+    handle->iattr_z = iattr_z;
+    handle->xmin_global = xmin_global;
+    handle->xmax_global = xmax_global;
+    handle->ymin_global = ymin_global;
+    handle->ymax_global = ymax_global;
+    handle->zmin_global = zmin_global;
+    handle->zmax_global = zmax_global;
+    handle->Lx = Lx;
+    handle->Ly = Ly;
+    handle->Lz = Lz;
+    handle->dx = dx;
+    handle->dy = dy;
+    handle->dz = dz;
+    handle->finalized = 0;
+
+    PyErr_Clear();
+    return PyCapsule_New(handle, "sync_particles_3d.fill", particle_sync_destructor);
+}
+
+static PyObject* fill_particles_from_boundary_3d_wait(PyObject* self, PyObject* args) {
+    PyObject* capsule;
+    if (!PyArg_ParseTuple(args, "O", &capsule)) {
+        return NULL;
+    }
+
+    ParticleSyncHandle* h = (ParticleSyncHandle*)PyCapsule_GetPointer(capsule, "sync_particles_3d.fill");
+    if (!h) {
+        return NULL;
+    }
+
+    int total = h->npatches * NUM_BOUNDARIES;
+
+    Py_BEGIN_ALLOW_THREADS
+
+    // Wait for the non-blocking receives posted in _start
     #pragma omp parallel for
-    for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        npy_bool *is_dead = is_dead_list[ipatch];
+    for (npy_intp i = 0; i < (npy_intp)total; i++) {
+        MPI_Wait(&h->recv_requests[i], MPI_STATUS_IGNORE);
+    }
+
+    // Fill particles from received buffers
+    #pragma omp parallel for
+    for (npy_intp ipatch = 0; ipatch < h->npatches; ipatch++) {
+        npy_bool *is_dead = h->is_dead_list[ipatch];
         
         npy_intp ipart = 0;
         for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            npy_intp npart_new = npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
+            npy_intp npart_new = h->npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
             if (npart_new <= 0) {
                 continue;
             }
-            double *buffer = attrs_recv[ipatch * NUM_BOUNDARIES + ibound];
+            double *buffer = h->attrs_recv[ipatch * NUM_BOUNDARIES + ibound];
             for (npy_intp ibuff = 0; ibuff < npart_new; ibuff++) {
                 while (!is_dead[ipart]) {
                     ipart++;
                 }
-                for (npy_intp iattr = 0; iattr < nattrs; iattr++) {
-                    if (iattr == iattr_x) {
+                for (npy_intp iattr = 0; iattr < h->nattrs; iattr++) {
+                    if (iattr == h->iattr_x) {
                         handle_periodic(
-                            buffer, ibuff*nattrs+iattr,
-                            xmin_global, xmax_global, Lx,
-                            xmin_list[ipatch], xmax_list[ipatch],
-                            dx
+                            buffer, ibuff*h->nattrs+iattr,
+                            h->xmin_global, h->xmax_global, h->Lx,
+                            h->xmin_list[ipatch], h->xmax_list[ipatch],
+                            h->dx
                         );
                     }
-                    if (iattr == iattr_y) {
+                    if (iattr == h->iattr_y) {
                         handle_periodic(
-                            buffer, ibuff*nattrs+iattr,
-                            ymin_global, ymax_global, Ly,
-                            ymin_list[ipatch], ymax_list[ipatch],
-                            dy
+                            buffer, ibuff*h->nattrs+iattr,
+                            h->ymin_global, h->ymax_global, h->Ly,
+                            h->ymin_list[ipatch], h->ymax_list[ipatch],
+                            h->dy
                         );
                     }
-                    if (iattr == iattr_z) {
+                    if (iattr == h->iattr_z) {
                         handle_periodic(
-                            buffer, ibuff*nattrs+iattr,
-                            zmin_global, zmax_global, Lz,
-                            zmin_list[ipatch], zmax_list[ipatch],
-                            dz
+                            buffer, ibuff*h->nattrs+iattr,
+                            h->zmin_global, h->zmax_global, h->Lz,
+                            h->zmin_list[ipatch], h->zmax_list[ipatch],
+                            h->dz
                         );
                     }
-                    attrs_list[ipatch*nattrs + iattr][ipart] = buffer[ibuff*nattrs + iattr];
+                    h->attrs_list[ipatch*h->nattrs + iattr][ipart] = buffer[ibuff*h->nattrs + iattr];
                 }
-                is_dead[ipart] = 0; // Mark as alive
+                is_dead[ipart] = 0;
             }
         }
     }
-    Py_END_ALLOW_THREADS
 
-    MPI_Waitall(npatches * NUM_BOUNDARIES, send_requests, MPI_STATUSES_IGNORE);
-    for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES; i++) {
-        free(attrs_send[i]);
-        free(attrs_recv[i]);
+    // Wait for all sends to complete
+    MPI_Waitall(total, h->send_requests, MPI_STATUSES_IGNORE);
+
+    // Free buffers
+    for (int i = 0; i < total; i++) {
+        free(h->attrs_send[i]);
+        free(h->attrs_recv[i]);
     }
 
+    Py_END_ALLOW_THREADS
+
+    free(h->send_requests);
+    free(h->recv_requests);
+    free(h->attrs_send);
+    free(h->attrs_recv);
+    free(h->attrs_list);
+    free(h->is_dead_list);
+    free(h->npart_incoming);
+    free(h->neighbor_index_list);
+    free(h->neighbor_rank_list);
+    free(h->xmin_list); free(h->xmax_list);
+    free(h->ymin_list); free(h->ymax_list);
+    free(h->zmin_list); free(h->zmax_list);
+    h->finalized = 1;
     Py_RETURN_NONE;
+}
+
+static PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
+    PyObject* capsule = fill_particles_from_boundary_3d_start(self, args);
+    if (!capsule) return NULL;
+    PyObject* wait_args = PyTuple_Pack(1, capsule);
+    PyObject* result = fill_particles_from_boundary_3d_wait(self, wait_args);
+    Py_DECREF(wait_args);
+    Py_DECREF(capsule);
+    return result;
 }
 
 PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
@@ -561,14 +761,16 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
     PyObject* comm_py;
     double dx, dy, dz;
     npy_intp npatches;
+    int ispec, nspec;
 
     if (!PyArg_ParseTuple(
-            args, "OOOnddd", 
+            args, "OOOndddii", 
             &particles_list, 
             &patch_list,
             &comm_py,
             &npatches,
-            &dx, &dy, &dz
+            &dx, &dy, &dz,
+            &ispec, &nspec
         )
     ) {
         return NULL;
@@ -600,6 +802,12 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
     AUTOFREE double *ymax_list = get_attr_double(patch_list, npatches, "ymax");
     AUTOFREE double *zmin_list = get_attr_double(patch_list, npatches, "zmin");
     AUTOFREE double *zmax_list = get_attr_double(patch_list, npatches, "zmax");
+
+    /* Gatekeeper for the whole per-species sync: fill_*_start uses the
+       same tag formula and is only called after this function. */
+    if (check_tag_ub(comm, npatches, neighbor_index_list, index_list, nspec) < 0) {
+        return NULL;
+    }
 
     // Adjust particle boundaries
     #pragma omp parallel for
@@ -678,8 +886,8 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
         int index = index_list[ipatch];
         int neighbor_index = neighbor_index_list[ipatch][ibound];
         // Tag based on patch index and boundary
-        int send_tag = index*NUM_BOUNDARIES + ibound;
-        int recv_tag = neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
+        int send_tag = (index*NUM_BOUNDARIES + ibound)*nspec + ispec;
+        int recv_tag = (neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound])*nspec + ispec;
 
         // Thread-multiple access to MPI functions
         MPI_Isend(&npart_outgoing[i], 1, MPI_LONG, neighbor_rank, send_tag,
@@ -738,6 +946,8 @@ PyObject* get_npart_to_extend_3d(PyObject* self, PyObject* args) {
 static PyMethodDef SyncParticlesMethods[] = {
     {"get_npart_to_extend_3d", get_npart_to_extend_3d, METH_VARARGS, "count the number of particles to be extended, and return the number of new particles"},
     {"fill_particles_from_boundary_3d", fill_particles_from_boundary_3d, METH_VARARGS, "fill particles from boundary using MPI"},
+    {"fill_particles_from_boundary_3d_start", fill_particles_from_boundary_3d_start, METH_VARARGS, "start async fill particles from boundary using MPI"},
+    {"fill_particles_from_boundary_3d_wait", fill_particles_from_boundary_3d_wait, METH_VARARGS, "wait and finalize async fill particles from boundary using MPI"},
     {NULL, NULL, 0, NULL}
 };
 

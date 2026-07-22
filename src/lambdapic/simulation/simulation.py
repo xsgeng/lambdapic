@@ -248,6 +248,9 @@ class Simulation:
         # Collision system placeholders; configured via add_collision()
         self._collision_groups: Optional[Sequence[Sequence[Species]]] = None
         self.collision: Optional[Collision] = None
+        # pending asynchronous current-sync handle (see sync_currents_start/wait)
+        self._current_sync_handle = None
+        self.current_synced = False
 
     def _auto_patch(self):
         if self.npatch_x == 0 or self.npatch_y == 0:
@@ -931,15 +934,19 @@ class Simulation:
             with Timer('update E field'):
                 self.maxwell.update_efield(0.5*self.dt)
             with Timer('mpi sync E field'):
-                self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
+                e_sync_handle = self.mpi.sync_guard_fields_start(['ex', 'ey', 'ez'])
             with Timer('sync E field'):
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('mpi sync E field (wait)'):
+                self.mpi.sync_guard_fields_wait(e_sync_handle)
             with Timer('update B field'):
                 self.maxwell.update_bfield(0.5*self.dt)
             with Timer('mpi sync B field'):
-                self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
+                b_sync_handle = self.mpi.sync_guard_fields_start(['bx', 'by', 'bz'])
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
+            with Timer('mpi sync B field (wait)'):
+                self.mpi.sync_guard_fields_wait(b_sync_handle)
                 
             with Timer("maxwell_1"):
                 stage_callbacks.run('maxwell_1')
@@ -1022,7 +1029,7 @@ class Simulation:
                 with Timer("Callbacks: current_deposition stage"):
                     stage_callbacks.run('current_deposition')
 
-            self.sync_currents()
+            self.sync_currents_start()
 
             # set ispec to None out of species loop
             self.ispec = None
@@ -1047,11 +1054,19 @@ class Simulation:
                         self.pairproduction[ispec].reaction()
 
             with Timer("mpi.sync_particles"):
+                # start all species first (species-separated MPI tags), then wait,
+                # so the per-species particle exchanges overlap in flight
+                particle_sync_handles = []
                 for ispec, s in enumerate(self.patches.species):
-                    self.mpi.sync_particles(ispec)
+                    particle_sync_handles.append(self.mpi.sync_particles_start(ispec))
+                for h in particle_sync_handles:
+                    self.mpi.sync_particles_wait(h)
 
             with Timer("sync_particles"):
                 self.patches.sync_particles()
+
+            # currents must be fully synced before patches may be migrated
+            self.sync_currents_wait()
 
             with Timer("load balancer"):
                 self.load_balancer.update_weights()
@@ -1075,17 +1090,21 @@ class Simulation:
                 stage_callbacks.run('_laser')
                 
             with Timer('mpi sync B field'):
-                self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
+                b_sync_handle = self.mpi.sync_guard_fields_start(['bx', 'by', 'bz'])
             with Timer('sync B field'):
                 self.patches.sync_guard_fields(['bx', 'by', 'bz'])
+            with Timer('mpi sync B field (wait)'):
+                self.mpi.sync_guard_fields_wait(b_sync_handle)
                 
 
             with Timer('update E field'):
                 self.maxwell.update_efield(0.5*self.dt)
             with Timer('mpi sync E field'):
-                self.mpi.sync_guard_fields(['ex', 'ey', 'ez'])
+                e_sync_handle = self.mpi.sync_guard_fields_start(['ex', 'ey', 'ez'])
             with Timer('sync E field'):
                 self.patches.sync_guard_fields(['ex', 'ey', 'ez'])
+            with Timer('mpi sync E field (wait)'):
+                self.mpi.sync_guard_fields_wait(e_sync_handle)
 
             with Timer("Callbacks: maxwell_2 stage"):
                 stage_callbacks.run('maxwell_2')
@@ -1111,7 +1130,26 @@ class Simulation:
             stage_callbacks.run('final')
 
     def sync_currents(self):
+        """Blocking current synchronization.
+
+        Completes any pending asynchronous sync started by
+        :meth:`sync_currents_start`. Used by callbacks (e.g. HDF5 output)
+        that need fully synced currents immediately.
+        """
         if self.current_synced:
+            return
+        self.sync_currents_start()
+        self.sync_currents_wait()
+
+    def sync_currents_start(self):
+        """Start asynchronous current synchronization.
+
+        Posts the inter-rank current exchange and returns immediately. Call
+        :meth:`sync_currents_wait` before the currents are consumed (Maxwell
+        E-field update) or before patches are migrated by the load balancer.
+        No-op if currents are already synced or a sync is already in flight.
+        """
+        if self.current_synced or self._current_sync_handle is not None:
             return
         with Timer("sync_currents"):
             self.patches.sync_currents()
@@ -1119,9 +1157,23 @@ class Simulation:
         with Timer("mpi.barrier: pusher not balanced"):
             self.mpi.comm.Barrier()
 
-        with Timer("mpi.sync_currents"):
-            self.mpi.sync_currents()
+        with Timer("mpi.sync_currents (start)"):
+            self._current_sync_handle = self.mpi.sync_currents_start()
 
+        if self._current_sync_handle is None:
+            # Single-rank fast path: nothing to wait for
+            self.current_synced = True
+
+    def sync_currents_wait(self):
+        """Wait for the asynchronous sync started by :meth:`sync_currents_start`.
+
+        No-op if no sync is in flight.
+        """
+        if self._current_sync_handle is None:
+            return
+        with Timer("mpi.sync_currents (wait)"):
+            self.mpi.sync_currents_wait(self._current_sync_handle)
+        self._current_sync_handle = None
         self.current_synced = True
 
     def _handle_nsteps(self, nsteps, sim_time):

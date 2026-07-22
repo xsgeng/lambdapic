@@ -159,7 +159,7 @@ def test_rebalance_2d():
 
     sim = Simulation2D(
         nx=60, ny=60, dx=1e-6, dy=1e-6,
-        npatch_x=3, npatch_y=3, nsteps=10, n_guard=3, dt_cfl=0.95,
+        npatch_x=5, npatch_y=5, nsteps=10, n_guard=3, dt_cfl=0.95,
         boundary_conditions={
             'xmin': 'periodic', 'xmax': 'periodic',
             'ymin': 'periodic', 'ymax': 'periodic'
@@ -191,7 +191,7 @@ def test_rebalance_3d():
 
     sim = Simulation3D(
         nx=40, ny=40, nz=40, dx=1e-6, dy=1e-6, dz=1e-6,
-        npatch_x=2, npatch_y=2, npatch_z=2, nsteps=10, n_guard=3, dt_cfl=0.95,
+        npatch_x=4, npatch_y=4, npatch_z=4, nsteps=10, n_guard=3, dt_cfl=0.95,
         boundary_conditions={
             'xmin': 'periodic', 'xmax': 'periodic',
             'ymin': 'periodic', 'ymax': 'periodic',

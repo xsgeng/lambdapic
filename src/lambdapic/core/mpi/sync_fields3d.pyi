@@ -16,6 +16,9 @@ def sync_currents_3d(
 ) -> None:
     """Synchronize current and charge-density boundary values across MPI ranks.
 
+    This is a convenience wrapper that calls :func:`sync_currents_3d_start`
+    followed by :func:`sync_currents_3d_wait`.
+
     Parameters
     ----------
     fields_list : list[Fields]
@@ -45,6 +48,56 @@ def sync_currents_3d(
     ...
 
 
+def sync_currents_3d_start(
+    fields_list: list[Fields],
+    patches_list: list[Patch],
+    comm: Comm,
+    npatches: int,
+    nx: int,
+    ny: int,
+    nz: int,
+    ng: int,
+) -> object:
+    """Post non-blocking MPI sends/receives for cross-rank current exchange.
+
+    Packs boundary current/charge values into send buffers, zeroes the
+    source cells, and posts ``MPI_Isend`` / ``MPI_Irecv`` for every
+    cross-rank boundary.  Returns an opaque capsule handle that must be
+    passed to :func:`sync_currents_3d_wait`.
+
+    The caller **must not** modify ``jx``/``jy``/``jz``/``rho`` arrays
+    between ``_start`` and ``_wait``.
+
+    Parameters
+    ----------
+    Same as :func:`sync_currents_3d`.
+
+    Returns
+    -------
+    object
+        Opaque capsule handle for :func:`sync_currents_3d_wait`.
+    """
+    ...
+
+
+def sync_currents_3d_wait(handle: object) -> None:
+    """Finalise an asynchronous current sync started by ``_start``.
+
+    Waits for all receives, accumulates received currents into the field
+    arrays, waits for sends, and frees all temporary buffers.
+
+    Parameters
+    ----------
+    handle : object
+        Capsule returned by :func:`sync_currents_3d_start`.
+
+    Returns
+    -------
+    None
+    """
+    ...
+
+
 def sync_guard_fields_3d(
     fields_list: list[Fields],
     patches_list: list[Patch],
@@ -57,6 +110,9 @@ def sync_guard_fields_3d(
     ng: int,
 ) -> None:
     """Synchronize selected field guard-cell arrays across MPI ranks.
+
+    This is a convenience wrapper that calls :func:`sync_guard_fields_3d_start`
+    followed by :func:`sync_guard_fields_3d_wait`.
 
     Parameters
     ----------
@@ -82,6 +138,57 @@ def sync_guard_fields_3d(
         Number of non-guard cells in the z direction per patch.
     ng : int
         Number of guard cells on each patch boundary.
+
+    Returns
+    -------
+    None
+    """
+    ...
+
+
+def sync_guard_fields_3d_start(
+    fields_list: list[Fields],
+    patches_list: list[Patch],
+    comm: Comm,
+    attrs: list[str],
+    npatches: int,
+    nx: int,
+    ny: int,
+    nz: int,
+    ng: int,
+) -> object:
+    """Post non-blocking MPI sends/receives for cross-rank guard-cell exchange.
+
+    Creates MPI derived datatypes (subarrays) for every boundary, then
+    posts ``MPI_Isend`` / ``MPI_Irecv`` for every cross-rank boundary and
+    attribute.  Returns an opaque capsule handle that must be passed to
+    :func:`sync_guard_fields_3d_wait`.
+
+    The caller **must not** modify the guard-cell region of any field
+    array named in ``attrs`` between ``_start`` and ``_wait``.
+
+    Parameters
+    ----------
+    Same as :func:`sync_guard_fields_3d`.
+
+    Returns
+    -------
+    object
+        Opaque capsule handle for :func:`sync_guard_fields_3d_wait`.
+    """
+    ...
+
+
+def sync_guard_fields_3d_wait(handle: object) -> None:
+    """Finalise an asynchronous guard-field sync started by ``_start``.
+
+    Waits for all MPI requests to complete and frees all temporary
+    resources (datatypes, request arrays).
+
+    Parameters
+    ----------
+    handle : object
+        Capsule returned by :func:`sync_guard_fields_3d_start`.
 
     Returns
     -------
