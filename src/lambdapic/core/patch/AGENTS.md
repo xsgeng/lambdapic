@@ -37,5 +37,4 @@ src/lambdapic/core/patch/
 - Do not assume non-uniform patch sizes in `Patches` geometry properties.
 
 ## NOTES
-- `update_lists()` / `update_particle_lists()` are empty stubs overridden by the MPI transfer subclass.
 - Hilbert ordering requires even dimensions (`nx%2==0`, `ny%2==0`).

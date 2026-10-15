@@ -6,71 +6,9 @@
 #include <mpi4py/mpi4py.h>
 
 #include "../utils/cutils.h"
+#define SYNC_BOUNDARY_3D
+#include "../utils/sync_boundary.h"
 
-enum Boundary3D {
-    // faces
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    ZMIN,
-    ZMAX,
-    // egdes
-    XMINYMIN,
-    XMINYMAX,
-    XMINZMIN,
-    XMINZMAX,
-    XMAXYMIN,
-    XMAXYMAX,
-    XMAXZMIN,
-    XMAXZMAX,
-    YMINZMIN,
-    YMINZMAX,
-    YMAXZMIN,
-    YMAXZMAX,
-    // vertices
-    XMINYMINZMIN,
-    XMINYMINZMAX,
-    XMINYMAXZMIN,
-    XMINYMAXZMAX,
-    XMAXYMINZMIN,
-    XMAXYMINZMAX,
-    XMAXYMAXZMIN,
-    XMAXYMAXZMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary3D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    // faces
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    ZMAX,
-    ZMIN,
-    // egdes
-    XMAXYMAX,
-    XMAXYMIN,
-    XMAXZMAX,
-    XMAXZMIN,
-    XMINYMAX,
-    XMINYMIN,
-    XMINZMAX,
-    XMINZMIN,
-    YMAXZMAX,
-    YMAXZMIN,
-    YMINZMAX,
-    YMINZMIN,
-    // vertices
-    XMAXYMAXZMAX,
-    XMAXYMAXZMIN,
-    XMAXYMINZMAX,
-    XMAXYMINZMIN,
-    XMINYMAXZMAX,
-    XMINYMAXZMIN,
-    XMINYMINZMAX,
-    XMINYMINZMIN
-};
 
 /* ------------------------------------------------------------------ */
 /* MPI_TAG_UB check: particle tags scale as                           */

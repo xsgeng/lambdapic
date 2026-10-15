@@ -211,7 +211,6 @@ class NonlinearComptonLCFA(RadiationBase):
             if n > 0:
                 n += int(self.patches[ipatch].particles[self.photon_ispec].npart*extra_buff)
                 self.patches[ipatch].particles[self.photon_ispec].extend(n)
-                self.patches.update_particle_lists(ipatch)
                 self.update_particle_lists(ipatch)
         # fillin photons
         if self.dimension == 2:

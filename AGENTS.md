@@ -13,12 +13,12 @@
 │   └── core/                # Physics engine
 │       ├── patch/           # Patch/Patches containers + sync + Hilbert/Metis
 │       ├── mpi/             # MPI manager + load balancer + C sync extensions
-│       ├── pusher/          # Boris/Photon pushers + unified C kernels
-│       ├── maxwell/         # Yee FDTD + CPML solvers
+│       ├── pusher/          # Boris/Photon/TBMT pushers + unified C kernels
+│       ├── maxwell/          # Yee FDTD + CPML solvers
 │       ├── current/         # Esirkepov current deposition (C extensions)
 │       ├── interpolation/   # Field interpolation to particles
 │       ├── qed/             # Radiation + pair production
-│       ├── collision/       # Collisions 
+│       ├── collision/       # Binary collisions (C extension)
 │       ├── boundary/        # Boundary conditions
 │       ├── sort/            # Particle sorting
 │       ├── ionization/      # Field ionization
@@ -28,7 +28,6 @@
 │       └── stages/          # Simulation stage definitions
 ├── tests/                   # pytest suite (mirrors src partially)
 ├── example/                 # Runnable examples (lwfa, weibel, laser-target, photons)
-├── benchmarks/              # Weibel benchmark vs Smilei
 └── docs/source/             # Sphinx documentation
 ```
 
@@ -36,21 +35,22 @@
 | Task | Location | Notes |
 |---|---|---|
 | Add a callback | `src/lambdapic/callback/` | Use `@callback(stage, interval)` or subclass `Callback` |
-| Change particle push | `src/lambdapic/core/pusher/` | Boris/Photon/TBMT; unified is are C kernel |
+| Inject particles at a boundary | `src/lambdapic/callback/injector.py` | `ParticleInjector`: flux source at `start` stage; cold or thermal (drifting Maxwell-Jüttner) beams |
+| Change particle push | `src/lambdapic/core/pusher/` | Boris/Photon/TBMT; unified is a C kernel |
 | Change field solver | `src/lambdapic/core/maxwell/` | 2D/3D Yee + CPML variants |
 | Change current deposition | `src/lambdapic/core/current/` | Python facade + `cpu2d.c`/`cpu3d.c` |
 | Change patch sync / load balance | `src/lambdapic/core/patch/` + `src/lambdapic/core/mpi/` | Patch container + MPI manager/load balancer |
 | Add QED physics | `src/lambdapic/core/qed/` | Radiation and pair production |
 | Add collision physics | `src/lambdapic/core/collision/` | Binary collisions |
-| Run simulations | `src/lambdapic/simulation.py` | Main `Simulation.run()` loop and stage dispatch |
+| Run simulations | `src/lambdapic/simulation/simulation.py` | Main `Simulation.run()` loop and stage dispatch |
 | CLI commands | `src/lambdapic/cli/main.py` | Typer app: `autoreload`, `timer-stat` (batch is TODO) |
 | Tests | `tests/` | See `tests/AGENTS.md` |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
 |---|---|---|---|
-| `Simulation` | Class | `src/lambdapic/simulation.py:118` | 2D PIC engine; `Simulation2D` is an alias |
-| `Simulation3D` | Class | `src/lambdapic/simulation.py:1209` | 3D variant overrides |
+| `Simulation` | Class | `src/lambdapic/simulation/simulation.py:124` | 2D PIC engine; `Simulation2D` is an alias |
+| `Simulation3D` | Class | `src/lambdapic/simulation/simulation.py:1239` | 3D variant overrides |
 | `Patches` | Class | `src/lambdapic/core/patch/patch.py:388` | Patch collection + sync orchestration |
 | `Patch2D` / `Patch3D` | Class | `src/lambdapic/core/patch/patch.py` | Per-subdomain fields + particles container |
 | `MPIManager` | Class | `src/lambdapic/core/mpi/mpi_manager.py` | MPI sync factory/orchestrator |
@@ -63,11 +63,12 @@
 | `Species` | Class | `src/lambdapic/core/species.py:47` | Species definition + particle factory |
 
 ## CONVENTIONS
+- **Environment first**: Always check and use the project `.venv` before anything else — run `.venv/bin/python`, `.venv/bin/pytest` etc. It is a **uv**-managed venv: use `uv pip` instead of `pip` for installs; if `.venv` does not exist, create it with `uv venv` first.
 - **Python 3.10+**: type hints with `|` unions, `| None` for optional.
 - **Naming**: camelCase classes, snake_case functions/variables.
 - **Docstrings**: Google-style with Parameters/Returns/Notes/Examples.
 - **Tests**: pytest, mirror `src/` where practical, construct real `Simulation` instances, realistic plasma params.
-- **C extensions**: Hot paths (sync, deposition, pusher, interpolation) are `.c` files compiled to `.so` with matching `.pyi` stubs.
+- **C extensions**: Hot paths (sync, deposition, pusher, interpolation, binary collisions) are `.c` files compiled to `.so` with matching `.pyi` stubs.
 - **Numba pattern**: `typed.List` of numpy arrays per patch, iterated with `prange(npatches)`.
 - **Callback stages**: `init`, `start`, `maxwell_1`, `_push_position_1`, `_interpolator`, `_qed`, `_push_momentum`, `_push_position_2`, `current_deposition`, `qed_create_particles`, `_laser`, `maxwell_2`/`end`, `final`.
 
@@ -99,5 +100,6 @@ python -m build -s
 - `Simulation` is the 2D class; `Simulation2D` is only an alias.
 - Setting `npatch_x=0` / `npatch_y=0` triggers MPI-aware auto-patching.
 - The `batch` CLI subcommand is a TODO stub.
-- Some `TODO` markers note deferred work (e.g., fusion iterator overflow risk, parallel numba particle extend).
+- There is no automated test CI workflow; the only GitHub Action is `release.yml` for PyPI releases.
+- Some `TODO` markers note deferred work (e.g., parallel numba particle extend).
 - `Simulation.run()` now abort the entire MPI job on an unhandled exception, preventing deadlocks when one rank fails while others are in a collective call.

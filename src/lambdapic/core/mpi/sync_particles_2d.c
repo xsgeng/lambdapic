@@ -6,29 +6,8 @@
 #include <mpi4py/mpi4py.h>
 
 #include "../utils/cutils.h"
+#include "../utils/sync_boundary.h"
 
-enum Boundary2D {
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    XMINYMIN,
-    XMAXYMIN,
-    XMINYMAX,
-    XMAXYMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary2D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    XMAXYMAX,
-    XMINYMAX,
-    XMAXYMIN,
-    XMINYMIN
-};
 
 /* ------------------------------------------------------------------ */
 /* MPI_TAG_UB check: particle tags scale as                           */

@@ -3,6 +3,8 @@
 #include <omp.h>
 #include <math.h>
 #include "../utils/cutils.h"
+#define SYNC_BOUNDARY_3D
+#include "../utils/sync_boundary.h"
 
 // #ifdef USE_TCMALLOC
 // #include "tcmalloc.h"
@@ -10,70 +12,6 @@
 // #define free tc_free
 // #endif
 
-enum Boundary3D {
-    // faces
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    ZMIN,
-    ZMAX,
-    // egdes
-    XMINYMIN,
-    XMINYMAX,
-    XMINZMIN,
-    XMINZMAX,
-    XMAXYMIN,
-    XMAXYMAX,
-    XMAXZMIN,
-    XMAXZMAX,
-    YMINZMIN,
-    YMINZMAX,
-    YMAXZMIN,
-    YMAXZMAX,
-    // vertices
-    XMINYMINZMIN,
-    XMINYMINZMAX,
-    XMINYMAXZMIN,
-    XMINYMAXZMAX,
-    XMAXYMINZMIN,
-    XMAXYMINZMAX,
-    XMAXYMAXZMIN,
-    XMAXYMAXZMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary3D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    // faces
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    ZMAX,
-    ZMIN,
-    // egdes
-    XMAXYMAX,
-    XMAXYMIN,
-    XMAXZMAX,
-    XMAXZMIN,
-    XMINYMAX,
-    XMINYMIN,
-    XMINZMAX,
-    XMINZMIN,
-    YMAXZMAX,
-    YMAXZMIN,
-    YMINZMAX,
-    YMINZMIN,
-    // vertices
-    XMAXYMAXZMAX,
-    XMAXYMAXZMIN,
-    XMAXYMINZMAX,
-    XMAXYMINZMIN,
-    XMINYMAXZMAX,
-    XMINYMAXZMIN,
-    XMINYMINZMAX,
-    XMINYMINZMIN
-};
 
 // Implementation of count_outgoing_particles function
 static void count_outgoing_particles(
@@ -534,8 +472,8 @@ PyObject* fill_particles_from_boundary_3d(PyObject* self, PyObject* args) {
         zmax_list[ipatch] += 0.5 * dz;
     }
 
-    AUTOFREE npy_intp *npart_incoming = PyArray_DATA(npart_incoming_array);
-    AUTOFREE npy_intp *npart_outgoing = PyArray_DATA(npart_outgoing_array);
+    npy_intp *npart_incoming = PyArray_DATA(npart_incoming_array);
+    npy_intp *npart_outgoing = PyArray_DATA(npart_outgoing_array);
 
     npy_intp nattrs = PyList_Size(attrs);
     Py_ssize_t iattr_x = -1, iattr_y = -1, iattr_z = -1;

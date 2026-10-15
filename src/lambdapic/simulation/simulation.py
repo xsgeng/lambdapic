@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Callable, ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Callable, ClassVar, Dict, List, Literal, Optional, Sequence
 
 import mpi4py
 import numpy as np
@@ -37,7 +37,7 @@ from ..core.species import Electron, Photon, Species, _ALL_SPECIES
 from ..core.utils.logger import configure_logger, logger, rank_log
 from ..core.utils.progress_bar import ProgressBar
 from ..core.utils.terminal import is_terminal
-from ..core.utils.timer import Timer, set_timer_enabled
+from ..core.utils.timer import Timer, flush_timers, set_timer_enabled, timer_sink_path
 from .utils import (
     auto_patch_2d,
     auto_patch_3d,
@@ -70,6 +70,11 @@ class SimulationConfig(BaseModel):
     enable_timer: bool = Field(
         False,
         description="Enable performance timers and write them to a separate file"
+    )
+    timer_flush_interval: int = Field(
+        100,
+        gt=0,
+        description="Number of simulation steps between timer gather/flush cycles"
     )
     boundary_conditions: Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']] = Field(
         {'xmin': 'pml', 'xmax': 'pml', 'ymin': 'pml', 'ymax': 'pml'},
@@ -138,6 +143,7 @@ class Simulation:
         log_file (str, optional): Path to log file. If None, no log file is created and only console output is used. Defaults to None.
         truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
         enable_timer (bool, optional): If True, enable performance timers and write them to a separate file derived from log_file (e.g. log.txt -> log.timer.txt). Defaults to False.
+        timer_flush_interval (int, optional): Number of simulation steps between periodic timer gather/flush cycles. Only effective when enable_timer=True. Defaults to 100.
         random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
         comm (mpi4py.MPI.Comm, optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
     """
@@ -164,6 +170,7 @@ class Simulation:
     log_file: Optional[str] = field(default=None)
     truncate_log: bool = field(default=True)
     enable_timer: bool = field(default=False)
+    timer_flush_interval: int = field(default=100)
     random_seed: Optional[int] = field(default=None)
     comm: Optional[mpi4py.MPI.Comm] = field(default=None)
 
@@ -207,6 +214,7 @@ class Simulation:
             log_file=self.log_file,
             truncate_log=self.truncate_log,
             enable_timer=self.enable_timer,
+            timer_flush_interval=self.timer_flush_interval,
             random_seed=self.random_seed
         )
         
@@ -249,9 +257,18 @@ class Simulation:
         configure_logger(
             sink=config.log_file,
             truncate_existing=config.truncate_log,
-            enable_timer=config.enable_timer
         )
-        set_timer_enabled(config.enable_timer)
+        # Configure in-memory timers; rank 0 gathers and writes periodically.
+        timer_file = None
+        if config.enable_timer and config.log_file is not None:
+            timer_file = timer_sink_path(config.log_file)
+        set_timer_enabled(
+            config.enable_timer,
+            timer_file=timer_file,
+            comm=self.comm,
+            truncate=config.truncate_log,
+        )
+        self.timer_flush_interval = config.timer_flush_interval
         
         rank_log("Simulation instance created", MPIManager.get_default_comm())
         self.initialized = False
@@ -497,7 +514,6 @@ class Simulation:
                 
                 patches.append(p)
         patches.init_rect_neighbor_index_2d(npatch_x=self.npatch_x, npatch_y=self.npatch_y, boundary_conditions=self.boundary_conditions)
-        patches.update_lists()
 
         return patches
     
@@ -689,13 +705,26 @@ class Simulation:
 
 
     def _init_sorter(self):
-        self.sorter: list[ParticleSort2D] = []
+        """Initialize particle sorter for each species.
+        
+        Creates a ParticleSort2D instance for each species, which handles particle
+        sorting and synchronization across patches.
+        """
+        self.sorter: List[ParticleSort2D] | List[ParticleSort3D] = []
+        
         if self._collision_groups:
             for s in self.patches.species:
-                self.sorter.append(ParticleSort2D(self.patches, s))
+                if self.dimension == 2:
+                    self.sorter.append(ParticleSort2D(self.patches, s))
+                elif self.dimension == 3:
+                    self.sorter.append(ParticleSort3D(self.patches, s))
         else:
-            for s in self.patches.species:
-                self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
+            if self.dimension == 2:
+                for s in self.patches.species:
+                    self.sorter.append(ParticleSort2D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly))
+            elif self.dimension == 3:
+                for s in self.patches.species:
+                    self.sorter.append(ParticleSort3D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly, nz_buckets=1, dz_buckets=self.Lz))
                 
     def _init_random_generator(self) -> None:
         """Create MPI-level generators for each rank.
@@ -760,24 +789,6 @@ class Simulation:
             self.patches.sync_guard_fields(['bx', 'by', 'bz'])
             self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
 
-    def generate_lists(self):
-        """Generate particle lists for all modules.
-        
-        Creates particle lists needed by:
-        - Pushers
-        - Radiation modules
-        - Field interpolator
-        - Current depositor
-        """
-        self.patches.update_lists()
-        for p in self.pusher:
-            p.generate_particle_lists()
-        for r in self.radiation:
-            if r is not None:
-                r.generate_particle_lists()
-        self.interpolator.generate_particle_lists()
-        self.current_depositor.generate_particle_lists()
-
     def update_lists(self):
         """Update particle lists after particle creation/destruction.
         
@@ -787,17 +798,19 @@ class Simulation:
         - Moved between patches
         
         Also resets the 'extended' flag for all particles.
+
+        Note: current depositor and interpolator are skipped: their kernels
+        fetch particle arrays at call time, so their cached lists only mirror
+        the live arrays and are rebuilt wholesale by update_patches().
         """
         for ispec, s in enumerate(self.patches.species):
             for ipatch, p in enumerate(self.patches):
                 if p.particles[ispec].extended:
-                    self.current_depositor.update_particle_lists(ipatch, ispec)
-                    self.interpolator.update_particle_lists(ipatch, ispec)
                     self.pusher[ispec].update_particle_lists(ipatch)
                     self.sorter[ispec].update_particle_lists(ipatch)
 
-        if self.collision is not None:
-            self.collision.update_particle_lists()
+        # collision need no list updates here: their C kernels fetch
+        # particle attributes per call, so particle views can never go stale
 
         for r in self.radiation:
             if r is None:
@@ -1129,6 +1142,9 @@ class Simulation:
             self.time += self.dt
             self.itime += 1
 
+            # Periodically gather timer records on rank 0 and flush to file
+            if self.enable_timer and (self.itime % self.timer_flush_interval == 0):
+                flush_timers()
 
             if stop_callback():
                 pbar.close()
@@ -1139,6 +1155,10 @@ class Simulation:
 
         with Timer("Callbacks: final stage"):
             stage_callbacks.run('final')
+
+        # Final flush for any remaining buffered timer records
+        if self.enable_timer:
+            flush_timers()
 
     def sync_currents(self):
         """Blocking current synchronization.
@@ -1241,6 +1261,7 @@ class Simulation3D(Simulation):
         log_file (str, optional): Path to log file. If None, no log file is created and only console output is used. Defaults to None.
         truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
         enable_timer (bool, optional): If True, enable performance timers and write them to a separate file derived from log_file (e.g. log.txt -> log.timer.txt). Defaults to False.
+        timer_flush_interval (int, optional): Number of simulation steps between periodic timer gather/flush cycles. Only effective when enable_timer=True. Defaults to 100.
         random_seed (int, optional): Random seed for reproducible particle initialization (default: None)
         comm (Optional[mpi4py.MPI.Comm], optional): MPI communicator. If None, uses MPI.COMM_WORLD. Defaults to None.
     """
@@ -1270,6 +1291,7 @@ class Simulation3D(Simulation):
             log_file=self.log_file,
             truncate_log=self.truncate_log,
             enable_timer=self.enable_timer,
+            timer_flush_interval=self.timer_flush_interval,
             random_seed=self.random_seed
         )
         self.dimension = 3
@@ -1366,15 +1388,6 @@ class Simulation3D(Simulation):
             if p.ipatch_z == self.npatch_z - 1 and self.boundary_conditions['zmax'] == 'pml':
                 p.add_pml_boundary(PMLZmax(p.fields, thickness=self.cpml_thickness))
 
-    def _init_sorter(self):
-        self.sorter: list[ParticleSort3D] = []
-        if self._collision_groups:
-            for s in self.patches.species:
-                self.sorter.append(ParticleSort3D(self.patches, s))
-        else:
-            for s in self.patches.species:
-                self.sorter.append(ParticleSort3D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly, nz_buckets=1, dz_buckets=self.Lz))
-
     def create_patches(self):
         """Create and initialize all 3D patches for the simulation domain.
         
@@ -1402,7 +1415,6 @@ class Simulation3D(Simulation):
                     patches.append(p)
 
         patches.init_rect_neighbor_index_3d(self.npatch_x, self.npatch_y, self.npatch_z, boundary_conditions=self.boundary_conditions)
-        patches.update_lists()
         return patches
 
     def _init_maxwell_solver(self):

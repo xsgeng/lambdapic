@@ -32,7 +32,7 @@ class ParticleSort2D:
         reverse_x : bool, optional
             Mirror the x bucket numbering so that bucket 0 sits at the physical
             right edge. Only meaningful for 1D bucket sorts (``ny_buckets == 1``);
-            species with full 2D/3D buckets (collisions/fusion) always use the
+            species with full 2D/3D buckets (collisions) always use the
             default ordering. When None (default), the ordering is chosen
             automatically on the first call: species drifting towards -x get the
             mirrored ordering so that the bucket boundaries advect with the flow.
@@ -68,7 +68,7 @@ class ParticleSort2D:
         the prefix-sum bucket boundaries start (bucket 0), because the dead-slot
         slack then lets the boundaries advect with the flow. Species drifting
         towards -x therefore get a mirrored x numbering. Only the 1D bucket path
-        (single y/z bucket, i.e. species without collisions/fusion) is eligible:
+        (single y/z bucket, i.e. species without collisions) is eligible:
         inter-species collisions iterate both species' bucket bounds in lockstep
         and require a shared numbering.
         """

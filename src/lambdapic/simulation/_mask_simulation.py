@@ -66,7 +66,6 @@ class _MaskSimulation(Simulation):
                 "ymin": "pml", "ymax": "pml",
             },
         )
-        patches.update_lists()
 
         # Build domain mask: True where a patch exists
         import numpy as np

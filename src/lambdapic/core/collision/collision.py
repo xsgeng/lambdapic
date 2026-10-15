@@ -3,35 +3,33 @@ from typing import Any, Dict, List, Sequence, Tuple
 from itertools import combinations
 
 import numpy as np
-from numba import typed
 from scipy.constants import c, epsilon_0, pi
 
 from ..patch.patch import Patches
 from ..sort.particle_sort import ParticleSort2D, ParticleSort3D
 from ..species import Species
-from ..utils.pickle_list import PickleableTypedList
 from .cpu import (
     constrain_debye_length_patches,
     debye_length_patches,
     inter_collision_patches,
     intra_collision_patches,
+    seed_rng_states,
 )
-from .utils import ParticleData, pack_particle_data
 
 
-class Collision(PickleableTypedList):
+class Collision:
     """
     Particle collision module for PIC simulations.
-    
+
     Handles both intra-species and inter-species collisions using
     a binary collision model with Coulomb scattering.
 
     Parameters:
         collision_groups (Sequence[Sequence[Species]]): A list of groups of species that can collide with each other. Example: [[s1, s1, s2, s3]].
-            s1 will collide with it self, and s1, s2, and s3 will collide with each other. 
+            s1 will collide with it self, and s1, s2, and s3 will collide with each other.
         patches (Patches): The patches object containing the simulation domain.
         sorter (Sequence[ParticleSort2D]): The particle sorter object.
-        gen (np.random.Generator): The random number generator object.
+        gen (np.random.Generator): The random number generator object. Used to derive the per-patch PCG32 seeds of rng_state_list (re-derived whenever generate_field_lists() runs: rebalance/restart).
     """
     def __init__(self, collision_groups: Sequence[Sequence[Species]], patches: Patches, sorter: Sequence[ParticleSort2D], gen: np.random.Generator):
         self.collision_groups = collision_groups
@@ -61,41 +59,37 @@ class Collision(PickleableTypedList):
                     self.collisions.append(pair)
                     self._enabled[pair] = True
                 collisions.add(pair)
-            
+
     def generate_particle_lists(self) -> None:
-        self.part_lists: List[List[ParticleData]] = []
-        for s in self.all_species:
-            self.part_lists.append(
-                typed.List(# type: ignore
-                    pack_particle_data([p.particles[s.ispec] for p in self.patches], s.m, s.q)
-                )
-            )
-    
-    def update_particle_lists(self) -> None:
-        for ispec, s in enumerate(self.patches.species):
-            for ipatch, p in enumerate(self.patches):
-                if p.particles[ispec].extended:
-                    self.part_lists[ispec][ipatch] = pack_particle_data(p.particles[ispec], s.m, s.q)
+        # no-op: particle object lists are constructed at the call sites
+        # (see calculate_debye_length / __call__), so they can never go stale
+        pass
 
     def generate_field_lists(self) -> None:
         if self.patches.dimension == 2:
-            self.debye_length_inv_square_list = typed.List(# type: ignore
-                [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
-            )
-            self.total_density_list = typed.List(# type: ignore
-                [np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches]
-            )
+            self.debye_length_inv_square_list = [
+                np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches
+            ]
+            self.total_density_list = [
+                np.zeros((p.nx, p.ny), dtype=np.float64) for p in self.patches
+            ]
         elif self.patches.dimension == 3:
-            self.debye_length_inv_square_list = typed.List(# type: ignore
-                [np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches]
-            )
-            self.total_density_list = typed.List(# type: ignore
-                [np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches]
-            )
+            self.debye_length_inv_square_list = [
+                np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches
+            ]
+            self.total_density_list = [
+                np.zeros((p.nx, p.ny, p.nz), dtype=np.float64) for p in self.patches
+            ]
         self._check_shared_bucket_ordering()
-        self.bucket_bound_min_lists = [typed.List(s.bucket_bound_min_list) for s in self.sorter] # type: ignore
-        self.bucket_bound_max_lists = [typed.List(s.bucket_bound_max_list) for s in self.sorter] # type: ignore
-        self.gen_list = typed.List(self.gen.spawn(self.patches.npatches)) # type: ignore
+        # bucket bounds are NOT copied here: the sorters replace those arrays
+        # wholesale in their own generate_field_lists(), so a generate-time
+        # copy would go stale whenever the sorters regenerate after this
+        # module (ordering-dependent). calculate_debye_length/__call__ fetch
+        # the live lists from the sorters at call time instead.
+        # PCG32 states, one stream per patch; deterministic given gen's seed
+        seeds = self.gen.integers(0, 2**62, size=self.patches.npatches, dtype=np.int64)
+        self.rng_state_list: np.ndarray = seed_rng_states(seeds)
+        assert self.rng_state_list.shape == (self.patches.npatches, 2)
 
     def _check_shared_bucket_ordering(self) -> None:
         """Verify that sorters in collision groups share the same bucket
@@ -137,29 +131,28 @@ class Collision(PickleableTypedList):
             )
 
     def __getstate__(self) -> Dict:
-        state = super().__getstate__()
+        # plain containers pickle natively; the sorter-derived bucket bounds
+        # are fetched at call time (calculate_debye_length / __call__), so
+        # there is nothing sorter-derived left to regenerate
+        return self.__dict__.copy()
 
-        # these cannot be pickled
-        del state['part_lists']
-        del state['bucket_bound_min_lists']
-        del state['bucket_bound_max_lists']
-        return state
-    
     def __setstate__(self, state: Dict) -> None:
-        super().__setstate__(state)
-        self.generate_particle_lists()
+        # drop bucket-bound copies from pre-call-time checkpoints (unused now)
+        for k in [k for k in state if k.startswith("bucket_bound_")]:
+            del state[k]
+        self.__dict__.update(state)
         self.generate_field_lists()
 
     def calculate_debye_length(self) -> None:
         for s in self.all_species:
+            sorter = self.sorter[s.ispec]
             debye_length_patches(
-                self.part_lists[s.ispec],
-                self.bucket_bound_min_lists[s.ispec],
-                self.bucket_bound_max_lists[s.ispec],
+                [p.particles[s.ispec] for p in self.patches],
+                s.m, s.q,
+                sorter.bucket_bound_min_list, sorter.bucket_bound_max_list,
                 self.cell_vol,
-                self.debye_length_inv_square_list,
-                self.total_density_list,
-                reset=s.ispec==0
+                self.debye_length_inv_square_list, self.total_density_list,
+                int(s.ispec == 0)
             )
         constrain_debye_length_patches(
             self.debye_length_inv_square_list,
@@ -179,7 +172,7 @@ class Collision(PickleableTypedList):
         if pair not in self.collisions:
             raise ValueError(f"Collision pair {collision} not found")
         self._enabled[pair] = False
-    
+
     def __call__(self, dt: float) -> Any:
         for pair in self.collisions:
             if not self._enabled[pair]:
@@ -188,20 +181,30 @@ class Collision(PickleableTypedList):
             ispec1, ispec2 = pair
             if ispec1 == ispec2:
                 ispec = ispec1
+                sorter = self.sorter[ispec]
                 intra_collision_patches(
-                    self.part_lists[ispec], self.bucket_bound_min_lists[ispec], self.bucket_bound_max_lists[ispec],
+                    [p.particles[ispec] for p in self.patches],
+                    self.all_species[ispec].m, self.all_species[ispec].q,
+                    sorter.bucket_bound_min_list, sorter.bucket_bound_max_list,
                     self.lnLambda,
                     self.debye_length_inv_square_list,
                     self.cell_vol, dt,
-                    self.gen_list
+                    self.rng_state_list
                 )
             else:
+                s1 = self.all_species[ispec1]
+                s2 = self.all_species[ispec2]
+                sorter1 = self.sorter[ispec1]
+                sorter2 = self.sorter[ispec2]
                 inter_collision_patches(
-                    self.part_lists[ispec1], self.bucket_bound_min_lists[ispec1], self.bucket_bound_max_lists[ispec1],
-                    self.part_lists[ispec2], self.bucket_bound_min_lists[ispec2], self.bucket_bound_max_lists[ispec2],
-                    self.patches.npatches,
+                    [p.particles[ispec1] for p in self.patches],
+                    s1.m, s1.q,
+                    sorter1.bucket_bound_min_list, sorter1.bucket_bound_max_list,
+                    [p.particles[ispec2] for p in self.patches],
+                    s2.m, s2.q,
+                    sorter2.bucket_bound_min_list, sorter2.bucket_bound_max_list,
                     self.lnLambda,
                     self.debye_length_inv_square_list,
                     self.cell_vol, dt,
-                    self.gen_list
+                    self.rng_state_list
                 )

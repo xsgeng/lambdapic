@@ -6,24 +6,25 @@ import typer
 
 
 def parse_log_file(filename: str) -> Tuple[Dict[str, float], Dict[str, int]]:
-    """Parse log file and return dictionaries of category times and counts"""
+    """Parse a timer log file and return dictionaries of category times and counts.
+
+    Accepts both the current plain-text format (``Rank N <name> took X.Yms``)
+    and legacy loguru-formatted lines that carry a ``TIMER`` tag.
+    """
     category_times = defaultdict(float)
     category_counts = defaultdict(int)
-    pattern = r'Rank \d+ (.*?) took ([\d.]+)ms'
+    pattern = r'Rank\s+\d+\s+(.*?)\s+took\s+([\d.]+)ms'
 
     try:
         with open(filename, 'r') as file:
             for line in file:
-                if 'TIMER' not in line:
+                # Skip lines without the took keyword for a quick filter
+                if 'took' not in line:
                     continue
 
-                # Extract TIMER information part
-                timer_info = line.split('|')[-1].strip()
-
-                # Use regex to match category and time
-                match = re.search(pattern, timer_info)
+                match = re.search(pattern, line)
                 if match:
-                    category = match.group(1)
+                    category = match.group(1).strip()
                     time_val = float(match.group(2))
                     category_times[category] += time_val
                     category_counts[category] += 1

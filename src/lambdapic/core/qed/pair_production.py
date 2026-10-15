@@ -253,7 +253,6 @@ class NonlinearPairProductionLCFA(PairProductionBase):
                 self.patches[ipatch].particles[self.positron_ispec].extend(n2)
 
             if n1 > 0 or n2 > 0:
-                self.patches.update_particle_lists(ipatch)
                 self.update_particle_lists(ipatch)
         # fillin pairs
         if self.dimension == 2:

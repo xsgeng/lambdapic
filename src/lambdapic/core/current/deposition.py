@@ -43,13 +43,29 @@ class CurrentDeposition(EnableMixin):
 
     def generate_particle_lists(self) -> None:
         """
-        Add species to the current deposition class.
+        Rebuild particle lists of all species in all patches from scratch.
+
+        Idempotent: lists are reset first, so repeated calls (e.g. after
+        moving-window patch recycling or rebalancing) never duplicate entries.
 
         Parameters
         ----------
+
         particle_list : list of Particles
             List of particles of all patches. 
         """
+
+        self.x_list = []
+        self.y_list = []
+        self.z_list = []
+        self.w_list = []
+        self.ux_list = []
+        self.uy_list = []
+        self.uz_list = []
+        self.inv_gamma_list = []
+        self.is_dead_list = []
+
+        self.q = []
 
         for ispec, s in enumerate(self.patches.species):
             self.x_list.append([p.particles[ispec].x for p in self.patches])

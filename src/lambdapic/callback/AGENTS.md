@@ -9,6 +9,7 @@
 src/lambdapic/callback/
 ├── callback.py   # @callback decorator + Callback base class
 ├── laser.py      # Laser injection (Simple, Gaussian, 2D/3D)
+├── injector.py   # ParticleInjector: continuous particle injection from boundary faces
 ├── hdf5.py       # SaveFieldsToHDF5, SaveSpeciesDensityToHDF5, SaveParticlesToHDF5
 ├── plot.py       # PlotFields with custom alpha-blended colormaps
 ├── restart.py    # RestartDump checkpointing
@@ -24,6 +25,7 @@ src/lambdapic/callback/
 | Add/modify laser injection | `laser.py` | `_laser` stage; side `xmin` only |
 | Add output diagnostics | `hdf5.py`, `plot.py`, `vtk.py` | `end` stage by default |
 | Implement moving window | `utils.py` | `MovingWindow` at `start` stage |
+| Inject particles from a boundary | `injector.py` | `ParticleInjector` at `start` stage; flux source, profiles f(⊥[, t]) |
 | Load particles from file | `utils.py` | `LoadParticles` at `init` stage |
 | Restart/checkpoint | `restart.py` | Per-rank pickle shards; SIGINT/SIGTERM handling |
 

@@ -118,7 +118,7 @@ class Test2D(unittest.TestCase):
 
     def test_reverse_override(self):
         """Explicit reverse_x override wins over auto-detection; full 2D bucket
-        sorts (collisions/fusion) always keep the default ordering."""
+        sorts (collisions) always keep the default ordering."""
         from lambdapic.core.sort.particle_sort import ParticleSort2D
 
         self.sim.initialize()

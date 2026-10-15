@@ -23,7 +23,7 @@ from enum import IntEnum, auto
 
 class Boundary2D(IntEnum):
     """
-    Must be consistent with sync_particles2d.c
+    Must be consistent with utils/sync_boundary.h
     """
     XMIN = 0
     XMAX = auto()
@@ -36,7 +36,7 @@ class Boundary2D(IntEnum):
 
 class Boundary3D(IntEnum):
     """
-    Must be consistent with sync_particles3d.c
+    Must be consistent with utils/sync_boundary.h
     """
     # faces
     XMIN = 0
@@ -437,12 +437,6 @@ class Patches:
 
         return p
 
-    def update_lists(self):
-        pass
-
-    def update_particle_lists(self, ipatch):
-        pass
-
     def init_rect_neighbor_index_2d(self, npatch_x: int, npatch_y: int, *,
                                     boundary_conditions: dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], 
                                     patch_index_map: dict[tuple, int]={}
@@ -727,7 +721,6 @@ class Patches:
                     if npart_to_extend[ipatches] > 0:
                         p.extend(npart_to_extend[ipatches])
                         p.extended = True
-                        self.update_particle_lists(ipatches)
                 sync_particles_2d.fill_particles_from_boundary_2d(
                     [p.particles[ispec] for p in self],
                     [p for p in self],
@@ -752,7 +745,6 @@ class Patches:
                     if npart_to_extend[ipatches] > 0:
                         p.extend(npart_to_extend[ipatches])
                         p.extended = True
-                        self.update_particle_lists(ipatches)
                 sync_particles_3d.fill_particles_from_boundary_3d(
                     [p.particles[ispec] for p in self],
                     [p for p in self],
@@ -903,5 +895,3 @@ class Patches:
                         x_list, y_list, z_list, w_list,
                         rand_gens
                     )
-    
-        self.update_lists()

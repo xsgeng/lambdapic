@@ -2,7 +2,7 @@ import numpy as np
 from numba import njit, prange
 from scipy.constants import c, epsilon_0, mu_0
 
-from ..utils.jit_spinner import jit_spinner
+from ...utils.jit_spinner import jit_spinner
 
 
 @njit(cache=True, inline='always')
@@ -156,3 +156,4 @@ def update_bfield_patches_3d(
         bz = bz_list[ipatch]
 
         update_bfield_3d(ex, ey, ez, bx, by, bz, dx, dy, dz, dt, nx, ny, nz, n_guard)
+

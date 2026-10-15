@@ -11,19 +11,6 @@ LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL
 DEFAULT_LOG_LEVEL = "INFO"
 
 
-def timer_sink_path(sink: str) -> str:
-    """Derive the dedicated timer log file path from the main log file path.
-
-    Parameters:
-        sink: Path to the main log file.
-
-    Returns:
-        Path to the timer log file. For example ``log.txt`` becomes
-        ``log.timer.txt``.
-    """
-    p = Path(sink)
-    return str(p.with_name(p.stem + ".timer" + p.suffix))
-
 def configure_logger(
     level: str = DEFAULT_LOG_LEVEL,
     sink: str | None = None,
@@ -35,7 +22,6 @@ def configure_logger(
     backtrace: bool = False,
     diagnose: bool = False,
     truncate_existing: bool = True,
-    enable_timer: bool = False
 ):
     """Configure the global logger instance.
 
@@ -49,9 +35,6 @@ def configure_logger(
         backtrace: Whether to show exception backtrace
         diagnose: Whether to show variable values in backtrace
         truncate_existing: Whether to truncate existing log file
-        enable_timer: If ``True``, TIMER records are written to a separate file
-            derived from ``sink`` (e.g. ``log.txt`` -> ``log.timer.txt``). If
-            ``sink`` is ``None``, timer records are discarded. Defaults to ``False``.
     """
     colorize = colorize if colorize is not None else is_terminal()
     
@@ -63,14 +46,6 @@ def configure_logger(
     except ValueError:
         logger.level("SUCCESS", no=25, color="<bold><green>")
     
-    try:
-        logger.level("TIMER")
-    except ValueError:
-        logger.level("TIMER", no=22, color="<bold><cyan>")
-    
-    # Get TIMER level number for filtering
-    timer_level = logger.level("TIMER").no
-
     # Set up console sink (stderr)
     console_sink = sys.stderr
     
@@ -89,36 +64,17 @@ def configure_logger(
             sink,
             format=format_str,
             level=level,
-            filter=lambda record: record["level"].name != "TIMER",
             colorize=False,
             serialize=serialize,
             backtrace=backtrace,
             diagnose=diagnose
         )
 
-        # Dedicated timer file sink
-        if enable_timer and isinstance(sink, (str, os.PathLike)):
-            timer_sink = timer_sink_path(str(sink))
-            if truncate_existing and os.path.exists(timer_sink):
-                with open(timer_sink, "w") as f:
-                    f.truncate()
-            logger.add(
-                timer_sink,
-                format=format_str,
-                level="TIMER",
-                filter=lambda record: record["level"].name == "TIMER",
-                colorize=False,
-                serialize=False,
-                backtrace=False,
-                diagnose=False
-            )
-
-    # Add console sink - exclude TIMER level
+    # Add console sink
     logger.add(
         console_sink,
         format=format_str,
         level="INFO",
-        filter=lambda record: record["level"].no != timer_level,  # Exclude TIMER
         colorize=colorize,
         serialize=False,
         backtrace=backtrace,

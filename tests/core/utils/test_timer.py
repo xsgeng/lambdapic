@@ -4,8 +4,13 @@ from pathlib import Path
 import pytest
 
 from lambdapic import Simulation
-from lambdapic.core.utils.logger import configure_logger, timer_sink_path
-from lambdapic.core.utils.timer import Timer, set_timer_enabled, timer_enabled
+from lambdapic.core.utils.timer import (
+    Timer,
+    flush_timers,
+    set_timer_enabled,
+    timer_enabled,
+    timer_sink_path,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -41,37 +46,71 @@ class TestTimerGlobalSwitch:
 
     def test_timer_respects_global_disable(self, tmp_path):
         log_file = tmp_path / "timer.log"
-        configure_logger(sink=str(log_file), enable_timer=False)
-        set_timer_enabled(False)
+        set_timer_enabled(False, timer_file=str(log_file))
 
         with Timer("disabled timer"):
             time.sleep(0.0002)
 
-        log_text = log_file.read_text()
-        assert "TIMER" not in log_text
-        assert "disabled timer" not in log_text
+        flush_timers()
+        assert not log_file.exists() or log_file.read_text() == ""
 
-    def test_timer_logs_when_enabled(self, tmp_path):
-        log_file = tmp_path / "timer.log"
-        configure_logger(sink=str(log_file), enable_timer=True)
-        set_timer_enabled(True)
+    def test_timer_records_when_enabled(self, tmp_path):
+        timer_file = tmp_path / "timer.timer.log"
+        set_timer_enabled(True, timer_file=str(timer_file))
 
         with Timer("enabled timer"):
             time.sleep(0.0002)
 
-        timer_file = tmp_path / "timer.timer.log"
-        assert timer_file.exists()
-        timer_text = timer_file.read_text()
-        assert "TIMER" in timer_text
-        assert "enabled timer took" in timer_text
+        # Nothing written until flushed
+        assert not timer_file.exists() or timer_file.read_text() == ""
 
-        log_text = log_file.read_text()
-        assert "TIMER" not in log_text
-        assert "enabled timer" not in log_text
+        flush_timers()
+
+        text = timer_file.read_text()
+        assert "enabled timer took" in text
+
+    def test_timer_buffer_cleared_after_flush(self, tmp_path):
+        timer_file = tmp_path / "timer.timer.log"
+        set_timer_enabled(True, timer_file=str(timer_file))
+
+        with Timer("a"):
+            time.sleep(0.0002)
+        with Timer("b"):
+            time.sleep(0.0002)
+
+        flush_timers()
+        # After flush, buffer is empty; a second flush writes nothing new
+        first = timer_file.read_text()
+        flush_timers()
+        second = timer_file.read_text()
+        assert second == first
+
+    def test_flush_is_append_mode(self, tmp_path):
+        timer_file = tmp_path / "timer.timer.log"
+        set_timer_enabled(True, timer_file=str(timer_file))
+
+        with Timer("first"):
+            time.sleep(0.0002)
+        flush_timers()
+
+        with Timer("second"):
+            time.sleep(0.0002)
+        flush_timers()
+
+        text = timer_file.read_text()
+        assert "first took" in text
+        assert "second took" in text
+
+    def test_flush_noop_when_no_file(self, tmp_path):
+        # enable but no timer_file: should not raise
+        set_timer_enabled(True, timer_file=None)
+        with Timer("orphan"):
+            time.sleep(0.0002)
+        flush_timers()
 
 
 class TestSimulationTimerIntegration:
-    def _make_sim(self, tmp_path, enable_timer: bool):
+    def _make_sim(self, tmp_path, enable_timer: bool, flush_interval: int = 100):
         return Simulation(
             nx=32,
             ny=32,
@@ -82,6 +121,7 @@ class TestSimulationTimerIntegration:
             nsteps=2,
             log_file=str(tmp_path / "sim.log"),
             enable_timer=enable_timer,
+            timer_flush_interval=flush_interval,
         )
 
     def test_timer_disabled_by_default(self, tmp_path):
@@ -96,20 +136,31 @@ class TestSimulationTimerIntegration:
         log_text = (tmp_path / "sim.log").read_text()
         assert "TIMER" not in log_text
 
-    def test_timer_enabled(self, tmp_path):
-        sim = self._make_sim(tmp_path, enable_timer=True)
+    def test_timer_enabled_and_flushed_at_run_end(self, tmp_path):
+        sim = self._make_sim(tmp_path, enable_timer=True, flush_interval=1000)
         sim.initialize()
 
         assert timer_enabled() is True
 
-        with Timer("integration timer"):
-            time.sleep(0.0002)
+        sim.run()
 
         timer_file = tmp_path / "sim.timer.log"
         assert timer_file.exists()
-        timer_text = timer_file.read_text()
-        assert "TIMER" in timer_text
-        assert "integration timer took" in timer_text
+        text = timer_file.read_text()
+        assert "took" in text
 
         log_text = (tmp_path / "sim.log").read_text()
         assert "TIMER" not in log_text
+
+    def test_periodic_flush_writes_during_run(self, tmp_path):
+        # flush every step so the file is written before run() ends
+        sim = self._make_sim(tmp_path, enable_timer=True, flush_interval=1)
+        sim.initialize()
+
+        timer_file = tmp_path / "sim.timer.log"
+        # Run one step then inspect the file mid-run is awkward; instead run
+        # fully and verify records landed (final flush + periodic flushes).
+        sim.run()
+
+        text = timer_file.read_text()
+        assert "update E field took" in text

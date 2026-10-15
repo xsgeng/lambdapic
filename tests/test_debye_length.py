@@ -4,7 +4,6 @@ from scipy.constants import c, epsilon_0, e, m_e, k
 from lambdapic.core.collision.cpu import debye_length_patch, debye_length_cell
 from lambdapic.core.collision.utils import ParticleData
 from lambdapic.core.particles import ParticlesBase
-from numba import typed
 
 
 class TestDebyeLengthPatch:
@@ -59,7 +58,9 @@ class TestDebyeLengthPatch:
         
         # 调用函数
         debye_length_patch(
-            particle_data,
+            particle_data.ux, particle_data.uy, particle_data.uz,
+            particle_data.inv_gamma, particle_data.w, particle_data.is_dead,
+            particle_data.m, particle_data.q,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
             debye_length_inv_square
@@ -88,7 +89,9 @@ class TestDebyeLengthPatch:
         
         # 调用函数
         debye_length_patch(
-            empty_data,
+            empty_data.ux, empty_data.uy, empty_data.uz,
+            empty_data.inv_gamma, empty_data.w, empty_data.is_dead,
+            empty_data.m, empty_data.q,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
             debye_length_inv_square
@@ -118,7 +121,9 @@ class TestDebyeLengthPatch:
         debye_length_inv_square = np.zeros((nx, ny), dtype=np.float64)
         
         debye_length_patch(
-            dead_data,
+            dead_data.ux, dead_data.uy, dead_data.uz,
+            dead_data.inv_gamma, dead_data.w, dead_data.is_dead,
+            dead_data.m, dead_data.q,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
             debye_length_inv_square
@@ -150,7 +155,9 @@ class TestDebyeLengthPatch:
         debye_length_inv_square = np.zeros((nx, ny), dtype=np.float64)
         
         debye_length_patch(
-            uniform_data,
+            uniform_data.ux, uniform_data.uy, uniform_data.uz,
+            uniform_data.inv_gamma, uniform_data.w, uniform_data.is_dead,
+            uniform_data.m, uniform_data.q,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
             debye_length_inv_square
@@ -170,7 +177,11 @@ class TestDebyeLengthPatch:
 
         # 设置非相对论情况
         kT_mc2 = 0.01
-        ux, uy, uz = SetTemperature.sample_maxwell_juttner(n_particles, kT_mc2)
+        # seeded rng: the 5% tolerance is for the kT estimator, not for the
+        # sampler noise (unseeded sampling made this test flaky ~1 in 5 runs)
+        ux, uy, uz = SetTemperature.sample_maxwell_juttner(
+            n_particles, kT_mc2, np.random.default_rng(20260908)
+        )
         
         particles = ParticlesBase()
         particles.initialize(n_particles)
@@ -206,7 +217,9 @@ class TestDebyeLengthPatch:
         debye_length_inv_square = np.zeros((1, 1), dtype=np.float64)
 
         debye_length_patch(
-            physical_data,
+            physical_data.ux, physical_data.uy, physical_data.uz,
+            physical_data.inv_gamma, physical_data.w, physical_data.is_dead,
+            physical_data.m, physical_data.q,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
             debye_length_inv_square
@@ -232,7 +245,9 @@ class TestDebyeLengthPatch:
         debye_length_inv_square = np.zeros((1, 1), dtype=np.float64)
         
         debye_length_patch(
-            edge_data,
+            edge_data.ux, edge_data.uy, edge_data.uz,
+            edge_data.inv_gamma, edge_data.w, edge_data.is_dead,
+            edge_data.m, edge_data.q,
             bucket_bound_min, bucket_bound_max,
             cell_vol,
             debye_length_inv_square
@@ -252,8 +267,10 @@ class TestDebyeLengthPatch:
         
         # 调用底层函数
         result = debye_length_cell(
-            cell_data,
-            np.int64(0), np.int64(n_particles), 
+            cell_data.ux, cell_data.uy, cell_data.uz,
+            cell_data.inv_gamma, cell_data.w, cell_data.is_dead,
+            cell_data.m, cell_data.q,
+            0, n_particles,
             cell_vol
         )
         
@@ -262,8 +279,10 @@ class TestDebyeLengthPatch:
         
         # 测试空范围
         empty_result = debye_length_cell(
-            cell_data,
-            np.int64(0), np.int64(0), 
+            cell_data.ux, cell_data.uy, cell_data.uz,
+            cell_data.inv_gamma, cell_data.w, cell_data.is_dead,
+            cell_data.m, cell_data.q,
+            0, 0,
             cell_vol
         )
         assert empty_result[0] == -1.0
@@ -273,8 +292,10 @@ class TestDebyeLengthPatch:
         dead_cell_data.is_dead[:] = True
         
         dead_result = debye_length_cell(
-            dead_cell_data,
-            np.int64(0), np.int64(n_particles), 
+            dead_cell_data.ux, dead_cell_data.uy, dead_cell_data.uz,
+            dead_cell_data.inv_gamma, dead_cell_data.w, dead_cell_data.is_dead,
+            dead_cell_data.m, dead_cell_data.q,
+            0, n_particles,
             cell_vol
         )
         assert dead_result[0] == -1.0
@@ -287,12 +308,12 @@ class TestDebyeLengthPatch:
         nx, ny = 2, 2
         n_particles_per_patch = 20
         
-        # 创建多个patch的数据，使用Numba的typed.List
-        bucket_bound_min_list = typed.List() # type: ignore
-        bucket_bound_max_list = typed.List() # type: ignore
-        particle_data_list = typed.List() # type: ignore
-        debye_length_inv_square_list = typed.List() # type: ignore
-        total_density_list = typed.List() # type: ignore
+        # 创建多个patch的数据
+        bucket_bound_min_list = []
+        bucket_bound_max_list = []
+        particle_data_list = []
+        debye_length_inv_square_list = []
+        total_density_list = []
         
         for ipatch in range(npatches):
             # 使用create_test_particles创建粒子数据
@@ -321,13 +342,15 @@ class TestDebyeLengthPatch:
         dx = dy = dz = 1e-6
         cell_vol = dx * dy * dz
         
-        # 调用多patch函数
+        # 调用多patch函数（粒子对象列表 + m/q 标量 + reset）
         debye_length_patches(
             particle_data_list,
+            m_e, -e,
             bucket_bound_min_list, bucket_bound_max_list,
             cell_vol,
             debye_length_inv_square_list,
-            total_density_list
+            total_density_list,
+            0
         )
         
         # 验证所有patch都有合理的结果

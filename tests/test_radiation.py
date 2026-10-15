@@ -78,8 +78,6 @@ def radiation():
     rng = np.random.default_rng(42)
     patches.fill_particles(rng)
 
-    patches.update_lists()
-
     for patch in patches:
         p = patch.particles[0]
         p.ux.fill(10)

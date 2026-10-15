@@ -28,7 +28,7 @@ tests/
 - **Parallel by default**: `pytest.ini` sets `-n 10` (xdist).
 - **Markers**: `mpi`, `slow`, `unit`, `integration`, `component`.
 - **No `conftest.py`**: fixtures/helpers are file-local or module-level helpers (`_setup_sim`).
-- **Mixed frameworks**: most use pytest; `test_sort.py` use `unittest.TestCase`.
+- **Mixed frameworks**: most use pytest; `test_sort.py` uses `unittest.TestCase`.
 
 ## ANTI-PATTERNS
 - Do not use `Union`/`Optional` in test type hints.
@@ -43,7 +43,7 @@ pytest -n 10
 pytest -m "not mpi and not slow" -n 10
 
 # MPI tests (run under mpirun)
-mpirun -n 9 python -m pytest tests/mpi/ -m mpi
+mpirun -n 9 python -m pytest --with-mpi -n 0  -m mpi tests/mpi/
 ```
 
 ## NOTES

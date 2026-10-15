@@ -4,84 +4,9 @@
 #include <mpi.h>
 #include "../utils/cutils.h"
 #include <mpi4py/mpi4py.h>
+#define SYNC_BOUNDARY_3D
+#include "../utils/sync_boundary.h"
 
-#undef INDEX2
-#undef INDEX3
-
-#define INDEX2(i, j) \
-    ((j) >= 0 ? (j) : (j) + (NY)) + \
-    ((i) >= 0 ? (i) : (i) + (NX)) * (NY)
-
-#define INDEX3(i, j, k) \
-    ((k) >= 0 ? (k) : (k) + (NZ)) + \
-    ((j) >= 0 ? (j) : (j) + (NY)) * (NZ) + \
-    ((i) >= 0 ? (i) : (i) + (NX)) * (NY) * (NZ)
-
-
-enum Boundary3D {
-    // faces
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    ZMIN,
-    ZMAX,
-    // egdes
-    XMINYMIN,
-    XMINYMAX,
-    XMINZMIN,
-    XMINZMAX,
-    XMAXYMIN,
-    XMAXYMAX,
-    XMAXZMIN,
-    XMAXZMAX,
-    YMINZMIN,
-    YMINZMAX,
-    YMAXZMIN,
-    YMAXZMAX,
-    // vertices
-    XMINYMINZMIN,
-    XMINYMINZMAX,
-    XMINYMAXZMIN,
-    XMINYMAXZMAX,
-    XMAXYMINZMIN,
-    XMAXYMINZMAX,
-    XMAXYMAXZMIN,
-    XMAXYMAXZMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary3D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    // faces
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    ZMAX,
-    ZMIN,
-    // egdes
-    XMAXYMAX,
-    XMAXYMIN,
-    XMAXZMAX,
-    XMAXZMIN,
-    XMINYMAX,
-    XMINYMIN,
-    XMINZMAX,
-    XMINZMIN,
-    YMAXZMAX,
-    YMAXZMIN,
-    YMINZMAX,
-    YMINZMIN,
-    // vertices
-    XMAXYMAXZMAX,
-    XMAXYMAXZMIN,
-    XMAXYMINZMAX,
-    XMAXYMINZMIN,
-    XMINYMAXZMAX,
-    XMINYMAXZMIN,
-    XMINYMINZMAX,
-    XMINYMINZMIN
-};
 
 static void fill_currents_buf(
     int ix_src, int nx, int NX,

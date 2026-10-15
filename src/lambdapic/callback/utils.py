@@ -585,10 +585,11 @@ class MovingWindow:
                     if k.startswith('psi'):
                         pml.__dict__[k].fill(0.0)
 
-
-        for sorter in sim.sorter:
-            sorter.generate_field_lists()
-            sorter.generate_particle_lists()
+        # Resetting fields above does not invalidate field lists (arrays are
+        # filled in place), but _fill_particles replaces particle arrays with
+        # fresh ones via initialize(). Rebuild the per-module particle/field
+        # lists so no module keeps stale references to the pre-shift arrays.
+        sim.update_patches()
 
 
     def _shift_right(self, sim: Simulation) -> Sequence[Union[Patch3D, Patch2D]]:
@@ -603,6 +604,8 @@ class MovingWindow:
         Note:
             - Rightmost patches wrap around to left side
             - Updates patch coordinates and field arrays
+            - Advances the global domain bounds (xmin/xmax_global) by one
+              patch width so particle sync keeps seeing the moved window
         """
         new_patches = []
         for p in sim.patches:
@@ -616,6 +619,10 @@ class MovingWindow:
                 new_patches.append(p)
             else:
                 p.ipatch_x -= 1
+
+        patch_lx = sim.nx_per_patch * sim.dx
+        sim.patches.xmin_global += patch_lx
+        sim.patches.xmax_global += patch_lx
 
         return new_patches
                 
@@ -631,6 +638,8 @@ class MovingWindow:
         Note:
             - Leftmost patches wrap around to right side
             - Updates patch coordinates and field arrays
+            - Retreats the global domain bounds (xmin/xmax_global) by one
+              patch width so particle sync keeps seeing the moved window
         """
         new_patches = []
         for p in sim.patches:
@@ -644,7 +653,11 @@ class MovingWindow:
                 new_patches.append(p)
             else:
                 p.ipatch_x += 1
-        
+
+        patch_lx = sim.nx_per_patch * sim.dx
+        sim.patches.xmin_global -= patch_lx
+        sim.patches.xmax_global -= patch_lx
+
         return new_patches
                 
     def _update_patch_info(self, sim: Simulation|Simulation3D):

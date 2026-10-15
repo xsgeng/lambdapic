@@ -4,42 +4,8 @@
 #include <mpi.h>
 #include "../utils/cutils.h"
 #include <mpi4py/mpi4py.h>
+#include "../utils/sync_boundary.h"
 
-#undef INDEX2
-#undef INDEX3
-
-#define INDEX2(i, j) \
-    ((j) >= 0 ? (j) : (j) + (NY)) + \
-    ((i) >= 0 ? (i) : (i) + (NX)) * (NY)
-
-#define INDEX3(i, j, k) \
-    ((k) >= 0 ? (k) : (k) + (NZ)) + \
-    ((j) >= 0 ? (j) : (j) + (NY)) * (NZ) + \
-    ((i) >= 0 ? (i) : (i) + (NX)) * (NY) * (NZ)
-
-
-enum Boundary2D {
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    XMINYMIN,
-    XMAXYMIN,
-    XMINYMAX,
-    XMAXYMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary2D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    XMAXYMAX,
-    XMINYMAX,
-    XMAXYMIN,
-    XMINYMIN
-};
 
 static void fill_currents_buf(
     int ix_src, int nx, int NX,

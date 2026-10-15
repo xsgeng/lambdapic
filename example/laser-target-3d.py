@@ -36,7 +36,7 @@ Lz = nz * dz
 
 def density(n0):
     def _density(x, y, z):
-        if x > 1*um:
+        if x > 2*um:
             return n0
         return 0.0
     return _density
@@ -80,8 +80,8 @@ if __name__ == "__main__":
     sim.run(
         callbacks=[
             laser,
-            SaveFieldsToHDF5('laser-target-3d', diag_interval, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho'], slice=np.s_[..., nz//2]),
-            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d', diag_interval, slice=np.s_[..., nz//2]),
+            SaveFieldsToHDF5('laser-target-3d', diag_interval, ['ex', 'ey', 'ez', 'bx', 'by', 'bz', 'rho'], slice=np.s_[:, :, nz//2]),
+            SaveSpeciesDensityToHDF5(ele, 'laser-target-3d', diag_interval, slice=np.s_[:, :, nz//2]),
             read_density,
             PlotFields(
                 [

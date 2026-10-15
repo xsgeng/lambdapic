@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <math.h>
 #include "../utils/cutils.h"
+#include "../utils/sync_boundary.h"
 
 // #ifdef USE_TCMALLOC
 // #include "tcmalloc.h"
@@ -10,28 +11,6 @@
 // #define free tc_free
 // #endif
 
-enum Boundary2D {
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    XMINYMIN,
-    XMAXYMIN,
-    XMINYMAX,
-    XMAXYMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary2D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    XMAXYMAX,
-    XMINYMAX,
-    XMAXYMIN,
-    XMINYMIN
-};
 
 // Implementation of count_outgoing_particles function
 static void count_outgoing_particles(
@@ -358,8 +337,8 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     AUTOFREE double *ymin_list = get_attr_double(patch_list, npatches, "ymin");
     AUTOFREE double *ymax_list = get_attr_double(patch_list, npatches, "ymax");
 
-    AUTOFREE npy_intp *npart_incoming = PyArray_DATA(npart_incoming_array);
-    AUTOFREE npy_intp *npart_outgoing = PyArray_DATA(npart_outgoing_array);
+    npy_intp *npart_incoming = PyArray_DATA(npart_incoming_array);
+    npy_intp *npart_outgoing = PyArray_DATA(npart_outgoing_array);
 
     npy_intp nattrs = PyList_Size(attrs);
 

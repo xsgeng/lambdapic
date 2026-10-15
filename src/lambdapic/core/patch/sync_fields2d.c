@@ -2,42 +2,8 @@
 #include <numpy/arrayobject.h>
 #include <omp.h>
 #include "../utils/cutils.h"
+#include "../utils/sync_boundary.h"
 
-#undef INDEX2
-#undef INDEX3
-
-#define INDEX2(i, j) \
-    ((j) >= 0 ? (j) : (j) + (NY)) + \
-    ((i) >= 0 ? (i) : (i) + (NX)) * (NY)
-
-#define INDEX3(i, j, k) \
-    ((k) >= 0 ? (k) : (k) + (NZ)) + \
-    ((j) >= 0 ? (j) : (j) + (NY)) * (NZ) + \
-    ((i) >= 0 ? (i) : (i) + (NX)) * (NY) * (NZ)
-
-
-enum Boundary2D {
-    XMIN = 0,
-    XMAX,
-    YMIN,
-    YMAX,
-    XMINYMIN,
-    XMAXYMIN,
-    XMINYMAX,
-    XMAXYMAX,
-    NUM_BOUNDARIES
-};
-
-static const enum Boundary2D OPPOSITE_BOUNDARY[NUM_BOUNDARIES] = {
-    XMAX,
-    XMIN,
-    YMAX,
-    YMIN,
-    XMAXYMAX,
-    XMINYMAX,
-    XMAXYMIN,
-    XMINYMIN
-};
 
 
 static PyObject* sync_currents_2d(PyObject* self, PyObject* args) {

@@ -60,11 +60,19 @@ else:
             extra_link_args=extra_link_args,
         ),
         Extension(
-            name="lambdapic.core.pusher.unified.unified_pusher_2d", 
+            name="lambdapic.core.pusher.unified.unified_pusher_2d",
             sources=["src/lambdapic/core/pusher/unified/unified_pusher_2d.c"],
             include_dirs=include_dirs,
             extra_compile_args=extra_compile_args,
             extra_link_args=extra_link_args,
+        ),
+        Extension(
+            name="lambdapic.core.collision.cpu",
+            sources=["src/lambdapic/core/collision/cpu.c"],
+            include_dirs=include_dirs,
+            extra_compile_args=extra_compile_args,
+            extra_link_args=extra_link_args,
+            depends=["src/lambdapic/core/collision/utils.h"],
         ),
         Extension(
             name="lambdapic.core.pusher.unified.unified_pusher_3d", 

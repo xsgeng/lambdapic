@@ -95,6 +95,25 @@ Lasers can be combined using the ``+`` operator to inject multiple lasers in a s
 
 Both lasers must be from the same side and the same dimension (2D or 3D). The resulting combined laser behaves as a single callback that injects all constituent lasers.
 
+Particle injection
+------------------
+
+Continuously inject particles of an existing species from a domain boundary
+face, as a flux source. Profiles (density ``n``, drift momenta ``ux, uy, uz``,
+temperature) are scalars or functions over the transverse coordinates of the
+face, optionally followed by the time ``t`` (e.g. ``f(y)``/``f(y, t)`` for an
+``xmin`` side in 2D, ``f(y, z)``/``f(y, z, t)`` in 3D). The ``density`` is the
+lab-frame number density; a cold beam (``temperature=0``) carries the drift
+momentum exactly, and a thermal beam is sampled from a drifting Maxwell-Jüttner
+distribution with the correct boosted normalization.
+
+Cells whose drift points out of the domain inject nothing: the injector is a
+one-way flux source, and the injected weight per step equals the analytical
+flux ``n * v * A * dt``.
+
+.. autoclass:: lambdapic.callback.injector.ParticleInjector
+   :members:
+
 Utility callbacks
 -----------------
 

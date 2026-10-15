@@ -252,3 +252,60 @@ def test_inter_collision_errors_on_mismatched_reverse_x():
     coll.generate_particle_lists()
     with pytest.raises(ValueError, match="reverse_x"):
         coll.generate_field_lists()
+
+
+def test_collision_bucket_bounds_fetched_at_call_time():
+    """The collision facade must pass the sorters' LIVE bucket-bound lists to
+    the C kernels, not generate-time copies.
+
+    The sorters replace their bucket arrays wholesale in their own
+    generate_field_lists() (rebalance / moving window / restart). A
+    generate-time copy inside Collision would go stale whenever the sorters
+    regenerate after the collision module's last generate_field_lists() —
+    an ordering-dependent silent physics corruption (pairing against
+    outdated bounds). The old copies are gone entirely; this pins the
+    call-time wiring.
+    """
+    import lambdapic.core.collision.collision as collision_module
+
+    sim = _setup_sim()
+    coll = _setup_inter_collision(sim)
+
+    # the generate-time copies no longer exist
+    assert not hasattr(coll, "bucket_bound_min_lists")
+    assert not hasattr(coll, "bucket_bound_max_lists")
+
+    ispec1, ispec2 = coll.collisions[0]
+    pre_rebuild = [list(s.bucket_bound_min_list) for s in sim.sorter]
+
+    # simulate the hazard: sorters regenerate AFTER collision's last
+    # generate_field_lists(), replacing their bucket-bound lists outright
+    for s in sim.sorter:
+        s.generate_field_lists()
+        s()
+
+    new_min1 = sim.sorter[ispec1].bucket_bound_min_list
+    new_min2 = sim.sorter[ispec2].bucket_bound_min_list
+    assert new_min1 is not pre_rebuild[ispec1]
+    assert new_min2 is not pre_rebuild[ispec2]
+
+    captured = {}
+    real_kernel = collision_module.inter_collision_patches
+
+    def spy(*args, **kwargs):
+        captured["args"] = args
+        return real_kernel(*args, **kwargs)
+
+    collision_module.inter_collision_patches = spy
+    try:
+        coll(1e-16)
+    finally:
+        collision_module.inter_collision_patches = real_kernel
+
+    args = captured["args"]
+    # (particles1, m1, q1, bmin1, bmax1, particles2, m2, q2, bmin2, bmax2, ...)
+    assert args[3] is new_min1
+    assert args[4] is sim.sorter[ispec1].bucket_bound_max_list
+    assert args[8] is new_min2
+    assert args[9] is sim.sorter[ispec2].bucket_bound_max_list
+

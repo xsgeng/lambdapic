@@ -46,13 +46,27 @@ class FieldInterpolation(EnableMixin):
 
     def generate_particle_lists(self) -> None:
         """
-        Generate typed.List of particle data of all species in all patches.
+        Rebuild particle lists of all species in all patches from scratch.
+
+        Idempotent: lists are reset first, so repeated calls (e.g. after
+        moving-window patch recycling or rebalancing) never duplicate entries.
 
         Parameters
         ----------
         particle_list : list of Particles
             List of particles of all patches. 
         """
+
+        self.x_list = []
+        self.y_list = []
+        self.z_list = []
+        self.ex_part_list = []
+        self.ey_part_list = []
+        self.ez_part_list = []
+        self.bx_part_list = []
+        self.by_part_list = []
+        self.bz_part_list = []
+        self.is_dead_list = []
 
         for ispec, s in enumerate(self.patches.species):
             self.x_list.append([p.particles[ispec].x for p in self.patches])

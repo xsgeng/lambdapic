@@ -13,7 +13,6 @@ def mock_sim():
     sim.itime = 0
     sim.time = 0.0
     sim.dt = 0.1
-    sim.dt_old = sim.dt
     sim.mpi = Mock()
     sim.mpi.rank = 0
     sim.mpi.comm = Mock()
@@ -30,7 +29,6 @@ def mock_sim_with_time():
     sim.itime = 0
     sim.time = 0.0
     sim.dt = 0.1  # Default time step
-    sim.dt_old = sim.dt
     sim.mpi = Mock()
     sim.mpi.rank = 0
     sim.mpi.comm = Mock()

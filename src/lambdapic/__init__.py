@@ -7,6 +7,7 @@ from .callback.laser import GaussianLaser2D, GaussianLaser3D, SimpleLaser2D, Sim
 from .callback.utils import get_fields, MovingWindow, ExtractSpeciesDensity, SetTemperature, LoadParticles, SetMomentum, SetMomentumAndTemperature
 from .callback.plot import PlotFields
 from .callback.restart import RestartDump
+from .callback.injector import ParticleInjector
 
 from scipy.constants import c, e, epsilon_0, m_e, m_p, mu_0, pi
 
@@ -19,7 +20,7 @@ __all__ = [
     "GaussianLaser2D", "GaussianLaser3D", "SimpleLaser2D", "SimpleLaser3D",
     "PlotFields",
     "MovingWindow", "get_fields", "ExtractSpeciesDensity", "SetTemperature", "SetMomentum", "SetMomentumAndTemperature", "LoadParticles",
-    "RestartDump",
+    "RestartDump", "ParticleInjector",
     # constants
     "c", "e", "epsilon_0", "m_e", "m_p", "mu_0", "pi",
 ]

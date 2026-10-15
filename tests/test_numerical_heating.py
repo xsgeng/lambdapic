@@ -131,3 +131,4 @@ class TestNumericalHeatingSimulation2D:
             f"Energy not conserved: initial={e_initial:.6e}, "
             f"final={e_final:.6e}, relative change={rel_change:.6e}"
         )
+

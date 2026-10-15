@@ -12,7 +12,7 @@ from ...boundary.cpml import (PMLX, PMLY, PMLZ,
                              update_efield_cpml_patches_3d)
 from ...patch import Patches
 
-from ..cpu import (update_bfield_patches_2d, update_bfield_patches_3d,
+from .cpu import (update_bfield_patches_2d, update_bfield_patches_3d,
                   update_efield_patches_2d, update_efield_patches_3d)
 
 

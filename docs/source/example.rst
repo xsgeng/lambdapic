@@ -34,3 +34,17 @@ Copy/download: :download:`photons.py <../../example/photons.py>`.
 
 .. literalinclude:: ../../example/photons.py
     :language: python
+
+Counter-streaming pair plasma
+----------------------------
+
+For demonstration of :any:`ParticleInjector`: two neutral co-moving
+electron-positron streams enter from opposite faces with a Gaussian time
+envelope, collide in the middle and develop the two-stream/filamentation
+(Weibel) instability. The electron density panel shows the streams and the
+two-stream bunching, the ``bz`` panel the out-of-plane filaments.
+
+Copy/download: :download:`counter-streaming.py <../../example/counter-streaming.py>`.
+
+.. literalinclude:: ../../example/counter-streaming.py
+    :language: python
