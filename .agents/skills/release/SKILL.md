@@ -1,6 +1,8 @@
 ---
 name: release
 description: Release a new λPIC version to PyPI with an AI-generated changelog and GitHub Release. Use when the user asks to release, publish, tag, or bump a new version.
+metadata:
+  internal: true
 ---
 
 # Release

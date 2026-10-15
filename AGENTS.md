@@ -28,6 +28,7 @@
 │       └── stages/          # Simulation stage definitions
 ├── tests/                   # pytest suite (mirrors src partially)
 ├── example/                 # Runnable examples (lwfa, weibel, laser-target, photons)
+├── skills/                  # Agent skills (lambdapic usage skill for coding agents)
 └── docs/source/             # Sphinx documentation
 ```
 

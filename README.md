@@ -9,6 +9,20 @@ The flexibility of λPIC makes it easy to implement plugins, allowing developers
 
 Visit the [documentation](https://lambdapic.readthedocs.io/) for installation and usage instructions.
 
+## Agent Skill
+
+This repository ships an [agent skill](https://agentskills.io) that teaches AI coding assistants (Claude Code, OpenCode, Cursor, Codex, and 75+ others) to set up λPIC and generate or debug simulation scripts.
+
+[![skills.sh](https://skills.sh/b/xsgeng/lambdapic)](https://skills.sh/xsgeng/lambdapic)
+
+Install it with the [`skills` CLI](https://skills.sh):
+
+```bash
+npx skills add xsgeng/lambdapic
+```
+
+Once installed, ask your agent for a λPIC simulation — it follows the skill to create a local environment (`uv venv` in your working directory) and produce working simulation scripts.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

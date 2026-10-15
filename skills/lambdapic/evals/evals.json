@@ -1,0 +1,59 @@
+{
+  "evals": [
+    {
+      "id": "new-sim-2d-laser-target",
+      "query": "Write a 2D lambdapic simulation: a 0.8 um laser with a0=5 hitting a 1 um thick solid target at 100 times critical density, run for 100 fs, save fields every 50 steps.",
+      "expected_behavior": [
+        "Uses SI units throughout (wavelength 0.8e-6 m, densities in m^-3)",
+        "Defines a density profile returning m^-3 values",
+        "Registers all callbacks via sim.run(callbacks=[...])",
+        "Gates prints/plots with sim.mpi.rank == 0",
+        "Puts sim.run inside the __name__ == '__main__' block",
+        "Suggests a short smoke run before the full run"
+      ]
+    },
+    {
+      "id": "add-callback-ey-hdf5",
+      "query": "Add a callback to my lambdapic simulation that saves the ey field to HDF5 every 100 steps.",
+      "expected_behavior": [
+        "Uses SaveFieldsToHDF5 with a component list including 'ey' and interval=100",
+        "Registers the callback in sim.run(callbacks=[...])",
+        "Does not use a sim.callbacks list"
+      ]
+    },
+    {
+      "id": "setup-environment-uv-venv",
+      "query": "I want to start a new plasma simulation project in this directory. Set up lambdapic for me.",
+      "expected_behavior": [
+        "Creates a project-local venv in the working directory with uv venv --python 3.13",
+        "Installs mpi4py from source with CC=mpicc before installing lambdapic",
+        "Installs lambdapic into that venv (uv pip install lambdapic or -e .)",
+        "Verifies the installation with python -c \"import lambdapic\"",
+        "Does not touch global/system Python or conda environments"
+      ]
+    },
+    {
+      "id": "debug-nan-divergence",
+      "query": "My lambdapic simulation ran fine for 200 steps and then all fields became NaN. How do I fix it?",
+      "expected_behavior": [
+        "Checks the CFL condition dt < 0.5*dx/c first",
+        "Mentions the resolution minimum: skin_depth/2 AND wavelength/10",
+        "Consults references/troubleshooting.md for the failure-recovery table"
+      ]
+    }
+  ],
+  "trigger_queries": {
+    "should_trigger": [
+      "Help me set up a laser wakefield acceleration simulation with lambdapic",
+      "How do I add a moving window to my PIC simulation?",
+      "My lambdapic run dies with RuntimeError: Patch data mismatch",
+      "Write a callback that plots the electron density every 100 steps",
+      "What cell size do I need to resolve a 100 nc target at 0.8 um?"
+    ],
+    "should_not_trigger": [
+      "Track a single electron trajectory through a Gaussian laser pulse",
+      "Write a Vlasov solver from scratch",
+      "How do I install numba on Windows?"
+    ]
+  }
+}

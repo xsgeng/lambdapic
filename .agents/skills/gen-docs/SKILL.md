@@ -1,6 +1,8 @@
 ---
 name: gen-docs
 description: Update λPIC Sphinx documentation after meaningful code changes that affect product behavior, API, or user experience.
+metadata:
+  internal: true
 ---
 
 # Gen Docs
