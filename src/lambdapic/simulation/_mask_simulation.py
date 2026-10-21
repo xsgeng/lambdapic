@@ -80,8 +80,8 @@ class _MaskSimulation(Simulation):
 
         return patches
 
-    def _init_pml(self) -> None:
-        """Attach PML to any face with no neighbor."""
+    def _init_pml_x(self) -> None:
+        """Attach X-direction PML boundaries to any patch with no X neighbor."""
         for p in self.patches:
             if p.neighbor_index[Boundary2D.XMIN] < 0:
                 p.add_pml_boundary(
@@ -91,6 +91,11 @@ class _MaskSimulation(Simulation):
                 p.add_pml_boundary(
                     PMLXmax(p.fields, thickness=self.cpml_thickness)
                 )
+
+    def _init_pml(self) -> None:
+        """Attach PML to any face with no neighbor."""
+        self._init_pml_x()
+        for p in self.patches:
             if p.neighbor_index[Boundary2D.YMIN] < 0:
                 p.add_pml_boundary(
                     PMLYmin(p.fields, thickness=self.cpml_thickness)

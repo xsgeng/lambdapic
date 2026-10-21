@@ -122,7 +122,8 @@ class Laser:
             patches = list(filter(lambda p: p.ipatch_x == ipatch_x, sim.patches))
             n_pmlxmin = sum(isinstance(pml, PMLXmin) for p in patches for pml in p.pml_boundary)
             if n_pmlxmin < len(patches):
-                logger.info("Disabling laser for lacking of PML. Maybe due to MovingWindow starts.")
+                logger.info("Disabling laser for lacking of PMLXmin at the injection boundary. "
+                            "Check boundary_conditions['xmin'] is set to 'pml'.")
                 self.disabled = True
                 return
         else:

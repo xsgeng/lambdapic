@@ -8,7 +8,6 @@ from numpy.typing import NDArray
 from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 
 from lambdapic.callback.hdf5 import SaveSpeciesDensityToHDF5, _compute_patch_slice, _normalize_slice
-from lambdapic.core.boundary.cpml import PMLX
 
 from ..core.patch.cpu import (
     fill_particles_2d,
@@ -17,6 +16,7 @@ from ..core.patch.cpu import (
     get_num_macro_particles_3d,
 )
 from ..core.patch.patch import Patch, Patch2D, Patch3D
+from ..core.boundary.utils import has_pml
 from ..core.species import Species
 from ..core.utils.logger import logger
 from ..simulation import Simulation, Simulation3D
@@ -494,7 +494,12 @@ class MovingWindow:
         - Handles both forward (positive) and backward (negative) moving windows
         - Maintains proper particle distributions in new regions
         - Updates patch neighbor relationships after shifts
-        - Removes PML boundaries when moving starts
+        - Keeps the X-direction PML: after each shift the PMLX objects are
+          regenerated on the new edge patches (see Simulation._reset_pml_x),
+          and the particles in the region formerly covered by the edge PML
+          are appended so no vacuum strip is left behind
+        - Particles inside the regenerated PML shells are marked dead by an
+          immediate particle sync right after the shift
     """
     DEFAULT_STAGE = "start"
     def __init__(
@@ -543,13 +548,6 @@ class MovingWindow:
         if self.num_shifts == 0:
             if sim.mpi.rank == 0:
                 logger.info("MovingWindow starts.")
-            
-            logger.info(f"Rank {sim.mpi.rank}: removing PMLX")
-            for p in sim.patches:
-                # clear PMLX
-                if p.pml_boundary:
-                    p.pml_boundary = [pml for pml in p.pml_boundary if not issubclass(type(pml), PMLX)]
-            sim.maxwell.generate_field_lists()
         
         # Calculate current window velocity
         if callable(self.velocity):
@@ -565,16 +563,41 @@ class MovingWindow:
         self.num_shifts += 1
 
         if self.patch_this_shift >= patch_Lx:
+            # Patches whose X PML shell becomes physical domain after the shift
+            strip_patches = [
+                p for p in sim.patches
+                if p.ipatch_x == sim.npatch_x - 1 and has_pml(p.pml_boundary, 'xmax')
+            ]
+            strip_side = 'xmax'
             new_patches = self._shift_right(sim)
             self.patch_this_shift -= patch_Lx
         elif self.patch_this_shift <= -patch_Lx:
+            strip_patches = [
+                p for p in sim.patches
+                if p.ipatch_x == 0 and has_pml(p.pml_boundary, 'xmin')
+            ]
+            strip_side = 'xmin'
             new_patches = self._shift_left(sim)
             self.patch_this_shift += patch_Lx
         else:
             return
-        
+
+        # The wrapped patch carried its PMLX to the wrong side and the old edge
+        # patch is no longer at the edge: regenerate the X PMLs so they sit on
+        # the new left/right edge patches before any field list is rebuilt.
+        sim._reset_pml_x()
+
         self._update_patch_info(sim)
         self._fill_particles(sim, new_patches)
+        self._fill_pml_strip(sim, strip_patches, strip_side)
+
+        # Kill the particles inside the regenerated PML shells right away:
+        # the freshly loaded ones in the wrapped patch's new PML and the old
+        # ones now covered by the new edge PML would otherwise be pushed and
+        # deposit current inside the PML for the rest of this step. No MPI
+        # exchange is needed here: nothing has moved since the last full
+        # sync, this only marks out-of-bound particles dead.
+        sim.patches.sync_particles()
 
         # reset fields and pml data
         for p in new_patches:
@@ -846,11 +869,172 @@ class MovingWindow:
                 yaxis,
                 zaxis,
                 len(patches), 
-                s.density_min, 
+                s.density_min,
                 s.ppc_jit,
                 x_list, y_list, z_list, w_list,
                 gens
             )
+
+    def _fill_pml_strip(self, sim: Simulation, patches: Sequence[Patch2D | Patch3D], side: str):
+        """Append particles to the cells formerly covered by an edge X PML.
+
+        After a shift the PML shell of the old edge patch becomes physical
+        domain, but the particle sync has been killing particles inside the
+        shell all along, so the strip would be a vacuum band drifting through
+        the plasma. Existing particles are kept; fresh ones are appended via
+        extend() (initialize() would wipe the patch).
+
+        Args:
+            sim (Simulation): The simulation object
+            patches (Sequence[Patch2D | Patch3D]): Old edge patches that lost their X PML
+            side (str): Which edge the PML was on, 'xmin' or 'xmax'
+
+        Note:
+            - Shares the inject_particles / stop_inject_time gating with _fill_particles
+            - Particles are placed with the same density/ppc profiles as everywhere else
+            - Appended slots get the same defaults initialize() produces
+        """
+        if not patches:
+            return
+
+        if not self.inject_particles:
+            return
+
+        if self.stop_inject_time is not None and sim.time >= self.stop_inject_time:
+            return
+
+        if sim.cpml_thickness < 2:
+            # fill kernels derive the cell size from the sliced axis,
+            # which needs at least two grid points
+            logger.warning("cpml_thickness < 2: skipping former-PML strip fill")
+            return
+
+        thickness = sim.cpml_thickness
+        if sim.dimension == 2:
+            self._fill_pml_strip_2d(sim, patches, side, thickness)
+        elif sim.dimension == 3:
+            self._fill_pml_strip_3d(sim, patches, side, thickness)
+        else:
+            raise NotImplementedError("Only 2D and 3D simulations are supported")
+        sim.update_lists()
+
+    def _fill_pml_strip_2d(self, sim: Simulation, patches: Sequence[Patch2D], side: str, thickness: int):
+        """Append strip particles in 2D patches (tail cells on the PML side)."""
+        for ispec, s in enumerate(sim.species):
+            if s.density is None:
+                continue
+
+            xaxis = typed.List([
+                p.xaxis[-thickness:] if side == 'xmax' else p.xaxis[:thickness]
+                for p in patches
+            ])
+            yaxis = typed.List([p.yaxis for p in patches])
+            gens = typed.List(sim.rand_gen.spawn(len(patches)))
+
+            n_strip = get_num_macro_particles_2d(
+                s.density_jit,
+                xaxis,
+                yaxis,
+                len(patches),
+                s.density_min,
+                s.ppc_jit,
+            )
+
+            x_list = typed.List()
+            y_list = typed.List()
+            w_list = typed.List()
+            for ipatch, p in enumerate(patches):
+                part = p.particles[ispec]
+                part.extend(int(n_strip[ipatch]))
+                tail = slice(part.npart - int(n_strip[ipatch]), part.npart)
+                x_list.append(part.x[tail])
+                y_list.append(part.y[tail])
+                w_list.append(part.w[tail])
+
+            fill_particles_2d(
+                s.density_jit,
+                xaxis,
+                yaxis,
+                len(patches),
+                s.density_min,
+                s.ppc_jit,
+                x_list, y_list, w_list,
+                gens
+            )
+
+            self._init_extended_slots(patches, ispec, n_strip)
+
+    def _fill_pml_strip_3d(self, sim: Simulation3D, patches: Sequence[Patch3D], side: str, thickness: int):
+        """Append strip particles in 3D patches (tail cells on the PML side)."""
+        for ispec, s in enumerate(sim.species):
+            if s.density is None:
+                continue
+
+            xaxis = typed.List([
+                p.xaxis[-thickness:] if side == 'xmax' else p.xaxis[:thickness]
+                for p in patches
+            ])
+            yaxis = typed.List([p.yaxis for p in patches])
+            zaxis = typed.List([p.zaxis for p in patches])
+            gens = typed.List(sim.rand_gen.spawn(len(patches)))
+
+            n_strip = get_num_macro_particles_3d(
+                s.density_jit,
+                xaxis,
+                yaxis,
+                zaxis,
+                len(patches),
+                s.density_min,
+                s.ppc_jit,
+            )
+
+            x_list = typed.List()
+            y_list = typed.List()
+            z_list = typed.List()
+            w_list = typed.List()
+            for ipatch, p in enumerate(patches):
+                part = p.particles[ispec]
+                part.extend(int(n_strip[ipatch]))
+                tail = slice(part.npart - int(n_strip[ipatch]), part.npart)
+                x_list.append(part.x[tail])
+                y_list.append(part.y[tail])
+                z_list.append(part.z[tail])
+                w_list.append(part.w[tail])
+
+            fill_particles_3d(
+                s.density_jit,
+                xaxis,
+                yaxis,
+                zaxis,
+                len(patches),
+                s.density_min,
+                s.ppc_jit,
+                x_list, y_list, z_list, w_list,
+                gens
+            )
+
+            self._init_extended_slots(patches, ispec, n_strip)
+
+    @staticmethod
+    def _init_extended_slots(patches: Sequence[Patch2D | Patch3D], ispec: int, n_new: NDArray[np.int64]):
+        """Give the extended particle slots the same defaults initialize() produces.
+
+        extend() leaves the new slots dead with NaN attributes; only x/y/z and w
+        were written by the fill kernels, so everything else must be restored:
+        zero momentum and auxiliary attributes, inv_gamma of 1, alive flag.
+        """
+        for ipatch, p in enumerate(patches):
+            n = int(n_new[ipatch])
+            if n == 0:
+                continue
+            part = p.particles[ispec]
+            tail = slice(part.npart - n, part.npart)
+            part.is_dead[tail] = False
+            for attr in part.attrs:
+                if attr in ('x', 'y', 'z', 'w', '_id'):
+                    continue
+                getattr(part, attr)[tail] = 0.0
+            part.inv_gamma[tail] = 1.0
 
 class SetMomentum(Callback):
     """

@@ -10,7 +10,7 @@ from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
 from tqdm.auto import tqdm, trange
 from yaspin import yaspin
 
-from ..core.boundary.cpml import PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
+from ..core.boundary.cpml import PMLX, PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
 from ..core.collision.collision import Collision
 from ..core.current.deposition import (
     CurrentDeposition,
@@ -464,17 +464,35 @@ class Simulation:
             )
             p.set_fields(f)
     
+    def _init_pml_x(self):
+        """Attach X-direction PML boundaries to the patches at the current domain edges."""
+        for p in self.patches:
+            if p.ipatch_x == 0 and self.boundary_conditions['xmin'] == 'pml':
+                p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_x == self.npatch_x - 1 and self.boundary_conditions['xmax'] == 'pml':
+                p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
+
+    def _reset_pml_x(self):
+        """Regenerate X-direction PML boundaries after the domain edges moved.
+
+        Drops every existing PMLX and re-creates them on the current left/right
+        edge patches. Old objects are discarded rather than moved: their psi
+        state belongs to cells that changed role when the window shifted, and a
+        PMLXmin never becomes a PMLXmax. Callers must rebuild field lists
+        afterwards (update_patches() does).
+        """
+        for p in self.patches:
+            p.pml_boundary = [pml for pml in p.pml_boundary if not isinstance(pml, PMLX)]
+        self._init_pml_x()
+
     def _init_pml(self):
         """Initialize CPML boundary conditions for patches at domain edges.
         
         Adds PML boundaries to patches that are located at the simulation domain
         edges (xmin, xmax, ymin, ymax). The thickness is determined by cpml_thickness.
         """
+        self._init_pml_x()
         for p in self.patches:
-            if p.ipatch_x == 0 and self.boundary_conditions['xmin'] == 'pml':
-                p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_x == self.npatch_x - 1 and self.boundary_conditions['xmax'] == 'pml':
-                p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
             if p.ipatch_y == 0 and self.boundary_conditions['ymin'] == 'pml':
                 p.add_pml_boundary(PMLYmin(p.fields, thickness=self.cpml_thickness))
             if p.ipatch_y == self.npatch_y - 1 and self.boundary_conditions['ymax'] == 'pml':
@@ -1368,17 +1386,22 @@ class Simulation3D(Simulation):
             )
             p.set_fields(f)
     
+    def _init_pml_x(self):
+        """Attach X-direction PML boundaries to the patches at the current domain edges."""
+        for p in self.patches:
+            if p.ipatch_x == 0 and self.boundary_conditions['xmin'] == 'pml':
+                p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
+            if p.ipatch_x == self.npatch_x - 1 and self.boundary_conditions['xmax'] == 'pml':
+                p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
+
     def _init_pml(self):
         """Initialize 3D CPML boundary conditions.
         
         Adds PML boundaries to patches at all domain edges (xmin, xmax, ymin, ymax, zmin, zmax).
         The thickness is determined by cpml_thickness.
         """
+        self._init_pml_x()
         for p in self.patches:
-            if p.ipatch_x == 0 and self.boundary_conditions['xmin'] == 'pml':
-                p.add_pml_boundary(PMLXmin(p.fields, thickness=self.cpml_thickness))
-            if p.ipatch_x == self.npatch_x - 1 and self.boundary_conditions['xmax'] == 'pml':
-                p.add_pml_boundary(PMLXmax(p.fields, thickness=self.cpml_thickness))
             if p.ipatch_y == 0 and self.boundary_conditions['ymin'] == 'pml':
                 p.add_pml_boundary(PMLYmin(p.fields, thickness=self.cpml_thickness))
             if p.ipatch_y == self.npatch_y - 1 and self.boundary_conditions['ymax'] == 'pml':
