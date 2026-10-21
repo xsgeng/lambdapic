@@ -29,6 +29,7 @@ tests/
 - **Markers**: `mpi`, `slow`, `unit`, `integration`, `component`.
 - **No `conftest.py`**: fixtures/helpers are file-local or module-level helpers (`_setup_sim`).
 - **Mixed frameworks**: most use pytest; `test_sort.py` uses `unittest.TestCase`.
+- **Prove the scenario fired**: assert the trigger's observable before the post-state — a test that also passes when nothing happened is a vacuous pass (e.g. before asserting on a shifted moving window, assert the shift occurred: `sim.patches.xmin_global < 0`).
 
 ## ANTI-PATTERNS
 - Do not use `Union`/`Optional` in test type hints.

@@ -7,26 +7,28 @@
 ```
 .
 ├── src/lambdapic/           # Main package
-│   ├── simulation/        # Simulation, Simulation2D, Simulation3D, SimulationCallbacks
-│   ├── callback/            # Callback decorator + built-in callbacks
-│   ├── cli/                 # Typer CLI (lambdapic command)
+│   ├── simulation/          # Simulation classes (package, not a module)
+│   │   ├── simulation.py    # Simulation (2D), Simulation3D, SimulationCallbacks, STAGES list
+│   │   ├── _mask_simulation.py     # Sparse-domain (masked) simulation variant
+│   │   └── utils.py
+│   ├── callback/            # Callback decorator + built-in callbacks (per-dir AGENTS.md)
+│   ├── cli/                 # Typer CLI: main.py, auto_reload.py, stat.py
 │   └── core/                # Physics engine
-│       ├── patch/           # Patch/Patches containers + sync + Hilbert/Metis
+│       ├── patch/           # Patch/Patches containers + sync + Hilbert/Metis (per-dir AGENTS.md)
 │       ├── mpi/             # MPI manager + load balancer + C sync extensions
 │       ├── pusher/          # Boris/Photon/TBMT pushers + unified C kernels
-│       ├── maxwell/          # Yee FDTD + CPML solvers
+│       ├── maxwell/         # solver/ (Yee FDTD + CPML) subpackage
 │       ├── current/         # Esirkepov current deposition (C extensions)
 │       ├── interpolation/   # Field interpolation to particles
 │       ├── qed/             # Radiation + pair production
 │       ├── collision/       # Binary collisions (C extension)
-│       ├── boundary/        # Boundary conditions
-│       ├── sort/            # Particle sorting
-│       ├── ionization/      # Field ionization
+│       ├── boundary/        # CPML PML classes; has_pml/get_pml live in boundary/utils.py
+│       ├── sort/            # Particle sorting (C extensions)
 │       ├── species.py       # Species, Electron, Proton, Photon, Positron
 │       ├── particles.py     # ParticlesBase, QEDParticles, SpinParticles
 │       ├── fields.py        # Fields, Fields2D, Fields3D
-│       └── stages/          # Simulation stage definitions
-├── tests/                   # pytest suite (mirrors src partially)
+│       └── utils/
+├── tests/                   # pytest suite (per-dir AGENTS.md; core/ and mpi/ subtrees)
 ├── example/                 # Runnable examples (lwfa, weibel, laser-target, photons)
 ├── skills/                  # Agent skills (lambdapic usage skill for coding agents)
 └── docs/source/             # Sphinx documentation
@@ -38,12 +40,12 @@
 | Add a callback | `src/lambdapic/callback/` | Use `@callback(stage, interval)` or subclass `Callback` |
 | Inject particles at a boundary | `src/lambdapic/callback/injector.py` | `ParticleInjector`: flux source at `start` stage; cold or thermal (drifting Maxwell-Jüttner) beams |
 | Change particle push | `src/lambdapic/core/pusher/` | Boris/Photon/TBMT; unified is a C kernel |
-| Change field solver | `src/lambdapic/core/maxwell/` | 2D/3D Yee + CPML variants |
+| Change field solver | `src/lambdapic/core/maxwell/` | `solver/` (2D/3D Yee + CPML) subpackage |
 | Change current deposition | `src/lambdapic/core/current/` | Python facade + `cpu2d.c`/`cpu3d.c` |
 | Change patch sync / load balance | `src/lambdapic/core/patch/` + `src/lambdapic/core/mpi/` | Patch container + MPI manager/load balancer |
 | Add QED physics | `src/lambdapic/core/qed/` | Radiation and pair production |
 | Add collision physics | `src/lambdapic/core/collision/` | Binary collisions |
-| Run simulations | `src/lambdapic/simulation/simulation.py` | Main `Simulation.run()` loop and stage dispatch |
+| Run simulations | `src/lambdapic/simulation/simulation.py` | Main `Simulation.run()` loop and stage dispatch; stage list lives in `STAGES` |
 | CLI commands | `src/lambdapic/cli/main.py` | Typer app: `autoreload`, `timer-stat` (batch is TODO) |
 | Tests | `tests/` | See `tests/AGENTS.md` |
 
@@ -51,17 +53,17 @@
 | Symbol | Type | Location | Role |
 |---|---|---|---|
 | `Simulation` | Class | `src/lambdapic/simulation/simulation.py:124` | 2D PIC engine; `Simulation2D` is an alias |
-| `Simulation3D` | Class | `src/lambdapic/simulation/simulation.py:1239` | 3D variant overrides |
+| `Simulation3D` | Class | `src/lambdapic/simulation/simulation.py:1257` | 3D variant overrides |
 | `Patches` | Class | `src/lambdapic/core/patch/patch.py:388` | Patch collection + sync orchestration |
-| `Patch2D` / `Patch3D` | Class | `src/lambdapic/core/patch/patch.py` | Per-subdomain fields + particles container |
-| `MPIManager` | Class | `src/lambdapic/core/mpi/mpi_manager.py` | MPI sync factory/orchestrator |
-| `LoadBalancer` | Class | `src/lambdapic/core/mpi/load_balancer.py` | METIS-based patch redistribution |
+| `Patch2D` / `Patch3D` | Class | `src/lambdapic/core/patch/patch.py:218` / `:300` | Per-subdomain fields + particles container |
+| `MPIManager` | Class | `src/lambdapic/core/mpi/mpi_manager.py:9` | MPI sync factory/orchestrator |
+| `LoadBalancer` | Class | `src/lambdapic/core/mpi/load_balancer.py:14` | METIS-based patch redistribution |
 | `callback` | Function | `src/lambdapic/callback/callback.py:50` | Decorator attaching stage + interval |
 | `Callback` | Class | `src/lambdapic/callback/callback.py:113` | Base class for class-based callbacks |
-| `BorisPusher` | Class | `src/lambdapic/core/pusher/pusher.py` | Standard Boris pusher |
-| `MaxwellSolver2D` / `3D` | Class | `src/lambdapic/core/maxwell/solver.py` | Yee FDTD + CPML |
-| `CurrentDeposition2D` / `3D` | Class | `src/lambdapic/core/current/deposition.py` | Current deposition facade |
-| `Species` | Class | `src/lambdapic/core/species.py:47` | Species definition + particle factory |
+| `BorisPusher` | Class | `src/lambdapic/core/pusher/pusher.py:116` | Standard Boris pusher |
+| `MaxwellSolver2D` / `3D` | Class | `src/lambdapic/core/maxwell/solver/solver.py:137` / `:193` | Yee FDTD + CPML |
+| `CurrentDeposition2D` / `3D` | Class | `src/lambdapic/core/current/deposition.py:154` / `:194` | Current deposition facade |
+| `Species` | Class | `src/lambdapic/core/species.py:51` | Species definition + particle factory |
 
 ## CONVENTIONS
 - **Environment first**: Always check and use the project `.venv` before anything else — run `.venv/bin/python`, `.venv/bin/pytest` etc. It is a **uv**-managed venv: use `uv pip` instead of `pip` for installs; if `.venv` does not exist, create it with `uv venv` first.

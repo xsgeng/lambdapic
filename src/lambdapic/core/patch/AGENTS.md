@@ -38,3 +38,5 @@ src/lambdapic/core/patch/
 
 ## NOTES
 - Hilbert ordering requires even dimensions (`nx%2==0`, `ny%2==0`).
+- **Half-cell ownership tolerance**: the particle sync widens every patch bound by half a cell (`fill_particles_from_boundary_*` in `sync_particles_2d.c`/`sync_particles_3d.c`), so a patch owns particles in `[p.xmin - dx/2, p.xmax + dx/2]`. `Patch.xmin/xmax` already exclude the PML thickness, so the effective PML kill boundary is `p.xmax + dx/2` — particles in the outer half-cell of the physical domain stay alive. `LoadParticles` filters with this same tolerance.
+- **Fills cover PML cells and rely on the sync to prune them**: `calculate_npart`/`fill_particles` iterate the full `p.xaxis`, shell cells included; `Simulation.initialize()` ends with one `sync_particles()` (init-loaded shell particles are dead from t=0) and `MovingWindow` syncs right after each shift.
