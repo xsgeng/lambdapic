@@ -41,39 +41,24 @@ This project is licensed under the GPL-3.0 License.
 
 If you use λPIC in your research, please cite:
 
-- *λPIC: A callback-centric particle-in-cell framework*, arXiv:2607.13507 [physics.comp-ph] (2026). https://arxiv.org/abs/2607.13507
+- *λPIC: A callback-centric particle-in-cell framework*, Computer Physics Communications **331** (2027), 110474. DOI: [10.1016/j.cpc.2026.110474](https://doi.org/10.1016/j.cpc.2026.110474)
+- Preprint: [arXiv:2607.13507](https://arxiv.org/abs/2607.13507) [physics.comp-ph] (2026)
 
 BibTeX:
 
 ```bibtex
-@article{geng2026lambdapic,
-  title={$\lambda$PIC: A callback-centric particle-in-cell framework},
-  author={Geng, Xuesong and Cui, Yunwei and Zhang, Lingang and Ji, Liangliang},
-  journal={arXiv preprint arXiv:2607.13507},
-  year={2026},
-  eprint={2607.13507},
-  archivePrefix={arXiv},
-  primaryClass={physics.comp-ph}
-}
-```
-
-## Citation
-
-If you use λPIC in your research, please cite:
-
-- *λPIC: A callback-centric particle-in-cell framework*, arXiv:2607.13507 [physics.comp-ph] (2026). https://arxiv.org/abs/2607.13507
-
-BibTeX:
-
-```bibtex
-@article{geng2026lambdapic,
-  title={$\lambda$PIC: A callback-centric particle-in-cell framework},
-  author={Geng, Xuesong and Cui, Yunwei and Zhang, Lingang and Ji, Liangliang},
-  journal={arXiv preprint arXiv:2607.13507},
-  year={2026},
-  eprint={2607.13507},
-  archivePrefix={arXiv},
-  primaryClass={physics.comp-ph}
+@article{gengLPICCallbackcentricParticleincell2027,
+  title = {{\emph{{$\lambda$}}}{{PIC}}: {{A}} Callback-Centric Particle-in-Cell Framework},
+  shorttitle = {{\emph{{$\lambda$}}}{{PIC}}},
+  author = {Geng, Xuesong and Cui, Yunwei and Zhang, Lingang and Ji, Liangliang},
+  year = 2027,
+  month = feb,
+  journal = {Computer Physics Communications},
+  volume = {331},
+  pages = {110474},
+  issn = {0010-4655},
+  doi = {10.1016/j.cpc.2026.110474},
+  urldate = {2026-11-03},
 }
 ```
 
