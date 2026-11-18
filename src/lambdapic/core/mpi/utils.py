@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import functools
 import sys
+import traceback
 from typing import Callable, TypeVar
 
 from mpi4py import MPI
@@ -19,8 +20,14 @@ def abort_on_mpi_error(method: F) -> F:
     and calling ``MPI_Comm_abort`` before re-raising, the whole job exits
     immediately.
 
-    For single-rank runs the exception is re-raised normally so that normal
-    Python traceback handling is preserved.
+    The traceback is printed before the abort: ``MPI_Comm_abort``
+    terminates the process before the re-raised exception can be
+    formatted and printed by the normal exception handling, so without
+    this the failure would only ever surface as the one-line abort
+    message.
+
+    For single-rank runs the exception is re-raised normally so that
+    normal Python traceback handling is preserved.
     """
 
     @functools.wraps(method)
@@ -38,6 +45,7 @@ def abort_on_mpi_error(method: F) -> F:
                     "aborting MPI job.",
                     file=sys.stderr,
                 )
+                traceback.print_exc(file=sys.stderr)
                 sys.stderr.flush()
                 comm.Abort(1)
             raise

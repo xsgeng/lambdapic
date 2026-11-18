@@ -1,3 +1,5 @@
 include src/lambdapic/core/qed/*.npz
 include src/lambdapic/core/utils/cutils.h
 include src/lambdapic/core/utils/sync_boundary.h
+include src/lambdapic/core/utils/boundary2d.h
+include src/lambdapic/core/utils/boundary3d.h

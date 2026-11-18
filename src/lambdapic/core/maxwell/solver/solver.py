@@ -1,7 +1,4 @@
-from typing import Tuple
-import numpy as np
 from numba import typed
-from scipy.constants import c, e, epsilon_0, mu_0
 
 from ...utils.pickle_list import PickleableTypedList
 

@@ -15,6 +15,7 @@ static void cleanup_ptr(void* p) {
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #define LIGHT_SPEED 299792458.0
+#define E_CHARGE 1.602176634e-19  /* elementary charge (C) */
 #define one_third 0.3333333333333333
 #define INDEX2(i, j) \
     ((j) >= 0 ? (j) : (j) + (ny)) + \

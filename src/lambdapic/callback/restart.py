@@ -1,6 +1,6 @@
 import signal
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Union
+from typing import Callable, Optional, Union
 
 import dill as pickle
 

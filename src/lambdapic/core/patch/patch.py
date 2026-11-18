@@ -1,15 +1,14 @@
-from time import perf_counter_ns
 from typing import List, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
-from numba import njit, typed
+from numba import typed
 
-from ..boundary.utils import get_pml, has_pml
+from ..boundary.utils import get_pml
 
-from ..boundary.cpml import PML, PMLX, PMLY
+from ..boundary.cpml import PML, PMLX
 
-from ..fields import Fields, Fields2D
+from ..fields import Fields
 from ..particles import ParticlesBase
 from ..patch.cpu import (
     fill_particles_2d,
@@ -23,7 +22,7 @@ from enum import IntEnum, auto
 
 class Boundary2D(IntEnum):
     """
-    Must be consistent with utils/sync_boundary.h
+    Must be consistent with utils/boundary2d.h
     """
     XMIN = 0
     XMAX = auto()
@@ -36,7 +35,7 @@ class Boundary2D(IntEnum):
 
 class Boundary3D(IntEnum):
     """
-    Must be consistent with utils/sync_boundary.h
+    Must be consistent with utils/boundary3d.h
     """
     # faces
     XMIN = 0
@@ -695,7 +694,7 @@ class Patches:
                 self.patches,
                 self.npatches, self.nx, self.ny, self.nz, self.n_guard,
             )
-        
+
     def sync_particles(self) -> NDArray[np.int64]:
         from . import sync_particles_2d, sync_particles_3d
         
@@ -895,3 +894,12 @@ class Patches:
                         x_list, y_list, z_list, w_list,
                         rand_gens
                     )
+
+        # initialize spin from the species polarization vector
+        for ispec, s in enumerate(self.species):
+            if s.polarization is not None:
+                sx, sy, sz = s.polarization
+                for p in self.patches:
+                    p.particles[ispec].sx[:] = sx
+                    p.particles[ispec].sy[:] = sy
+                    p.particles[ispec].sz[:] = sz

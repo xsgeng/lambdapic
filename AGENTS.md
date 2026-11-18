@@ -52,18 +52,19 @@
 ## CODE MAP
 | Symbol | Type | Location | Role |
 |---|---|---|---|
-| `Simulation` | Class | `src/lambdapic/simulation/simulation.py:124` | 2D PIC engine; `Simulation2D` is an alias |
-| `Simulation3D` | Class | `src/lambdapic/simulation/simulation.py:1257` | 3D variant overrides |
-| `Patches` | Class | `src/lambdapic/core/patch/patch.py:388` | Patch collection + sync orchestration |
-| `Patch2D` / `Patch3D` | Class | `src/lambdapic/core/patch/patch.py:218` / `:300` | Per-subdomain fields + particles container |
-| `MPIManager` | Class | `src/lambdapic/core/mpi/mpi_manager.py:9` | MPI sync factory/orchestrator |
+| `Simulation` | Class | `src/lambdapic/simulation/simulation.py:154` | 2D PIC engine; `Simulation2D` is an alias |
+| `Simulation3D` | Class | `src/lambdapic/simulation/simulation.py:1310` | 3D variant overrides |
+| `Patches` | Class | `src/lambdapic/core/patch/patch.py:387` | Patch collection + sync orchestration |
+| `Patch2D` / `Patch3D` | Class | `src/lambdapic/core/patch/patch.py:217` / `:299` | Per-subdomain fields + particles container |
+| `MPIManager` | Class | `src/lambdapic/core/mpi/mpi_manager.py:8` | MPI sync factory/orchestrator |
 | `LoadBalancer` | Class | `src/lambdapic/core/mpi/load_balancer.py:14` | METIS-based patch redistribution |
-| `callback` | Function | `src/lambdapic/callback/callback.py:50` | Decorator attaching stage + interval |
-| `Callback` | Class | `src/lambdapic/callback/callback.py:113` | Base class for class-based callbacks |
-| `BorisPusher` | Class | `src/lambdapic/core/pusher/pusher.py:116` | Standard Boris pusher |
-| `MaxwellSolver2D` / `3D` | Class | `src/lambdapic/core/maxwell/solver/solver.py:137` / `:193` | Yee FDTD + CPML |
-| `CurrentDeposition2D` / `3D` | Class | `src/lambdapic/core/current/deposition.py:154` / `:194` | Current deposition facade |
-| `Species` | Class | `src/lambdapic/core/species.py:51` | Species definition + particle factory |
+| `callback` | Function | `src/lambdapic/callback/callback.py:48` | Decorator attaching stage + interval |
+| `Callback` | Class | `src/lambdapic/callback/callback.py:111` | Base class for class-based callbacks |
+| `BorisPusher` | Class | `src/lambdapic/core/pusher/pusher.py:113` | Standard Boris pusher |
+| `BorisTBMTPusher` | Class | `src/lambdapic/core/pusher/pusher.py:146` | Boris pusher + TBMT spin precession (`pusher="boris+tbmt"`, requires `polarization`) |
+| `MaxwellSolver2D` / `3D` | Class | `src/lambdapic/core/maxwell/solver/solver.py:139` / `:195` | Yee FDTD + CPML |
+| `CurrentDeposition2D` / `3D` | Class | `src/lambdapic/core/current/deposition.py:171` / `:241` | Current deposition facade |
+| `Species` | Class | `src/lambdapic/core/species.py:55` | Species definition + particle factory |
 
 ## CONVENTIONS
 - **Environment first**: Always check and use the project `.venv` before anything else — run `.venv/bin/python`, `.venv/bin/pytest` etc. It is a **uv**-managed venv: use `uv pip` instead of `pip` for installs; if `.venv` does not exist, create it with `uv venv` first.
@@ -76,13 +77,14 @@
 - **Callback stages**: `init`, `start`, `maxwell_1`, `_push_position_1`, `_interpolator`, `_qed`, `_push_momentum`, `_push_position_2`, `current_deposition`, `qed_create_particles`, `_laser`, `maxwell_2`/`end`, `final`.
 
 ## ANTI-PATTERNS (THIS PROJECT)
-- **DO NOT push to `upstream`**; it is the public open-source remote. Use `tea-cli` and push to `origin` only.
 - **DO NOT use `Union` or `Optional`** in type hints; use `|` syntax.
 - **DO NOT mock `Simulation`** in tests; construct a real instance.
-- **DO NOT use the internal base classes directly** where the public API is documented (`docs/source/AI_prompt.md` warns about two classes).
 
 ## COMMANDS
 ```bash
+# Lint (E9+F; same scope as the pre-commit hook, requires uv tool ruff)
+ruff check src/ tests/
+
 # Install (editable)
 pip install -e ".[test]"
 
@@ -95,6 +97,9 @@ pytest -m "not mpi and not slow" -n 10
 # Run MPI tests
 mpirun -n 9 python -m pytest --with-mpi -n 0  -m mpi tests/mpi/
 
+# Rebuild C extensions after a merge touches .c files
+.venv/bin/python setup.py build_ext --inplace
+
 # Build source distribution
 python -m build -s
 ```
@@ -102,6 +107,7 @@ python -m build -s
 ## NOTES
 - `Simulation` is the 2D class; `Simulation2D` is only an alias.
 - Setting `npatch_x=0` / `npatch_y=0` triggers MPI-aware auto-patching.
+- A `'pml'` boundary in a direction requires `npatch_* >= 2` in that direction (auto-patching enforces `npatch_*_min = 2`; manual values are validated at construction, so single-patch grids must use periodic boundaries).
 - The `batch` CLI subcommand is a TODO stub.
 - There is no automated test CI workflow; the only GitHub Action is `release.yml` for PyPI releases.
 - Some `TODO` markers note deferred work (e.g., parallel numba particle extend).

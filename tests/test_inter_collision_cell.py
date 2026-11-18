@@ -268,7 +268,7 @@ def test_inter_collision_electron_proton():
     """Electron-proton mass ratio (1836): one step conserves momentum and
     energy exactly, and a cold electron beam through protons at rest
     deflects at the Rutherford rate with mu = m_e*m_p/(m_e+m_p)."""
-    from scipy.constants import c, m_p
+    from scipy.constants import m_p
 
     n = 512
     part_e = create_random_particles(n, mass=m_e, charge=-e, seed=81)

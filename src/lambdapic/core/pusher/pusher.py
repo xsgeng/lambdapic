@@ -1,15 +1,12 @@
-from typing import Any
 
-import numpy as np
-from numba import njit, prange, typed, types
-from scipy.constants import c, e, epsilon_0, mu_0
+from numba import typed
 
 from lambdapic.core.particles import SpinParticles
 
 from ..patch import Patches
 from ..utils.pickle_list import PickleableTypedList
 from ..utils.enable_mixin import EnableMixin, if_enabled
-from .cpu import boris_push_patches, photon_push_patches, push_position_patches_2d
+from .cpu import boris_push_patches, push_position_patches_2d, tbmt_spin_patches
 
 
 class PusherBase(PickleableTypedList,EnableMixin):
@@ -146,7 +143,21 @@ class PhotonPusher(PusherBase):
         ...
         
 
-class BorisTBMTPusher(PusherBase):
+class BorisTBMTPusher(BorisPusher):
+    """Boris pusher with Thomas-Bargmann-Michel-Telegdi (TBMT) spin dynamics.
+
+    The orbit is pushed exactly like :class:`BorisPusher`; afterwards a
+    standalone spin pass rotates each spin with the Boris scheme around
+    the TBMT effective field built from the interpolated E/B fields and
+    the mid-step gamma (no Stern-Gerlach feedback). Requires the species
+    to use :class:`~lambdapic.core.particles.SpinParticles`, i.e. a
+    ``polarization`` must be set.
+    """
+
+    def __init__(self, patches: Patches, ispec: int) -> None:
+        super().__init__(patches, ispec)
+        self.ae = patches.species[ispec].anomalous_magnetic_moment
+
     def generate_particle_lists(self) -> None:
         super().generate_particle_lists()
         self.sx_list = typed.List([p.particles[self.ispec].sx for p in self.patches])
@@ -164,5 +175,31 @@ class BorisTBMTPusher(PusherBase):
 
 
     @if_enabled
-    def __call__(self, dt: float) -> None:
-        ...
+    def __call__(self, dt: float, unified: bool=False) -> None:
+        from .unified.unified_pusher_2d import unified_boris_tbmt_pusher_cpu_2d
+        from .unified.unified_pusher_3d import unified_boris_tbmt_pusher_cpu_3d
+        if unified:
+            # Boris orbit push + standalone TBMT spin pass, in one C call
+            if self.dimension == 2:
+                unified_boris_tbmt_pusher_cpu_2d(
+                    [p.particles[self.ispec] for p in self.patches],
+                    [p.fields for p in self.patches],
+                    self.npatches, dt, self.q, self.m, self.ae
+                )
+            if self.dimension == 3:
+                unified_boris_tbmt_pusher_cpu_3d(
+                    [p.particles[self.ispec] for p in self.patches],
+                    [p.fields for p in self.patches],
+                    self.npatches, dt, self.q, self.m, self.ae
+                )
+        else:
+            # Boris push of the orbit, then the standalone spin rotation
+            super().__call__(dt, unified=False)
+            tbmt_spin_patches(
+                self.sx_list, self.sy_list, self.sz_list,
+                self.ux_list, self.uy_list, self.uz_list,
+                self.ex_part_list, self.ey_part_list, self.ez_part_list,
+                self.bx_part_list, self.by_part_list, self.bz_part_list,
+                self.is_dead_list,
+                self.npatches, self.q, self.m, self.ae, dt
+            )

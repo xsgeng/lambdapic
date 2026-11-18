@@ -67,7 +67,7 @@ class ParticleInjector(Callback):
         along the injection axis is always sampled uniformly: this is what
         makes the pre-drift filter reproduce the correct boundary flux.
     interval : int | float | Callable
-        Callback interval (timesteps, seconds, or predicate), see :any:`Callback`.
+        Callback interval (timesteps, seconds, or predicate), see ``Callback``.
 
     Notes
     -----
@@ -380,6 +380,13 @@ class ParticleInjector(Callback):
             part.z[sl] = 0.0
 
         part.is_dead[sl] = False
+
+        # initialize spin of newly injected particles from the species polarization
+        pol = self.species.polarization
+        if pol is not None:
+            part.sx[sl] = pol[0]
+            part.sy[sl] = pol[1]
+            part.sz[sl] = pol[2]
         return True
 
     def _evaluate_profile(

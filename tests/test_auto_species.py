@@ -1,17 +1,5 @@
-import pytest
-
 from lambdapic import Simulation
 from lambdapic.core.species import Electron, Proton, _ALL_SPECIES
-
-
-@pytest.fixture
-def isolated_registry():
-    """Snapshot and isolate the global _ALL_SPECIES registry for the test."""
-    saved = list(_ALL_SPECIES)
-    _ALL_SPECIES.clear()
-    yield _ALL_SPECIES
-    _ALL_SPECIES.clear()
-    _ALL_SPECIES.extend(saved)
 
 
 def _make_sim():

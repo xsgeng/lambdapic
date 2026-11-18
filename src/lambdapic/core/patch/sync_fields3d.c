@@ -2,8 +2,19 @@
 #include <numpy/arrayobject.h>
 #include <omp.h>
 #include "../utils/cutils.h"
-#define SYNC_BOUNDARY_3D
-#include "../utils/sync_boundary.h"
+#include "boundary3d.h"
+
+#undef INDEX2
+#undef INDEX3
+
+#define INDEX2(i, j) \
+    ((j) >= 0 ? (j) : (j) + (NY)) + \
+    ((i) >= 0 ? (i) : (i) + (NX)) * (NY)
+
+#define INDEX3(i, j, k) \
+    ((k) >= 0 ? (k) : (k) + (NZ)) + \
+    ((j) >= 0 ? (j) : (j) + (NY)) * (NZ) + \
+    ((i) >= 0 ? (i) : (i) + (NX)) * (NY) * (NZ)
 
 
 static PyObject* sync_currents_3d(PyObject* self, PyObject* args) {

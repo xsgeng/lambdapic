@@ -3,7 +3,6 @@ Test random seed reproducibility in LambdaPIC simulations.
 """
 
 import numpy as np
-import pytest
 from lambdapic import Simulation, Simulation3D, Electron
 
 

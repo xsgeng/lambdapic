@@ -59,7 +59,7 @@ def is_version_outdated(local: str, remote: str) -> bool:
         return False
 
 def get_num_threads() -> int:
-    from ..core.pusher.unified import unified_pusher_2d
+    from ..core.pusher.unified import unified_pusher_2d  # noqa: F401  # side-effect import: loads the OpenMP .so so threadpoolctl can see its thread pool
     from threadpoolctl import threadpool_info
     for info in threadpool_info():
         if info['internal_api'] == 'openmp':

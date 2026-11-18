@@ -5,7 +5,7 @@
 JOBS ?= $(shell nproc 2>/dev/null || echo 4)
 N_MPI ?= 9
 
-.PHONY: refresh build build_inplace install test test_serial test_mpi clean
+.PHONY: refresh build build_inplace install test test_serial test_mpi docs docs-serve clean
 
 refresh: clean build install
 
@@ -27,6 +27,12 @@ test_serial: build_inplace
 
 test_mpi:
 	mpiexec -np $(N_MPI) python -m pytest --with-mpi -m mpi -n 0 --no-cov tests/mpi
+
+docs:
+	sphinx-build -b html docs/source docs/build
+
+docs-serve:
+	python -m http.server -d docs/build 8000
 
 clean:
 	rm -rf __pycache__

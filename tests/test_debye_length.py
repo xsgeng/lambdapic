@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from scipy.constants import c, epsilon_0, e, m_e, k
+from scipy.constants import c, epsilon_0, e, m_e
 from lambdapic.core.collision.cpu import debye_length_patch, debye_length_cell
 from lambdapic.core.collision.utils import ParticleData
 from lambdapic.core.particles import ParticlesBase

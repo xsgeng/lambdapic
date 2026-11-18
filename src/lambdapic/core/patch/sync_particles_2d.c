@@ -3,7 +3,7 @@
 #include <omp.h>
 #include <math.h>
 #include "../utils/cutils.h"
-#include "../utils/sync_boundary.h"
+#include "boundary2d.h"
 
 // #ifdef USE_TCMALLOC
 // #include "tcmalloc.h"
@@ -11,6 +11,7 @@
 // #define free tc_free
 // #endif
 
+static const enum Boundary2D OPPOSITE_BOUNDARY_2D[NUM_BOUNDARIES_2D] = OPPOSITE_BOUNDARY_2D_INITIALIZER;
 
 // Implementation of count_outgoing_particles function
 static void count_outgoing_particles(
@@ -65,7 +66,7 @@ static void count_outgoing_particles(
 #define SET_INCOMING_INDEX(BOUND) \
     ipatch = boundary_index[BOUND]; \
     if (ipatch < 0) continue; \
-    ibound = OPPOSITE_BOUNDARY[BOUND]; \
+    ibound = OPPOSITE_BOUNDARY_2D[BOUND]; \
     incoming_indices_list[ipatch][ibound][ibuff[BOUND]] = ip; \
     (ibuff[BOUND])++; \
     continue;
@@ -79,8 +80,8 @@ npy_intp* boundary_index,
 // out
 npy_intp*** incoming_indices_list
 ) {
-    AUTOFREE npy_intp* ibuff = (npy_intp*)malloc(NUM_BOUNDARIES * sizeof(npy_intp));
-    for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+    AUTOFREE npy_intp* ibuff = (npy_intp*)malloc(NUM_BOUNDARIES_2D * sizeof(npy_intp));
+    for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
         ibuff[ibound] = 0;
     }
     npy_intp ipatch, ibound;
@@ -130,7 +131,7 @@ static void fill_boundary_particles_to_buffer(
     for (npy_intp iattr = 0; iattr < nattrs; iattr++) {
         npy_intp ibuff = 0;
 
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             if (boundary_index[ibound] >= 0) {
                 double* attr = attrs_list[boundary_index[ibound]*nattrs + iattr];
                 for (npy_intp i = 0; i < npart_incoming[ibound]; i++) {
@@ -220,7 +221,7 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     }
 
     // Allocate arrays for particle counts with cleanup attributes
-    npy_intp dims = NUM_BOUNDARIES*npatches;
+    npy_intp dims = NUM_BOUNDARIES_2D*npatches;
     PyArrayObject *npart_to_extend_array = (PyArrayObject*) PyArray_ZEROS(1, &npatches, NPY_INT64, 0);
     PyArrayObject *npart_incoming_array = (PyArrayObject*) PyArray_ZEROS(1, &npatches, NPY_INT64, 0);
     PyArrayObject *npart_outgoing_array = (PyArrayObject*) PyArray_ZEROS(1, &dims, NPY_INT64, 0);
@@ -245,7 +246,7 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         npy_intp npart = npart_list[ipatch];
         
         // Count particles going out of bounds
-        npy_intp npart_out[NUM_BOUNDARIES] = {0};
+        npy_intp npart_out[NUM_BOUNDARIES_2D] = {0};
         
         count_outgoing_particles(
             x, y, is_dead, xmin, xmax, ymin, ymax, npart,
@@ -253,8 +254,8 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         );
         
         // Store results in the outgoing array
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            npart_outgoing[ipatch * NUM_BOUNDARIES + ibound] = npart_out[ibound];
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
+            npart_outgoing[ipatch * NUM_BOUNDARIES_2D + ibound] = npart_out[ibound];
         }
     }
     
@@ -266,10 +267,10 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         
         // Count incoming particles
         npy_intp npart_new = 0;
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             npy_intp i = neighbor_index_list[ipatch][ibound];
             if (i >= 0) {
-                npart_new += npart_outgoing[i*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound]];
+                npart_new += npart_outgoing[i*NUM_BOUNDARIES_2D + OPPOSITE_BOUNDARY_2D[ibound]];
             }
         }
         
@@ -379,9 +380,9 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     // Indices of particles coming from boundary
     AUTOFREE npy_intp*** incoming_indices_list = (npy_intp***)malloc(npatches * sizeof(npy_intp**));
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        npart_incoming_boundary_list[ipatch] = (npy_intp*)malloc(NUM_BOUNDARIES * sizeof(npy_intp*));
-        incoming_indices_list[ipatch] = (npy_intp**)malloc(NUM_BOUNDARIES * sizeof(npy_intp*));
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        npart_incoming_boundary_list[ipatch] = (npy_intp*)malloc(NUM_BOUNDARIES_2D * sizeof(npy_intp*));
+        incoming_indices_list[ipatch] = (npy_intp**)malloc(NUM_BOUNDARIES_2D * sizeof(npy_intp*));
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             incoming_indices_list[ipatch][ibound] = NULL;
         }
     }
@@ -399,10 +400,10 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
                 continue;
             }
             
-            for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+            for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
                 npy_intp i = neighbor_index_list[ipatch][ibound];
                 if (i >= 0) {
-                    npart_incoming_boundary_list[ipatch][ibound] = npart_outgoing[i*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound]];
+                    npart_incoming_boundary_list[ipatch][ibound] = npart_outgoing[i*NUM_BOUNDARIES_2D + OPPOSITE_BOUNDARY_2D[ibound]];
                     if (npart_incoming_boundary_list[ipatch][ibound] > 0) {
                         incoming_indices_list[ipatch][ibound] = (npy_intp*)malloc(npart_incoming_boundary_list[ipatch][ibound] * sizeof(npy_intp));
                     }
@@ -486,7 +487,7 @@ PyObject* fill_particles_from_boundary_2d(PyObject* self, PyObject* args) {
     Py_END_ALLOW_THREADS
 
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             free(incoming_indices_list[ipatch][ibound]);
         }
         free(npart_incoming_boundary_list[ipatch]);

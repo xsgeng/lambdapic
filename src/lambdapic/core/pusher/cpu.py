@@ -5,6 +5,7 @@ from scipy.constants import c
 from ..utils.jit_spinner import jit_spinner
 from .boris import boris
 from .photon import update_photon_gamma
+from .tbmt import tbmt_spin
 
 
 @jit_spinner
@@ -33,6 +34,43 @@ def boris_push_patches(
         is_dead = is_dead_list[ipatch]
         npart = len(is_dead)
         boris( ux, uy, uz, inv_gamma, ex, ey, ez, bx, by, bz, q, m, npart, is_dead, dt )
+
+
+@jit_spinner
+@njit(parallel=True, cache=True)
+def tbmt_spin_patches(
+    sx_list, sy_list, sz_list,
+    ux_list, uy_list, uz_list,
+    ex_list, ey_list, ez_list,
+    bx_list, by_list, bz_list,
+    is_dead_list,
+    npatches, q, m, ae, dt
+) -> None:
+    """Standalone TBMT spin rotation, to be applied after the Boris push."""
+    for _ipatch in prange(npatches):
+        ipatch = np.int64(_ipatch)
+        sx = sx_list[ipatch]
+        sy = sy_list[ipatch]
+        sz = sz_list[ipatch]
+
+        ux = ux_list[ipatch]
+        uy = uy_list[ipatch]
+        uz = uz_list[ipatch]
+
+        ex = ex_list[ipatch]
+        ey = ey_list[ipatch]
+        ez = ez_list[ipatch]
+        bx = bx_list[ipatch]
+        by = by_list[ipatch]
+        bz = bz_list[ipatch]
+
+        is_dead = is_dead_list[ipatch]
+        npart = len(is_dead)
+        tbmt_spin(
+            sx, sy, sz, ux, uy, uz,
+            ex, ey, ez, bx, by, bz,
+            q, m, ae, npart, is_dead, dt
+        )
 
 
 @jit_spinner

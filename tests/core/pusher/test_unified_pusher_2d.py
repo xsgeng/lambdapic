@@ -6,7 +6,6 @@ multiple patches, and current deposition.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from scipy.constants import e
 
 from lambdapic.core.fields import Fields2D

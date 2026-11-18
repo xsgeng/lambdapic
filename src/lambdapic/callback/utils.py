@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 from numba import typed
 from numpy.typing import NDArray
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
+from scipy.constants import c, e
 
 from lambdapic.callback.hdf5 import SaveSpeciesDensityToHDF5, _compute_patch_slice, _normalize_slice
 
@@ -15,7 +15,7 @@ from ..core.patch.cpu import (
     get_num_macro_particles_2d,
     get_num_macro_particles_3d,
 )
-from ..core.patch.patch import Patch, Patch2D, Patch3D
+from ..core.patch.patch import Patch2D, Patch3D
 from ..core.boundary.utils import has_pml
 from ..core.species import Species
 from ..core.utils.logger import logger
@@ -271,7 +271,6 @@ class ExtractSpeciesDensity(SaveSpeciesDensityToHDF5):
         self.stage = self.DEFAULT_STAGE
         self.species = species
         self.interval = interval
-        self.prev_rho = None
         self.species = species
         self.slice = slice
         if self.slice is not None:
@@ -831,6 +830,13 @@ class MovingWindow:
                 gens
             )
 
+            if s.polarization is not None:
+                for p in patches:
+                    part = p.particles[ispec]
+                    part.sx[:] = s.polarization[0]
+                    part.sy[:] = s.polarization[1]
+                    part.sz[:] = s.polarization[2]
+
     def _fill_particles_3d(self, sim: Simulation, patches: Sequence[Patch3D]):
         for ispec, s in enumerate(sim.species):
             if s.density is None:
@@ -874,6 +880,13 @@ class MovingWindow:
                 x_list, y_list, z_list, w_list,
                 gens
             )
+
+            if s.polarization is not None:
+                for p in patches:
+                    part = p.particles[ispec]
+                    part.sx[:] = s.polarization[0]
+                    part.sy[:] = s.polarization[1]
+                    part.sz[:] = s.polarization[2]
 
     def _fill_pml_strip(self, sim: Simulation, patches: Sequence[Patch2D | Patch3D], side: str):
         """Append particles to the cells formerly covered by an edge X PML.
@@ -962,7 +975,7 @@ class MovingWindow:
                 gens
             )
 
-            self._init_extended_slots(patches, ispec, n_strip)
+            self._init_extended_slots(patches, ispec, n_strip, s.polarization)
 
     def _fill_pml_strip_3d(self, sim: Simulation3D, patches: Sequence[Patch3D], side: str, thickness: int):
         """Append strip particles in 3D patches (tail cells on the PML side)."""
@@ -1013,15 +1026,16 @@ class MovingWindow:
                 gens
             )
 
-            self._init_extended_slots(patches, ispec, n_strip)
+            self._init_extended_slots(patches, ispec, n_strip, s.polarization)
 
     @staticmethod
-    def _init_extended_slots(patches: Sequence[Patch2D | Patch3D], ispec: int, n_new: NDArray[np.int64]):
+    def _init_extended_slots(patches: Sequence[Patch2D | Patch3D], ispec: int, n_new: NDArray[np.int64], polarization: tuple[float, float, float] | None = None):
         """Give the extended particle slots the same defaults initialize() produces.
 
         extend() leaves the new slots dead with NaN attributes; only x/y/z and w
         were written by the fill kernels, so everything else must be restored:
         zero momentum and auxiliary attributes, inv_gamma of 1, alive flag.
+        Spin particles get the species polarization vector instead of zero spin.
         """
         for ipatch, p in enumerate(patches):
             n = int(n_new[ipatch])
@@ -1035,6 +1049,10 @@ class MovingWindow:
                     continue
                 getattr(part, attr)[tail] = 0.0
             part.inv_gamma[tail] = 1.0
+            if polarization is not None:
+                part.sx[tail] = polarization[0]
+                part.sy[tail] = polarization[1]
+                part.sz[tail] = polarization[2]
 
 class SetMomentum(Callback):
     """
@@ -1245,6 +1263,77 @@ class SetTemperature(Callback):
         
         return  ux, uy, uz
     
+class SetSpin(Callback):
+    """
+    Callback to set the spin vector (sx, sy, sz) of a species, either to constant
+    values or to spatially varying functions of the particle positions.
+
+    To be used with spin species: the species must have a ``polarization`` set
+    (e.g. ``(0., 0., 0.)``) so that it carries spin arrays, typically with
+    ``pusher='boris+tbmt'``. It runs at the ``init`` stage and overrides the
+    uniform spin initialized from ``polarization``.
+
+    Parameters:
+        species (Species): The target species whose spin is to be set.
+        sx, sy, sz (float | Callable): Spin components. Each may be a constant or a
+            callable evaluated on the alive-particle positions, ``f(x, y)`` in 2D
+            and ``f(x, y, z)`` in 3D. Callables must be vectorized (numpy ufuncs).
+            Components that are not specified default to 0.0.
+        interval (int or callable): Frequency (in timesteps) or callable(sim) for
+            when to apply, defaults to run at the first timestep only once.
+
+    Note:
+        The spin norm is the degree of polarization (|s| = 1 for fully polarized
+        particles). It is preserved by the TBMT pusher but not enforced here.
+
+    Example:
+        >>> # helical spin pattern along x
+        >>> set_spin = SetSpin(ele, sx=lambda x, y: np.cos(x/l0),
+        ...                    sy=lambda x, y: np.sin(x/l0))
+        >>> sim.run(100, callbacks=[set_spin])
+    """
+
+    DEFAULT_STAGE = "init"
+    def __init__(self, species: Species, sx: float|Callable = 0.0, sy: float|Callable = 0.0, sz: float|Callable = 0.0, interval: int|float|Callable|None = None) -> None:
+        self.stage = self.DEFAULT_STAGE
+        self.species = species
+        self.sx = sx
+        self.sy = sy
+        self.sz = sz
+
+        if interval is None:
+            self.interval = lambda sim: sim.itime == 0
+        else:
+            self.interval = interval
+
+    def _call(self, sim: Simulation) -> None:
+        ispec = self.species.ispec
+
+        for p in sim.patches:
+            part = p.particles[ispec]
+            if not hasattr(part, "sx"):
+                raise TypeError(
+                    f"Species '{self.species.name}' does not carry spin arrays: "
+                    "set a `polarization` on the species (e.g. (0., 0., 0.)) so that "
+                    "SpinParticles are created before using SetSpin."
+                )
+
+            alive = part.is_alive
+            if not alive.any():
+                continue
+
+            if sim.dimension == 3:
+                coords = (part.x[alive], part.y[alive], part.z[alive])
+            else:
+                coords = (part.x[alive], part.y[alive])
+
+            for comp, target in (("sx", self.sx), ("sy", self.sy), ("sz", self.sz)):
+                arr = getattr(part, comp)
+                if callable(target):
+                    arr[alive] = target(*coords)
+                else:
+                    arr[alive] = target
+
 class LoadParticles(Callback):
     """
     Callback to load particles from HDF5 files with batch processing support.

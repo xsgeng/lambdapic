@@ -3,7 +3,7 @@ from numba import typed
 
 from ..particles import QEDParticles
 from ..patch import Patches
-from ..species import Electron, Photon, Species
+from ..species import Electron, Photon
 from ..utils.enable_mixin import EnableMixin, if_enabled
 from ..utils.pickle_list import PickleableTypedList
 from .cpu import (

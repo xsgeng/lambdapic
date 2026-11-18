@@ -138,7 +138,7 @@ def _run_rebalance_test(sim, comm, rank, store_func, verify_func, npatches):
     final_npart_global = _get_particle_count(sim, comm)
     if rank == 0:
         print(f"Final global particles: {final_npart_global}")
-        print(f"Test passed: particles conserved through rebalance")
+        print("Test passed: particles conserved through rebalance")
 
 
 @pytest.mark.mpi

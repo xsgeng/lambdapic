@@ -1,6 +1,3 @@
-import numpy as np
-from numba import njit, prange, typed, types
-from scipy.constants import c, e, epsilon_0, mu_0
 
 from ..patch import Patches
 from ..utils.enable_mixin import EnableMixin, if_enabled

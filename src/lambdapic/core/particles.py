@@ -1,8 +1,7 @@
 from typing import Optional
 import numpy as np
-from scipy.constants import e, m_e
 from numpy.typing import NDArray
-from numpy import bool_, float64, uint64, bool_
+from numpy import float64, uint64, bool_
 from loguru import logger
 
 class ParticlesBase:

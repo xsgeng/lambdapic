@@ -58,11 +58,12 @@ MANDATORY: Always gate plot/print to rank 0 (`if sim.mpi.rank == 0:`)
 After writing or modifying a simulation script:
 
 1. **Syntax gate**: `python -m py_compile <script.py>` — fix any error before proceeding
-2. **Smoke run**: set `nsteps` (or `sim_time`) to a few steps, run single-process, confirm it completes without exceptions
-3. **Output check**: confirm expected outputs (plots, HDF5 files) appear on disk
-4. Restore full run parameters and hand the script back
+2. **Derived-config gate**: print the derived quantities (dt, nsteps, total time = nsteps·dt) and check them against the physics intent before running — e.g. "Tsim = 0.2 t0 with dt = 0.95 dx/(√2 c) → ~2400 steps". A unit slip in a duration (adding meters to seconds) shows up here as an absurd step count; catching it costs one print, missing it costs a 10^12-step job.
+3. **Smoke run**: run the default configuration single-process and confirm it starts stepping cleanly; override `nsteps` (or `sim_time`) only when the default cannot run that short, and only after the derived-config gate has passed
+4. **Output check**: confirm expected outputs (plots, HDF5 files) appear on disk
+5. Restore full run parameters and hand the script back
 
-A script is done only when it compiles, runs a few steps cleanly, and produces its expected outputs.
+A script is done only when its derived config matches the physics intent, it runs a few steps cleanly, and it produces its expected outputs.
 
 ---
 
@@ -225,4 +226,4 @@ Report bugs and unexpected behavior at https://github.com/xsgeng/lambdapic/issue
 2. CONFIRM: target physics, 2D/3D — and grid size/core count before any large run
 3. USE: closest example, plus the reference file that matches the request type
 4. PROVIDE: working code, not just explanations
-5. VERIFY: compile → smoke run → outputs, before delivering
+5. VERIFY: compile → derived-config check → smoke run → outputs, before delivering

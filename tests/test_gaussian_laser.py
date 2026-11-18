@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from numpy.testing import assert_allclose
-from scipy.constants import c, e, m_e, pi
+from scipy.constants import c, pi
 
 from lambdapic import Simulation
 from lambdapic.callback.laser import GaussianLaser2D

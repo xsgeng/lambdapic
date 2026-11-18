@@ -1,0 +1,9 @@
+# Ruff guardrail: lint only (E9+F), never reformat.
+# Scope matches the verification gate: `ruff check src/ tests/`.
+# Keep rev in sync with the installed ruff (uv tool install ruff==<rev>).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff
+        files: ^(src|tests)/

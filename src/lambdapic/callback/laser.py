@@ -1,13 +1,11 @@
-from typing import Optional
 import numpy as np
 
 from ..core.boundary.cpml import PMLXmin
 from ..core.boundary.utils import get_pml
 from ..core.utils.logger import logger
-from ..core.fields import Fields
 from ..core.patch.patch import Patch, Patch2D, Patch3D
-from numba import njit, prange, typed
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
+from numba import njit, prange
+from scipy.constants import c, e, epsilon_0, m_e, pi
 from scipy.special import genlaguerre, factorial
 from numpy.typing import NDArray
  

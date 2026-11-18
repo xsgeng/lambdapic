@@ -6,12 +6,13 @@
 #include <mpi4py/mpi4py.h>
 
 #include "../utils/cutils.h"
-#include "../utils/sync_boundary.h"
+#include "boundary2d.h"
 
+static const enum Boundary2D OPPOSITE_BOUNDARY_2D[NUM_BOUNDARIES_2D] = OPPOSITE_BOUNDARY_2D_INITIALIZER;
 
 /* ------------------------------------------------------------------ */
 /* MPI_TAG_UB check: particle tags scale as                           */
-/* (index*NUM_BOUNDARIES + ibound)*nspec + ispec, but the standard    */
+/* (index*NUM_BOUNDARIES_2D + ibound)*nspec + ispec, but the standard    */
 /* only guarantees MPI_TAG_UB >= 32767. Refuse to post if any tag     */
 /* this rank may generate exceeds it. Must be called with the GIL.    */
 /* ------------------------------------------------------------------ */
@@ -32,12 +33,12 @@ static int check_tag_ub(
     npy_intp max_index = 0;
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
         if (index_list[ipatch] > max_index) max_index = index_list[ipatch];
-        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (int ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             npy_intp n = neighbor_index_list[ipatch][ibound];
             if (n > max_index) max_index = n;
         }
     }
-    const npy_intp max_tag = (max_index*NUM_BOUNDARIES + (NUM_BOUNDARIES-1))*nspec + (nspec-1);
+    const npy_intp max_tag = (max_index*NUM_BOUNDARIES_2D + (NUM_BOUNDARIES_2D-1))*nspec + (nspec-1);
     if (max_tag > tag_ub) {
         PyErr_Format(
             PyExc_RuntimeError,
@@ -106,7 +107,7 @@ static void get_outgoing_indices(
     npy_intp npart,
     npy_intp **outgoing_indices
 ) {
-    npy_intp ibuff[NUM_BOUNDARIES] = {0};
+    npy_intp ibuff[NUM_BOUNDARIES_2D] = {0};
     for (npy_intp ip = 0; ip < npart; ip++) {
         if (is_dead[ip]) continue;
         if (y[ip] < ymin) {
@@ -218,7 +219,7 @@ static void particle_sync_destructor(PyObject* capsule) {
     if (!h) { PyErr_Clear(); return; }
     if (h->finalized) { free(h); return; }
 
-    int total = h->npatches * NUM_BOUNDARIES;
+    int total = h->npatches * NUM_BOUNDARIES_2D;
     if (h->send_requests) {
         Py_BEGIN_ALLOW_THREADS
         MPI_Waitall(total, h->send_requests, MPI_STATUSES_IGNORE);
@@ -335,7 +336,7 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
     npy_intp *npart_incoming_src = (npy_intp*) PyArray_DATA(npart_incoming_array);
     npy_intp *npart_outgoing = (npy_intp*) PyArray_DATA(npart_outgoing_array);
 
-    int total = npatches * NUM_BOUNDARIES;
+    int total = npatches * NUM_BOUNDARIES_2D;
     npy_intp *npart_incoming = (npy_intp*)malloc(total * sizeof(npy_intp));
     memcpy(npart_incoming, npart_incoming_src, total * sizeof(npy_intp));
     double **attrs_send = (double **)malloc(total * sizeof(double *));
@@ -358,10 +359,10 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
         double ymax = ymax_list[ipatch];
         npy_intp npart = npart_list[ipatch];
 
-        npy_intp *outgoing_indices[NUM_BOUNDARIES] = {NULL};
+        npy_intp *outgoing_indices[NUM_BOUNDARIES_2D] = {NULL};
         
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            npy_intp i = ipatch * NUM_BOUNDARIES + ibound;
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
+            npy_intp i = ipatch * NUM_BOUNDARIES_2D + ibound;
             
             if (npart_outgoing[i] == 0) {
                 attrs_send[i] = NULL;
@@ -378,11 +379,11 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
         }
 
         get_outgoing_indices(x, y, is_dead, xmin, xmax, ymin, ymax, npart, outgoing_indices);
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
-            npy_intp npart_out = npart_outgoing[ipatch * NUM_BOUNDARIES + ibound];
+            npy_intp npart_out = npart_outgoing[ipatch * NUM_BOUNDARIES_2D + ibound];
             if (neighbor_rank < 0) {
-                send_requests[ipatch * NUM_BOUNDARIES + ibound] = MPI_REQUEST_NULL;
+                send_requests[ipatch * NUM_BOUNDARIES_2D + ibound] = MPI_REQUEST_NULL;
                 continue;
             }
 
@@ -390,15 +391,15 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
             for (npy_intp iattr = 0; iattr < nattrs; iattr++) {
                 for (npy_intp ip = 0; ip < npart_out; ip++) {
                     npy_intp idx = outgoing_indices[ibound][ip];
-                    attrs_send[ipatch * NUM_BOUNDARIES + ibound][ip*nattrs+iattr] = attrs_list[ipatch*nattrs+iattr][idx];
+                    attrs_send[ipatch * NUM_BOUNDARIES_2D + ibound][ip*nattrs+iattr] = attrs_list[ipatch*nattrs+iattr][idx];
                 }
             }
             int index = index_list[ipatch];
-            int send_tag = (index*NUM_BOUNDARIES + ibound)*nspec + ispec;
+            int send_tag = (index*NUM_BOUNDARIES_2D + ibound)*nspec + ispec;
 
             MPI_Isend(
-                attrs_send[ipatch * NUM_BOUNDARIES + ibound], nattrs*npart_outgoing[ipatch * NUM_BOUNDARIES + ibound], MPI_DOUBLE, 
-                neighbor_rank, send_tag, comm, &send_requests[ipatch * NUM_BOUNDARIES + ibound]
+                attrs_send[ipatch * NUM_BOUNDARIES_2D + ibound], nattrs*npart_outgoing[ipatch * NUM_BOUNDARIES_2D + ibound], MPI_DOUBLE,
+                neighbor_rank, send_tag, comm, &send_requests[ipatch * NUM_BOUNDARIES_2D + ibound]
             );
 
             // mark outgoing particles as dead
@@ -407,7 +408,7 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
                 is_dead[idx] = 1;
             }
         }
-        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (int ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             free(outgoing_indices[ibound]);
         }
     }
@@ -415,15 +416,15 @@ static PyObject* fill_particles_from_boundary_2d_start(PyObject* self, PyObject*
     // Post non-blocking receives so that incoming data can be transferred
     // during the gap between _start and _wait
     #pragma omp parallel for
-    for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES; i++) {
-        int ipatch = i / NUM_BOUNDARIES;
-        int ibound = i % NUM_BOUNDARIES;
+    for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES_2D; i++) {
+        int ipatch = i / NUM_BOUNDARIES_2D;
+        int ibound = i % NUM_BOUNDARIES_2D;
         int neighbor_rank = neighbor_rank_list[ipatch][ibound];
         if (neighbor_rank < 0) {
             recv_requests[i] = MPI_REQUEST_NULL;
             continue;
         }
-        int recv_tag = (neighbor_index_list[ipatch][ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound])*nspec + ispec;
+        int recv_tag = (neighbor_index_list[ipatch][ibound]*NUM_BOUNDARIES_2D + OPPOSITE_BOUNDARY_2D[ibound])*nspec + ispec;
         MPI_Irecv(
             attrs_recv[i], nattrs*npart_incoming[i], MPI_DOUBLE,
             neighbor_rank, recv_tag, comm, &recv_requests[i]
@@ -481,7 +482,7 @@ static PyObject* fill_particles_from_boundary_2d_wait(PyObject* self, PyObject* 
         return NULL;
     }
 
-    int total = h->npatches * NUM_BOUNDARIES;
+    int total = h->npatches * NUM_BOUNDARIES_2D;
 
     Py_BEGIN_ALLOW_THREADS
 
@@ -497,12 +498,12 @@ static PyObject* fill_particles_from_boundary_2d_wait(PyObject* self, PyObject* 
         npy_bool *is_dead = h->is_dead_list[ipatch];
         
         npy_intp ipart = 0;
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            npy_intp npart_new = h->npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
+            npy_intp npart_new = h->npart_incoming[ipatch * NUM_BOUNDARIES_2D + ibound];
             if (npart_new <= 0) {
                 continue;
             }
-            double *buffer = h->attrs_recv[ipatch * NUM_BOUNDARIES + ibound];
+            double *buffer = h->attrs_recv[ipatch * NUM_BOUNDARIES_2D + ibound];
             for (npy_intp ibuff = 0; ibuff < npart_new; ibuff++) {
                 while (!is_dead[ipart]) {
                     ipart++;
@@ -629,7 +630,7 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     }
 
     // Allocate arrays for particle counts with cleanup attributes
-    npy_intp dims[2] = {npatches, NUM_BOUNDARIES};
+    npy_intp dims[2] = {npatches, NUM_BOUNDARIES_2D};
     PyArrayObject *npart_to_extend_array = (PyArrayObject*) PyArray_ZEROS(1, &npatches, NPY_INT64, 0);
     PyArrayObject *npart_incoming_array = (PyArrayObject*) PyArray_ZEROS(2, dims, NPY_INT64, 0);
     PyArrayObject *npart_outgoing_array = (PyArrayObject*) PyArray_ZEROS(2, dims, NPY_INT64, 0);
@@ -639,8 +640,8 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     npy_intp *npart_outgoing = (npy_intp*) PyArray_DATA(npart_outgoing_array);
 
     // Allocate MPI request arrays
-    AUTOFREE MPI_Request *send_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
-    AUTOFREE MPI_Request *recv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *send_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES_2D * sizeof(MPI_Request));
+    AUTOFREE MPI_Request *recv_requests = (MPI_Request*)malloc(npatches * NUM_BOUNDARIES_2D * sizeof(MPI_Request));
 
     Py_BEGIN_ALLOW_THREADS
 
@@ -657,7 +658,7 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         npy_intp npart = npart_list[ipatch];
 
         // Count particles going out of bounds
-        npy_intp npart_out[NUM_BOUNDARIES] = {0};
+        npy_intp npart_out[NUM_BOUNDARIES_2D] = {0};
 
         count_outgoing_particles(
             x, y, is_dead, xmin, xmax, ymin, ymax, npart,
@@ -665,20 +666,20 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         );
 
         // Store results in the outgoing array
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (neighbor_rank < 0) {
                 continue;
             }
-            npart_outgoing[ipatch * NUM_BOUNDARIES + ibound] = npart_out[ibound];
+            npart_outgoing[ipatch * NUM_BOUNDARIES_2D + ibound] = npart_out[ibound];
         }
     }
 
     // Post non-blocking sends and receives for particle counts
     #pragma omp parallel for
-    for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES; i++) {
-        int ipatch = i / NUM_BOUNDARIES;
-        int ibound = i % NUM_BOUNDARIES;
+    for (npy_intp i = 0; i < npatches*NUM_BOUNDARIES_2D; i++) {
+        int ipatch = i / NUM_BOUNDARIES_2D;
+        int ibound = i % NUM_BOUNDARIES_2D;
         int neighbor_rank = neighbor_rank_list[ipatch][ibound];
 
         // Skip if no neighbor in this direction
@@ -691,8 +692,8 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
         int index = index_list[ipatch];
         int neighbor_index = neighbor_index_list[ipatch][ibound];
         // Tag based on patch index and boundary, separated per species
-        int send_tag = (index*NUM_BOUNDARIES + ibound)*nspec + ispec;
-        int recv_tag = (neighbor_index*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound])*nspec + ispec;
+        int send_tag = (index*NUM_BOUNDARIES_2D + ibound)*nspec + ispec;
+        int recv_tag = (neighbor_index*NUM_BOUNDARIES_2D + OPPOSITE_BOUNDARY_2D[ibound])*nspec + ispec;
 
         // Thread-multiple access to MPI functions
         MPI_Isend(&npart_outgoing[i], 1, MPI_LONG, neighbor_rank, send_tag,
@@ -702,19 +703,19 @@ PyObject* get_npart_to_extend_2d(PyObject* self, PyObject* args) {
     }
 
     // Wait for all communications to complete
-    MPI_Waitall(npatches*NUM_BOUNDARIES, send_requests, MPI_STATUSES_IGNORE);
-    MPI_Waitall(npatches*NUM_BOUNDARIES, recv_requests, MPI_STATUSES_IGNORE);
+    MPI_Waitall(npatches*NUM_BOUNDARIES_2D, send_requests, MPI_STATUSES_IGNORE);
+    MPI_Waitall(npatches*NUM_BOUNDARIES_2D, recv_requests, MPI_STATUSES_IGNORE);
     
     // Process received counts
     #pragma omp parallel for
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
         npy_intp npart_new = 0;
         
-        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (npy_intp ibound = 0; ibound < NUM_BOUNDARIES_2D; ibound++) {
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
             if (neighbor_rank < 0) continue;
             
-            npart_new += npart_incoming[ipatch * NUM_BOUNDARIES + ibound];
+            npart_new += npart_incoming[ipatch * NUM_BOUNDARIES_2D + ibound];
         }
         if (npart_new == 0) continue;
         

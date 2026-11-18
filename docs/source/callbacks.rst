@@ -124,6 +124,17 @@ Set the temperature of a species to a given value in eV. Also supports an ``add`
 
 .. autoclass:: lambdapic.callback.utils.SetTemperature
 
+SetSpin
+~~~~~~~
+
+Set the spin vector (sx, sy, sz) of a species to constants or to spatially
+varying functions of the particle positions, ``f(x, y)`` in 2D and
+``f(x, y, z)`` in 3D. The species must carry spin arrays, i.e. a
+``polarization`` must be set and the pusher is typically ``'boris+tbmt'``.
+
+.. autoclass:: lambdapic.callback.utils.SetSpin
+   :members:
+
 SetMomentum
 ~~~~~~~~~~~
 

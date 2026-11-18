@@ -1,6 +1,6 @@
 import math
 from pathlib import Path
-from typing import Callable, List, Optional, Set, Union
+from typing import Callable, List, Optional, Union
 
 import h5py
 import numpy as np

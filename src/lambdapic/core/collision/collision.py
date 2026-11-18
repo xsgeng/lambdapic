@@ -3,10 +3,9 @@ from typing import Any, Dict, List, Sequence, Tuple
 from itertools import combinations
 
 import numpy as np
-from scipy.constants import c, epsilon_0, pi
 
 from ..patch.patch import Patches
-from ..sort.particle_sort import ParticleSort2D, ParticleSort3D
+from ..sort.particle_sort import ParticleSort2D
 from ..species import Species
 from .cpu import (
     constrain_debye_length_patches,

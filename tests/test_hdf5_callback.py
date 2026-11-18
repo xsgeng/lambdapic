@@ -99,7 +99,7 @@ def test_hdf5_density_callback_2d_slice_none(tmp_path):
     cb = SaveSpeciesDensityToHDF5(species=electrons, prefix=str(tmp_path / 'out'), interval=1, slice=None)
     sim.run(1, callbacks=[cb])
 
-    with h5py.File(tmp_path / 'out' / f'electrons_000000.h5', 'r') as f:
+    with h5py.File(tmp_path / 'out' / 'electrons_000000.h5', 'r') as f:
         dset = f['density']
         assert dset.shape == (32, 32)
         assert dset[:].size == 32 * 32

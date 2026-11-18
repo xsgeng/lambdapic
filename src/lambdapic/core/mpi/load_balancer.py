@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 from ..mpi.mpi_manager import MPIManager
 from ..patch.patch import Patch, Patches
 from ..utils.enable_mixin import EnableMixin
-from ..utils.logger import logger, rank_log
+from ..utils.logger import logger
 
 
 class LoadBalancer(EnableMixin):

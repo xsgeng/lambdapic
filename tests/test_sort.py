@@ -333,7 +333,6 @@ class TestDriftSymmetry(unittest.TestCase):
 
 class Test3D(unittest.TestCase):
     def setUp(self) -> None:
-        from lambdapic import Simulation
         from lambdapic.core.species import Electron
 
         dx = 1e-6

@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from lambdapic import Simulation3D, Electron
+from lambdapic import Simulation3D
 from lambdapic.callback.utils import get_fields_3d
 
 

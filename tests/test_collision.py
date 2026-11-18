@@ -308,4 +308,3 @@ def test_collision_bucket_bounds_fetched_at_call_time():
     assert args[4] is sim.sorter[ispec1].bucket_bound_max_list
     assert args[8] is new_min2
     assert args[9] is sim.sorter[ispec2].bucket_bound_max_list
-

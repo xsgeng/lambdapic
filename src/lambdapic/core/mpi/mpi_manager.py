@@ -1,6 +1,5 @@
-from typing import List, Optional, Tuple
+from typing import Optional
 
-import numpy as np
 from mpi4py import MPI
 
 from ..patch.patch import Patches

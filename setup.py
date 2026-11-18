@@ -9,7 +9,7 @@ import mpi4py
 
 os.environ['CC'] = os.environ.get('CC', 'mpicc')
 
-include_dirs = [np.get_include(), mpi4py.get_include()]
+include_dirs = [np.get_include(), mpi4py.get_include(), os.path.join('src', 'lambdapic', 'core', 'utils')]
 extra_compile_args = ['-Xpreprocessor', '-fopenmp', '-O3', '-march=native', '-ftree-vectorize', '-fno-math-errno', '-fno-trapping-math', '-Werror=incompatible-pointer-types']
 extra_link_args = ['-fopenmp']
 

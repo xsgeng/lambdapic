@@ -1,7 +1,5 @@
 import os
 import sys
-from datetime import datetime
-from pathlib import Path
 
 from loguru import logger
 
@@ -81,9 +79,9 @@ def configure_logger(
         diagnose=diagnose
     )
 
-def rank_log(msg: str, comm):
+def rank_log(msg: str, comm, level: str = "info"):
     rank = comm.Get_rank()
     if rank == 0:
-        logger.info(msg)
+        logger.log(level.upper(), msg)
     else:
         logger.debug(f"Rank {rank}: {msg}")

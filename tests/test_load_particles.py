@@ -2,7 +2,6 @@ import pytest
 import h5py
 import os
 import numpy as np
-from pathlib import Path
 from lambdapic.simulation import Simulation, Simulation3D
 from lambdapic.core.species import Electron
 from lambdapic.callback.utils import LoadParticles

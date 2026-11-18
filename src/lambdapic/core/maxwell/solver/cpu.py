@@ -1,6 +1,6 @@
 import numpy as np
 from numba import njit, prange
-from scipy.constants import c, epsilon_0, mu_0
+from scipy.constants import c, epsilon_0
 
 from ...utils.jit_spinner import jit_spinner
 

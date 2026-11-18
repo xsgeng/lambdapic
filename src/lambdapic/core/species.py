@@ -1,13 +1,12 @@
 import inspect
-from functools import cached_property
 from types import FunctionType
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, Literal, Union
 from dataclasses import dataclass, field
 
 from numba import njit
 from numba.core.dispatcher import Dispatcher
 from numba.extending import is_jitted
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field
 from scipy.constants import e, m_e, m_p
 
 from .particles import ParticlesBase, QEDParticles, SpinParticles, SpinQEDParticles
@@ -36,6 +35,11 @@ class SpeciesConfig(BaseModel):
         description="Polarization vector (x,y,z components) for spin particles"
     )
 
+    anomalous_magnetic_moment: float = Field(
+        0.0,
+        description="Anomalous magnetic moment a = (g-2)/2, used by the 'boris+tbmt' spin pusher"
+    )
+
     pusher: Literal["boris", "photon", "boris+tbmt"] = Field(
         "boris", 
         description="Particle pusher algorithm to use"
@@ -59,7 +63,11 @@ class Species(EnableMixin):
         density_min (float): Minimum density threshold"
         ppc (int or Callable): Particles per cell (constant or function)
         momentum (tuple): Momentum distribution functions
-        polarization (tuple, optional): Spin polarization vector
+        polarization (tuple, optional): Spin polarization vector (x,y,z); |polarization| is the
+            degree of polarization (1.0 = fully polarized). Setting it makes the species
+            use SpinParticles; with the default 'boris' pusher the species is auto-upgraded
+            to 'boris+tbmt' (with a warning) when the simulation initializes its pushers.
+        anomalous_magnetic_moment (float): a = (g-2)/2 used by the TBMT spin pusher (default 0.0)
         pusher (str): Particle pusher algorithm
     """
     name: str
@@ -71,6 +79,7 @@ class Species(EnableMixin):
     ppc: int|Callable = field(default=0)
     momentum: tuple[Profile | None, Profile | None, Profile | None] | None = field(default=(None, None, None))
     polarization: tuple[float, float, float] | None = field(default=None)
+    anomalous_magnetic_moment: float = field(default=0.0)
     
     pusher: Literal["boris", "photon", "boris+tbmt"] = field(default="boris")
     
@@ -85,6 +94,7 @@ class Species(EnableMixin):
             ppc=self.ppc,
             momentum=self.momentum,
             polarization=self.polarization,
+            anomalous_magnetic_moment=self.anomalous_magnetic_moment,
             pusher=self.pusher
         )
         
@@ -96,6 +106,7 @@ class Species(EnableMixin):
         self.ppc = validated.ppc
         self.momentum = validated.momentum
         self.polarization = validated.polarization
+        self.anomalous_magnetic_moment = validated.anomalous_magnetic_moment
         self.pusher = validated.pusher
         
         # in SI units
@@ -136,7 +147,7 @@ class Species(EnableMixin):
     @ispec.setter
     def ispec(self, value: int):
         self._ispec = value
-        
+
     @staticmethod
     def compile_jit(func_or_val: Callable|Dispatcher|float|int, dimension: Literal[2, 3]) -> FunctionType:
         if is_jitted(func_or_val):
@@ -167,8 +178,6 @@ class Species(EnableMixin):
         
         else:
             raise ValueError(f"Invalid profile {func_or_val}. Must be a function, int or float.")
-            
-
     def create_particles(self, ipatch: int | None=None, rank: int | None=None) -> ParticlesBase:
         """ 
         Create Particles from the species.
@@ -179,13 +188,18 @@ class Species(EnableMixin):
 
         Then particles are created within the patch.
         """
+        if self.polarization is not None:
+            return SpinParticles(ipatch, rank)
         return ParticlesBase(ipatch, rank)
 
 @dataclass(kw_only=True)
 class Electron(Species):
     name: str = field(default='electron', init=True)
     radiation: Literal["ll", "photons"] | None = field(default=None, init=True)
-    
+
+    # Schwinger anomalous magnetic moment a_e = (g-2)/2 (PDG)
+    anomalous_magnetic_moment: float = field(default=0.00115965218059, init=True)
+
     charge: int = field(default=-1, init=False)
     mass: float = field(default=1, init=False)
     photon: Species | None = field(default=None, init=False)

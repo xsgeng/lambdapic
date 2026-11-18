@@ -3,10 +3,22 @@
 #include <omp.h>
 #include <mpi.h>
 #include "../utils/cutils.h"
+#include "boundary3d.h"
 #include <mpi4py/mpi4py.h>
-#define SYNC_BOUNDARY_3D
-#include "../utils/sync_boundary.h"
 
+#undef INDEX2
+#undef INDEX3
+
+#define INDEX2(i, j) \
+    ((j) >= 0 ? (j) : (j) + (NY)) + \
+    ((i) >= 0 ? (i) : (i) + (NX)) * (NY)
+
+#define INDEX3(i, j, k) \
+    ((k) >= 0 ? (k) : (k) + (NZ)) + \
+    ((j) >= 0 ? (j) : (j) + (NY)) * (NZ) + \
+    ((i) >= 0 ? (i) : (i) + (NX)) * (NY) * (NZ)
+
+static const enum Boundary3D OPPOSITE_BOUNDARY_3D[NUM_BOUNDARIES_3D] = OPPOSITE_BOUNDARY_3D_INITIALIZER;
 
 static void fill_currents_buf(
     int ix_src, int nx, int NX,
@@ -224,7 +236,7 @@ void get_boundary_currents(
             *iy_dst = ny-ng; *iy_src = ny;  *ny_sync = ng;
             *iz_dst = nz-ng; *iz_src = nz;  *nz_sync = ng;
             break;
-        case NUM_BOUNDARIES:
+        case NUM_BOUNDARIES_3D:
             break;
     }
 }
@@ -367,7 +379,7 @@ void get_boundary_guards(
             *iy_dst = ny;  *iy_src = ny-ng; *ny_sync = ng;
             *iz_dst = nz;  *iz_src = nz-ng; *nz_sync = ng;
             break;
-        case NUM_BOUNDARIES:
+        case NUM_BOUNDARIES_3D:
             break;
     }
 }
@@ -378,7 +390,7 @@ void init_boundary_types(int nx, int ny, int nz, int ng, MPI_Datatype *mpi_types
     int start_bound[3] = {0, 0, 0};
     int start_guard[3] = {0, 0, 0};
 
-    for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+    for (int ibound = 0; ibound < NUM_BOUNDARIES_3D; ibound++) {
         switch (ibound) {
             case XMIN:
                 subsize[0]     = ng;      subsize[1]     = ny-2*ng; subsize[2]     = nz-2*ng;
@@ -510,7 +522,7 @@ void init_boundary_types(int nx, int ny, int nz, int ng, MPI_Datatype *mpi_types
                 start_bound[0] = nx-3*ng; start_bound[1] = ny-3*ng; start_bound[2] = nz-3*ng;
                 start_guard[0] = nx-2*ng; start_guard[1] = ny-2*ng; start_guard[2] = nz-2*ng;
                 break;
-            case NUM_BOUNDARIES:
+            case NUM_BOUNDARIES_3D:
                 break;
         }
         MPI_Type_create_subarray(3, size, subsize, start_bound, MPI_ORDER_C, MPI_DOUBLE, &mpi_types_bound[ibound]);
@@ -521,7 +533,7 @@ void init_boundary_types(int nx, int ny, int nz, int ng, MPI_Datatype *mpi_types
 }
 
 void free_boundary_types(MPI_Datatype *mpi_types_bound, MPI_Datatype *mpi_types_guard) {
-    for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+    for (int ibound = 0; ibound < NUM_BOUNDARIES_3D; ibound++) {
         MPI_Type_free(&mpi_types_bound[ibound]);
         MPI_Type_free(&mpi_types_guard[ibound]);
     }
@@ -533,8 +545,8 @@ void free_boundary_types(MPI_Datatype *mpi_types_bound, MPI_Datatype *mpi_types_
 static struct {
     int nx, ny, nz, ng;
     int initialized;
-    MPI_Datatype bound[NUM_BOUNDARIES];
-    MPI_Datatype guard[NUM_BOUNDARIES];
+    MPI_Datatype bound[NUM_BOUNDARIES_3D];
+    MPI_Datatype guard[NUM_BOUNDARIES_3D];
 } boundary_type_cache;
 
 static void get_boundary_types(int nx, int ny, int nz, int ng, MPI_Datatype **bound, MPI_Datatype **guard) {
@@ -610,7 +622,7 @@ static void currents_destructor(PyObject* capsule) {
     if (!h) { PyErr_Clear(); return; }
     if (h->finalized) { free(h); return; }
     if (h->send_requests) {
-        int total = h->npatches * NUM_BOUNDARIES;
+        int total = h->npatches * NUM_BOUNDARIES_3D;
         Py_BEGIN_ALLOW_THREADS
         MPI_Waitall(total, h->send_requests, MPI_STATUSES_IGNORE);
         MPI_Waitall(total, h->recv_requests, MPI_STATUSES_IGNORE);
@@ -619,7 +631,7 @@ static void currents_destructor(PyObject* capsule) {
         free(h->recv_requests);
     }
     if (h->send_buf) {
-        for (int i = 0; i < h->npatches * NUM_BOUNDARIES; i++) {
+        for (int i = 0; i < h->npatches * NUM_BOUNDARIES_3D; i++) {
             free(h->send_buf[i]);
             free(h->recv_buf[i]);
         }
@@ -663,7 +675,7 @@ static PyObject* sync_currents_3d_start(PyObject* self, PyObject* args) {
     npy_intp **neighbor_rank_list = get_attr_array_int(patches_list, npatches, "neighbor_rank");
     npy_intp *index_list = get_attr_int(patches_list, npatches, "index");
 
-    int total = npatches * NUM_BOUNDARIES;
+    int total = npatches * NUM_BOUNDARIES_3D;
     MPI_Request *send_requests = (MPI_Request*)malloc(total * sizeof(MPI_Request));
     MPI_Request *recv_requests = (MPI_Request*)malloc(total * sizeof(MPI_Request));
 
@@ -673,11 +685,11 @@ static PyObject* sync_currents_3d_start(PyObject* self, PyObject* args) {
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for collapse(2)
     for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
-        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+        for (int ibound = 0; ibound < NUM_BOUNDARIES_3D; ibound++) {
             const npy_intp* neighbor_index = neighbor_index_list[ipatch];
             const npy_intp index = index_list[ipatch];
             int neighbor_rank = neighbor_rank_list[ipatch][ibound];
-            npy_intp i = ipatch*NUM_BOUNDARIES + ibound;
+            npy_intp i = ipatch*NUM_BOUNDARIES_3D + ibound;
             if (neighbor_rank < 0) {
                 send_buf[i] = NULL;
                 recv_buf[i] = NULL;
@@ -697,8 +709,8 @@ static PyObject* sync_currents_3d_start(PyObject* self, PyObject* args) {
             );
             send_buf[i] = (double*) malloc(4*sizeof(double) * nx_sync * ny_sync * nz_sync);
             recv_buf[i] = (double*) malloc(4*sizeof(double) * nx_sync * ny_sync * nz_sync);
-            int send_tag = index*NUM_BOUNDARIES + ibound;
-            int recv_tag = neighbor_index[ibound]*NUM_BOUNDARIES + OPPOSITE_BOUNDARY[ibound];
+            int send_tag = index*NUM_BOUNDARIES_3D + ibound;
+            int recv_tag = neighbor_index[ibound]*NUM_BOUNDARIES_3D + OPPOSITE_BOUNDARY_3D[ibound];
             fill_currents_buf(
                 ix_src, nx_sync, NX,
                 iy_src, ny_sync, NY,
@@ -751,8 +763,8 @@ static PyObject* sync_currents_3d_wait(PyObject* self, PyObject* args) {
     Py_BEGIN_ALLOW_THREADS
     #pragma omp parallel for collapse(2)
     for (npy_intp ipatch = 0; ipatch < h->npatches; ipatch++) {
-        for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-            npy_intp i = ipatch * NUM_BOUNDARIES + ibound;
+        for (int ibound = 0; ibound < NUM_BOUNDARIES_3D; ibound++) {
+            npy_intp i = ipatch * NUM_BOUNDARIES_3D + ibound;
             if (h->send_buf[i] == NULL) {
                 continue;
             }
@@ -838,7 +850,7 @@ static PyObject* sync_guard_fields_3d_start(PyObject* self, PyObject* args) {
     MPI_Datatype *types_bound, *types_guard;
     get_boundary_types(NX, NY, NZ, ng, &types_bound, &types_guard);
 
-    int total_count = npatches * NUM_BOUNDARIES * nattrs;
+    int total_count = npatches * NUM_BOUNDARIES_3D * nattrs;
     MPI_Request *send_requests = (MPI_Request*)malloc(total_count * sizeof(MPI_Request));
     MPI_Request *recv_requests = (MPI_Request*)malloc(total_count * sizeof(MPI_Request));
 
@@ -848,22 +860,22 @@ static PyObject* sync_guard_fields_3d_start(PyObject* self, PyObject* args) {
         for (npy_intp ipatch = 0; ipatch < npatches; ipatch++) {
             const npy_intp index = index_list[ipatch];
             const npy_intp* neighbor_index = neighbor_index_list[ipatch];                                                 
-            for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
+            for (int ibound = 0; ibound < NUM_BOUNDARIES_3D; ibound++) {
                 int neighbor_rank = neighbor_rank_list[ipatch][ibound];
                 if (neighbor_rank < 0) {
-                    send_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr] = MPI_REQUEST_NULL;
-                    recv_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr] = MPI_REQUEST_NULL;
+                    send_requests[ipatch * NUM_BOUNDARIES_3D * nattrs + ibound * nattrs + iattr] = MPI_REQUEST_NULL;
+                    recv_requests[ipatch * NUM_BOUNDARIES_3D * nattrs + ibound * nattrs + iattr] = MPI_REQUEST_NULL;
                     continue;
                 }
-                int send_tag = index * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr;
-                int recv_tag = neighbor_index[ibound] * NUM_BOUNDARIES * nattrs + OPPOSITE_BOUNDARY[ibound] * nattrs + iattr;
+                int send_tag = index * NUM_BOUNDARIES_3D * nattrs + ibound * nattrs + iattr;
+                int recv_tag = neighbor_index[ibound] * NUM_BOUNDARIES_3D * nattrs + OPPOSITE_BOUNDARY_3D[ibound] * nattrs + iattr;
                 MPI_Isend(
                     attrs_list[iattr][ipatch], 1, types_bound[ibound], neighbor_rank, send_tag,
-                    comm, &send_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr]
+                    comm, &send_requests[ipatch * NUM_BOUNDARIES_3D * nattrs + ibound * nattrs + iattr]
                 );
                 MPI_Irecv(
                     attrs_list[iattr][ipatch], 1, types_guard[ibound], neighbor_rank, recv_tag, 
-                    comm, &recv_requests[ipatch * NUM_BOUNDARIES * nattrs + ibound * nattrs + iattr]
+                    comm, &recv_requests[ipatch * NUM_BOUNDARIES_3D * nattrs + ibound * nattrs + iattr]
                 );
             }
         }
@@ -902,9 +914,9 @@ static PyObject* sync_guard_fields_3d_wait(PyObject* self, PyObject* args) {
     #pragma omp parallel for collapse(3)
     for (int iattr = 0; iattr < h->nattrs; iattr++) {
         for (npy_intp ipatch = 0; ipatch < h->npatches; ipatch++) {
-            for (int ibound = 0; ibound < NUM_BOUNDARIES; ibound++) {
-                MPI_Wait(&h->send_requests[ipatch * NUM_BOUNDARIES * h->nattrs + ibound * h->nattrs + iattr], MPI_STATUS_IGNORE);
-                MPI_Wait(&h->recv_requests[ipatch * NUM_BOUNDARIES * h->nattrs + ibound * h->nattrs + iattr], MPI_STATUS_IGNORE);
+            for (int ibound = 0; ibound < NUM_BOUNDARIES_3D; ibound++) {
+                MPI_Wait(&h->send_requests[ipatch * NUM_BOUNDARIES_3D * h->nattrs + ibound * h->nattrs + iattr], MPI_STATUS_IGNORE);
+                MPI_Wait(&h->recv_requests[ipatch * NUM_BOUNDARIES_3D * h->nattrs + ibound * h->nattrs + iattr], MPI_STATUS_IGNORE);
             }
         }
     }

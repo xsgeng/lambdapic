@@ -13,7 +13,7 @@ src/lambdapic/callback/
 ├── hdf5.py       # SaveFieldsToHDF5, SaveSpeciesDensityToHDF5, SaveParticlesToHDF5
 ├── plot.py       # PlotFields with custom alpha-blended colormaps
 ├── restart.py    # RestartDump checkpointing
-├── utils.py      # get_fields, MovingWindow, SetTemperature, LoadParticles, etc.
+├── utils.py      # get_fields, MovingWindow, SetMomentum/SetTemperature/SetSpin, LoadParticles, etc.
 ├── vtk.py        # VTK output
 └── __init__.py   # Re-exports public callbacks
 ```
@@ -27,6 +27,7 @@ src/lambdapic/callback/
 | Implement moving window | `utils.py` | `MovingWindow` at `start` stage |
 | Inject particles from a boundary | `injector.py` | `ParticleInjector` at `start` stage; flux source, profiles f(⊥[, t]) |
 | Load particles from file | `utils.py` | `LoadParticles` at `init` stage |
+| Set particle spin | `utils.py` | `SetSpin` at `init` stage; constants or vectorized f(x, y[, z]) per component |
 | Restart/checkpoint | `restart.py` | Per-rank pickle shards; SIGINT/SIGTERM handling |
 
 ## CONVENTIONS

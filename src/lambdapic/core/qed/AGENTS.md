@@ -7,9 +7,14 @@ Quantum-electrodynamic processes: radiation reaction (Compton/Neutron-like photo
 ## STRUCTURE
 ```
 src/lambdapic/core/qed/
-├── radiation.py       # RadiationBase + implementation
-├── pair_production.py # PairProductionBase + implementation
-└── __init__.py        # Public exports
+├── radiation.py                  # RadiationBase + implementation
+├── pair_production.py            # PairProductionBase + implementation
+├── optical_depth.py              # Optical-depth update kernels (update_tau_e / update_tau_gamma)
+├── optical_depth_tables.py       # QED table generation + loading (radiation)
+├── optical_depth_tables_sigmoid.py # Sigmoid-sampling table variant
+├── inline.py                     # njit scalar kernels (per-particle loops): photon/pair creation
+├── cpu.py                        # parallel-over-patches wrappers (jit_spinner + parallel njit)
+└── __init__.py                   # Public exports
 ```
 
 ## WHERE TO LOOK

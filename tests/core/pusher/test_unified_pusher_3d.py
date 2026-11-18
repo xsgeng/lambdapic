@@ -9,7 +9,6 @@ need the right attributes -- duck typing is sufficient.
 from __future__ import annotations
 
 import numpy as np
-from numpy.testing import assert_allclose
 from scipy.constants import e
 
 from lambdapic.core.fields import Fields3D

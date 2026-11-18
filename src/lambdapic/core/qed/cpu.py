@@ -1,5 +1,5 @@
 import numpy as np
-from numba import boolean, float64, int64, njit, prange, void
+from numba import njit, prange
 
 from ..utils.jit_spinner import jit_spinner
 from .inline import (

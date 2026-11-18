@@ -1,1 +1,1 @@
-from .patch import Patch2D, Patch3D, Patches
+from .patch import Patch2D as Patch2D, Patch3D as Patch3D, Patches as Patches

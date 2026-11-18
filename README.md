@@ -57,6 +57,26 @@ BibTeX:
 }
 ```
 
+## Citation
+
+If you use λPIC in your research, please cite:
+
+- *λPIC: A callback-centric particle-in-cell framework*, arXiv:2607.13507 [physics.comp-ph] (2026). https://arxiv.org/abs/2607.13507
+
+BibTeX:
+
+```bibtex
+@article{geng2026lambdapic,
+  title={$\lambda$PIC: A callback-centric particle-in-cell framework},
+  author={Geng, Xuesong and Cui, Yunwei and Zhang, Lingang and Ji, Liangliang},
+  journal={arXiv preprint arXiv:2607.13507},
+  year={2026},
+  eprint={2607.13507},
+  archivePrefix={arXiv},
+  primaryClass={physics.comp-ph}
+}
+```
+
 ## Acknowledgments
 
 This work was supported by the National Natural Science Foundation of China (NSFC) under Grant No. 12304384.

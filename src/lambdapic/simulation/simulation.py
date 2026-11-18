@@ -6,34 +6,31 @@ import mpi4py
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, Field, model_validator
-from scipy.constants import c, e, epsilon_0, m_e, mu_0, pi
-from tqdm.auto import tqdm, trange
+from scipy.constants import c
 from yaspin import yaspin
 
 from ..core.boundary.cpml import PMLX, PMLXmax, PMLXmin, PMLYmax, PMLYmin, PMLZmax, PMLZmin
 from ..core.collision.collision import Collision
 from ..core.current.deposition import (
-    CurrentDeposition,
     CurrentDeposition2D,
     CurrentDeposition3D,
 )
 from ..core.fields import Fields2D, Fields3D
 from ..core.interpolation.field_interpolation import (
-    FieldInterpolation,
     FieldInterpolation2D,
     FieldInterpolation3D,
 )
-from ..core.maxwell.solver.solver import MaxwellSolver, MaxwellSolver2D, MaxwellSolver3D
+from ..core.maxwell.solver.solver import MaxwellSolver2D, MaxwellSolver3D
 from ..core.mpi.load_balancer import LoadBalancer
 from ..core.mpi.mpi_manager import MPIManager
 from ..core.mpi.utils import abort_on_mpi_error
 from ..core.patch.metis import compute_rank
 from ..core.patch.patch import Patch2D, Patch3D, Patches
-from ..core.pusher.pusher import BorisPusher, PhotonPusher, PusherBase
+from ..core.pusher.pusher import BorisPusher, BorisTBMTPusher, PhotonPusher, PusherBase
 from ..core.qed.pair_production import NonlinearPairProductionLCFA, PairProductionBase
 from ..core.qed.radiation import NonlinearComptonLCFA, RadiationBase
 from ..core.sort.particle_sort import ParticleSort2D, ParticleSort3D
-from ..core.species import Electron, Photon, Species, _ALL_SPECIES
+from ..core.species import Species, _ALL_SPECIES
 from ..core.utils.logger import configure_logger, logger, rank_log
 from ..core.utils.progress_bar import ProgressBar
 from ..core.utils.terminal import is_terminal
@@ -98,6 +95,26 @@ class SimulationConfig(BaseModel):
         return self
 
     @model_validator(mode='after')
+    def validate_pml_patch_count(self):
+        """A 'pml' boundary in a direction needs at least two patches there.
+
+        The PML of a direction lives on its two edge patches (ipatch 0 and
+        npatch-1); with a single patch both PMLs collapse onto it, which
+        the solvers do not support — the run fails deep inside
+        ``Simulation.run`` with no actionable diagnostics. Auto patching
+        already enforces the minimum (``npatch_*_min = 2``); this
+        validates manually provided values at construction instead.
+        """
+        for axis, sides in (('x', ('xmin', 'xmax')), ('y', ('ymin', 'ymax'))):
+            npatch = getattr(self, f'npatch_{axis}')
+            if npatch < 2 and any(self.boundary_conditions.get(side) == 'pml' for side in sides):
+                raise ValueError(
+                    f"npatch_{axis} ({npatch}) must be >= 2 with a 'pml' boundary "
+                    f"on {sides[0]}/{sides[1]} (use 'periodic' or more patches)"
+                )
+        return self
+
+    @model_validator(mode='after')
     def validate_nsteps_sim_time_mutual_exclusion(self):
         """Validate that nsteps and sim_time are not both provided."""
         if self.nsteps is not None and self.sim_time is not None:
@@ -120,6 +137,19 @@ class Simulation3DConfig(SimulationConfig):
             raise ValueError(f'nz ({self.nz}) must be divisible by npatch_z ({self.npatch_z})')
         return self
 
+    @model_validator(mode='after')
+    def validate_pml_patch_count_z(self):
+        """Z-direction half of validate_pml_patch_count (see SimulationConfig)."""
+        if self.npatch_z < 2 and (
+            self.boundary_conditions.get('zmin') == 'pml'
+            or self.boundary_conditions.get('zmax') == 'pml'
+        ):
+            raise ValueError(
+                f"npatch_z ({self.npatch_z}) must be >= 2 with a 'pml' boundary "
+                "on zmin/zmax (use 'periodic' or more patches)"
+            )
+        return self
+
 @dataclass
 class Simulation:
     """Main simulation class for 2D Particle-In-Cell (PIC) simulations.
@@ -139,6 +169,7 @@ class Simulation:
         boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax'], Literal['pml', 'periodic']], optional):
             Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax'.
             Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
+            A 'pml' boundary requires at least two patches in that direction (``npatch_* >= 2``, enforced by automatic patching); single-patch directions must use 'periodic'.
         cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
         log_file (str, optional): Path to log file. If None, no log file is created and only console output is used. Defaults to None.
         truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.
@@ -247,7 +278,7 @@ class Simulation:
         self.cpml_thickness = config.cpml_thickness
 
         self.species: list[Species] = []
-        
+
         self.itime = 0
         self.time = 0.0
         self.random_seed = config.random_seed
@@ -427,7 +458,7 @@ class Simulation:
 
         rank_log("Initializing particle sorter", comm)
         self._init_sorter()
-        
+
         # Initialize collision module if groups were registered
         rank_log("Initializing collision module", comm)
         self._init_collision()
@@ -575,7 +606,7 @@ class Simulation:
         
         # Convert to list for modification
         species_list = list(species)
-        
+
         # Directly modify the names of original species
         uniquify_species_names(self.species, species_list)
         
@@ -673,7 +704,9 @@ class Simulation:
         """Initialize particle pushers for each species.
         
         Creates pusher instances based on each species' configuration:
-        - "boris": Boris pusher for charged particles
+        - "boris": Boris pusher for charged particles; a polarized species
+          (polarization set) is auto-upgraded to "boris+tbmt" with a warning
+          so its spin actually evolves
         - "photon": Photon pusher for massless particles
         
         Note:
@@ -682,8 +715,29 @@ class Simulation:
         self.pusher: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
             if s.pusher == "boris":
-                rank_log(f"Using Boris pusher for {s.name}", self.mpi.comm)
-                self.pusher.append(BorisPusher(self.patches, ispec))
+                if s.polarization is not None:
+                    # a spin species needs the TBMT pusher to evolve its spin;
+                    # without this the spin would be silently frozen
+                    rank_log(
+                        f"Species '{s.name}' has polarization set but pusher='boris'; "
+                        "upgrading to 'boris+tbmt' so the spin evolves "
+                        "(set pusher='boris+tbmt' explicitly to silence this)",
+                        self.mpi.comm,
+                        level="warning",
+                    )
+                    s.pusher = "boris+tbmt"
+                    self.pusher.append(BorisTBMTPusher(self.patches, ispec))
+                else:
+                    rank_log(f"Using Boris pusher for {s.name}", self.mpi.comm)
+                    self.pusher.append(BorisPusher(self.patches, ispec))
+            elif s.pusher == "boris+tbmt":
+                if s.polarization is None:
+                    raise ValueError(
+                        f"Species '{s.name}' uses pusher='boris+tbmt' but has no polarization set. "
+                        "Spin particles require a polarization vector to initialize sx/sy/sz."
+                    )
+                rank_log(f"Using Boris+TBMT spin pusher for {s.name}", self.mpi.comm)
+                self.pusher.append(BorisTBMTPusher(self.patches, ispec))
             elif s.pusher == "photon":
                 rank_log(f"Using Photon pusher for {s.name}", self.mpi.comm)
                 self.pusher.append(PhotonPusher(self.patches, ispec))
@@ -721,7 +775,6 @@ class Simulation:
                     continue
             self.pairproduction.append(None)
 
-
     def _init_sorter(self):
         """Initialize particle sorter for each species.
         
@@ -743,7 +796,7 @@ class Simulation:
             elif self.dimension == 3:
                 for s in self.patches.species:
                     self.sorter.append(ParticleSort3D(self.patches, s, ny_buckets=1, dy_buckets=self.Ly, nz_buckets=1, dz_buckets=self.Lz))
-                
+
     def _init_random_generator(self) -> None:
         """Create MPI-level generators for each rank.
         
@@ -1275,6 +1328,7 @@ class Simulation3D(Simulation):
         boundary_conditions (Dict[Literal['xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'], Literal['pml', 'periodic']], optional): 
             Dictionary mapping boundary names to their conditions. Supported boundaries: 'xmin', 'xmax', 'ymin', 'ymax', 'zmin', 'zmax'.
             Supported conditions: 'pml' (Perfectly Matched Layer) or 'periodic'. Defaults to all boundaries set to 'pml'.
+            A 'pml' boundary requires at least two patches in that direction (``npatch_* >= 2``, enforced by automatic patching); single-patch directions must use 'periodic'.
         cpml_thickness (int, optional): Thickness of CPML (Convolutional PML) absorbing boundary layers in grid cells. Defaults to 6.
         log_file (str, optional): Path to log file. If None, no log file is created and only console output is used. Defaults to None.
         truncate_log (bool, optional): Whether to truncate existing log file or append to it. Defaults to True.

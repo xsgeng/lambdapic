@@ -9,7 +9,8 @@
         "Registers all callbacks via sim.run(callbacks=[...])",
         "Gates prints/plots with sim.mpi.rank == 0",
         "Puts sim.run inside the __name__ == '__main__' block",
-        "Suggests a short smoke run before the full run"
+        "Suggests a short smoke run before the full run",
+        "Checks derived quantities (dt, nsteps, total time) against the physics intent before the smoke run"
       ]
     },
     {

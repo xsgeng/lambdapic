@@ -4,8 +4,8 @@ import multiprocessing
 import os
 
 import numpy as np
-from numba import cfunc, njit
-from scipy.constants import alpha, c, hbar, m_e, pi
+from numba import njit
+from scipy.constants import alpha, c, hbar, m_e
 from scipy.integrate import quad
 from scipy.special import airy
 

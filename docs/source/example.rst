@@ -36,7 +36,7 @@ Copy/download: :download:`photons.py <../../example/photons.py>`.
     :language: python
 
 Counter-streaming pair plasma
-----------------------------
+-----------------------------
 
 For demonstration of :any:`ParticleInjector`: two neutral co-moving
 electron-positron streams enter from opposite faces with a Gaussian time
