@@ -37,6 +37,7 @@ The package provides built-in callbacks for common diagnostics, such as saving t
 **Physics**:
 
 - Built-in support for intense laser interactions with angle, offset, ellipticity, CEP, and addition
+- Spin-polarized particles for TBMT spin precession
 - QED processes (photon emission, pair production)
 - Efficient user-defined profile evaluation via Numba jit
 - Collision physics
