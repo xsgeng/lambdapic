@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-18
+
+### Added
+
+- Add spin-particle support in 2D and 3D with Boris+TBMT spin precession: set `Species.polarization` to create spin-carrying particles and initialize their spin during startup, `ParticleInjector` injection, and `MovingWindow` refills; the orbit retains the standard Boris dynamics
+- Add `Species.anomalous_magnetic_moment` for TBMT spin precession; `Electron` and `Positron` default to the Schwinger value
+- Add `SetSpin` callback to set spin components to constants or vectorized functions of particle positions at initialization
+- Add an installable λPIC agent skill for coding assistants, with simulation examples, API references, setup and troubleshooting guides
+
+### Changed
+
+- Change polarized species using the default `pusher="boris"` to automatically use `pusher="boris+tbmt"` with a warning; selecting `pusher="boris+tbmt"` without `polarization` now raises `ValueError`
+- Change PML configuration validation: `Simulation` and `Simulation3D` now reject a `'pml'` boundary with fewer than two patches in that direction at construction; use `'periodic'` or `npatch_* >= 2`
+- Change multi-rank MPI failure reporting to print the original traceback before aborting the job
+
+### Fixed
+
+- Fix `MovingWindow` shifts with X-direction PML boundaries:
+  - Keep and regenerate the absorbing layers on the new edge patches after every shift, preserving laser injection
+  - Refill the former PML strip with particles to prevent a vacuum band from drifting through the plasma
+  - Remove particles inside PML shells immediately after the shift, before they can be pushed or deposit current
+
 ## [0.16.0] - 2026-10-15
 
 ### Added
@@ -55,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Speed up particle sorting via mismatch-list gather and lazy particle-list refresh
 - Cache MPI derived datatypes used in boundary guard-field sync
 
-[Unreleased]: https://github.com/xsgeng/lambdapic/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/xsgeng/lambdapic/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/xsgeng/lambdapic/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/xsgeng/lambdapic/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/xsgeng/lambdapic/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/xsgeng/lambdapic/compare/v0.14.0...v0.15.0
