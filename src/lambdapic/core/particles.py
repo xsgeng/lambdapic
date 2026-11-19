@@ -140,8 +140,13 @@ class ParticlesBase:
     def extend(self, n: int):
         """Extend particle arrays by n elements.
 
-        Be careful when using this method, as it changes the address of particle data arrays.
-        Update any typed.List storing particle data arrays accordingly.
+        Be careful when using this method outside :meth:`~lambdapic.simulation.Simulation.run`:
+        it changes the address of particle data arrays, so update any
+        typed.List storing particle data arrays accordingly (or call
+        :meth:`~lambdapic.simulation.Simulation.update_lists`). Within a
+        running simulation the next step's automatic reconcile picks the
+        extension up before the sorter, pusher and QED modules consume
+        the lists.
 
         Args:
             n (int): Number of elements to add (must be positive)
@@ -213,6 +218,8 @@ class ParticlesBase:
         for attr in state['attrs']:
             state[attr] = state[attr].copy()
         state['is_dead'] = state['is_dead'].copy()
+        # Cached lists still reference the pre-copy buffers.
+        state['extended'] = True
         self.__dict__.update(state)
 
 class QEDParticles(ParticlesBase):

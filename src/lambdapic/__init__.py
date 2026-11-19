@@ -1,5 +1,13 @@
 from .core.species import Species, Electron, Proton, Photon, Positron
 from .simulation import Simulation, Simulation2D, Simulation3D
+from .simulation.typed_list_registry import (
+    FieldListSpec,
+    ParticleListSpec,
+    TypedListFreshnessIssue,
+    TypedListIssueKind,
+    TypedListRegistration,
+    TypedListRegistry,
+)
 from .callback.callback import callback
 from .callback.hdf5 import SaveFieldsToHDF5, SaveSpeciesDensityToHDF5, SaveParticlesToHDF5
 from .callback.laser import GaussianLaser2D, GaussianLaser3D, SimpleLaser2D, SimpleLaser3D
@@ -14,6 +22,9 @@ from scipy.constants import c, e, epsilon_0, m_e, m_p, mu_0, pi
 __all__ = [
     "Simulation", "Simulation2D",  "Simulation3D",
     "Species", "Electron", "Proton", "Photon", "Positron",
+    # third-party typed.List holders
+    "TypedListFreshnessIssue", "TypedListIssueKind", "TypedListRegistration",
+    "TypedListRegistry", "FieldListSpec", "ParticleListSpec",
     # callbacks
     "callback",
     "SaveFieldsToHDF5", "SaveSpeciesDensityToHDF5", "SaveParticlesToHDF5",

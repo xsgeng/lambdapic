@@ -975,7 +975,7 @@ class MovingWindow:
                 gens
             )
 
-            self._init_extended_slots(patches, ispec, n_strip, s.polarization)
+            self._init_extended_slots(patches, ispec, n_strip, s)
 
     def _fill_pml_strip_3d(self, sim: Simulation3D, patches: Sequence[Patch3D], side: str, thickness: int):
         """Append strip particles in 3D patches (tail cells on the PML side)."""
@@ -1026,10 +1026,10 @@ class MovingWindow:
                 gens
             )
 
-            self._init_extended_slots(patches, ispec, n_strip, s.polarization)
+            self._init_extended_slots(patches, ispec, n_strip, s)
 
     @staticmethod
-    def _init_extended_slots(patches: Sequence[Patch2D | Patch3D], ispec: int, n_new: NDArray[np.int64], polarization: tuple[float, float, float] | None = None):
+    def _init_extended_slots(patches: Sequence[Patch2D | Patch3D], ispec: int, n_new: NDArray[np.int64], species: Species):
         """Give the extended particle slots the same defaults initialize() produces.
 
         extend() leaves the new slots dead with NaN attributes; only x/y/z and w
@@ -1049,10 +1049,10 @@ class MovingWindow:
                     continue
                 getattr(part, attr)[tail] = 0.0
             part.inv_gamma[tail] = 1.0
-            if polarization is not None:
-                part.sx[tail] = polarization[0]
-                part.sy[tail] = polarization[1]
-                part.sz[tail] = polarization[2]
+            if species.polarization is not None:
+                part.sx[tail] = species.polarization[0]
+                part.sy[tail] = species.polarization[1]
+                part.sz[tail] = species.polarization[2]
 
 class SetMomentum(Callback):
     """

@@ -10,8 +10,11 @@ injected via a callback at the current_deposition stage.
 
 The fluid pusher and current injector are point operations, so they read
 E/B and write J directly from per-patch field arrays via typed.List
-references, avoiding gather/scatter copies. The continuity equation uses
-an upwind stencil and stays on a single global grid, avoiding inter-patch
+references, avoiding gather/scatter copies. The per-patch references are
+maintained by the simulation's public typed-list registry
+(``sim.register_typed_list_holder``), so they are rebuilt automatically after
+load-balance patch migrations. The continuity equation uses an upwind
+stencil and stays on a single global grid, avoiding inter-patch
 guard-cell synchronization.
 
 Output:
@@ -24,7 +27,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
-from numba import njit, prange, typed
+from numba import njit, prange
 from scipy.constants import c, e, epsilon_0, m_e, pi
 
 from lambdapic import (
@@ -289,6 +292,13 @@ class FluidBackground(Callback):
     directly into per-patch current arrays, eliminating gather/scatter
     copies.
 
+    The per-patch field references are registered on the simulation's
+    public typed-list registry (``sim.register_typed_list_holder``): the registry
+    builds and refreshes them, so the callback no longer maintains private
+    mirror lists and the references survive load-balance patch
+    migrations. Patch offsets are derived per call from the current local
+    patch set.
+
     On the first species (ispec == 0) the fluid momentum is pushed by a
     full dt and the density is advanced by the continuity equation. On
     the last species the fluid current J = -e * n_e * v_e is injected
@@ -315,33 +325,37 @@ class FluidBackground(Callback):
         in_plasma = (x >= plasma_xmin) & (x <= plasma_xmax)
         self.ne[in_plasma, :] = n_bg
 
-        # Cache per-patch field references and offsets for zero-copy access
-        self.ex_list = typed.List([p.fields.ex for p in sim.patches])
-        self.ey_list = typed.List([p.fields.ey for p in sim.patches])
-        self.ez_list = typed.List([p.fields.ez for p in sim.patches])
-        self.bx_list = typed.List([p.fields.bx for p in sim.patches])
-        self.by_list = typed.List([p.fields.by for p in sim.patches])
-        self.bz_list = typed.List([p.fields.bz for p in sim.patches])
-        self.jx_list = typed.List([p.fields.jx for p in sim.patches])
-        self.jy_list = typed.List([p.fields.jy for p in sim.patches])
-        self.jz_list = typed.List([p.fields.jz for p in sim.patches])
-        self.ix0_arr = np.array(
-            [p.ipatch_x * sim.nx_per_patch for p in sim.patches], dtype=np.int64
+        sim.register_typed_list_holder(
+            self,
+            field_lists={
+                "ex_list": "ex", "ey_list": "ey", "ez_list": "ez",
+                "bx_list": "bx", "by_list": "by", "bz_list": "bz",
+                "jx_list": "jx", "jy_list": "jy", "jz_list": "jz",
+            },
         )
-        self.iy0_arr = np.array(
-            [p.ipatch_y * sim.ny_per_patch for p in sim.patches], dtype=np.int64
-        )
-        self.npatches = sim.patches.npatches
-        self.nx_pp = sim.nx_per_patch
-        self.ny_pp = sim.ny_per_patch
 
         self._initialized = True
+
+    @staticmethod
+    def _patch_offsets(sim):
+        """Per-patch global cell offsets of the current local patch set."""
+        npatches = sim.patches.npatches
+        ix0_arr = np.fromiter(
+            (p.ipatch_x * sim.nx_per_patch for p in sim.patches),
+            dtype=np.int64, count=npatches,
+        )
+        iy0_arr = np.fromiter(
+            (p.ipatch_y * sim.ny_per_patch for p in sim.patches),
+            dtype=np.int64, count=npatches,
+        )
+        return ix0_arr, iy0_arr, npatches
 
     def _call(self, sim):
         if not self._initialized:
             self._init_fluid(sim)
 
         n_species = len(sim.species)
+        ix0_arr, iy0_arr, npatches = self._patch_offsets(sim)
 
         if sim.ispec == 0:
             # Push fluid momentum (relativistic Boris) and derive velocity,
@@ -351,8 +365,8 @@ class FluidBackground(Callback):
                 self.vex, self.vey, self.vez, self.ne,
                 self.ex_list, self.ey_list, self.ez_list,
                 self.bx_list, self.by_list, self.bz_list,
-                self.ix0_arr, self.iy0_arr,
-                self.npatches, self.nx_pp, self.ny_pp,
+                ix0_arr, iy0_arr,
+                npatches, sim.nx_per_patch, sim.ny_per_patch,
                 sim.dt,
             )
             # Advance density via continuity equation (sub-cycled upwind)
@@ -365,8 +379,8 @@ class FluidBackground(Callback):
             inject_fluid_current_patches(
                 self.jx_list, self.jy_list, self.jz_list,
                 self.vex, self.vey, self.vez, self.ne,
-                self.ix0_arr, self.iy0_arr,
-                self.npatches, self.nx_pp, self.ny_pp,
+                ix0_arr, iy0_arr,
+                npatches, sim.nx_per_patch, sim.ny_per_patch,
             )
 
 

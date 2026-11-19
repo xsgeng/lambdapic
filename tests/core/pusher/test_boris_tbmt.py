@@ -27,6 +27,17 @@ from lambdapic.core.pusher.unified.unified_pusher_3d import (
 from lambdapic import Simulation
 from lambdapic.callback.callback import callback
 
+
+@pytest.fixture(autouse=True)
+def _isolate_species_registry(isolated_registry):
+    """Keep this module's species out of the global ``_ALL_SPECIES`` registry.
+
+    The TBMT tests register spin species (including error-path species with
+    ``pusher='boris+tbmt'`` but no polarization); leaking them into the
+    shared registry breaks unrelated species-less simulations on the same
+    xdist worker (they auto-register every polluted species at init).
+    """
+
 # ---------------------------------------------------------------------------
 # Parameters (realistic PIC scales)
 # ---------------------------------------------------------------------------

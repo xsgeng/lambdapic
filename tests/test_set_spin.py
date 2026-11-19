@@ -6,6 +6,17 @@ from scipy.constants import c, e, epsilon_0, m_e, pi
 
 from lambdapic import Electron, Simulation, SetSpin
 
+
+@pytest.fixture(autouse=True)
+def _isolate_species_registry(isolated_registry):
+    """Keep this module's species out of the global ``_ALL_SPECIES`` registry.
+
+    The error-path test registers a species with ``pusher='boris+tbmt'``
+    but no polarization; leaking it into the shared registry breaks unrelated
+    species-less simulations on the same xdist worker (they auto-register
+    every polluted species at init).
+    """
+
 l0 = 0.8e-6
 omega0 = 2 * pi * c / l0
 nc = epsilon_0 * m_e * omega0**2 / e**2

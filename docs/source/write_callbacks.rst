@@ -144,3 +144,67 @@ and total electron kinetic energy.
         
         # print, or save to some file
         print(f"{ek=:g} mc2")
+
+Third-party typed.List management
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Numba kernels can iterate per-patch arrays through ``numba.typed.List``
+references. These references must be refreshed after ``extend``/``prune``
+replaces particle arrays and rebuilt after load-balance migration or a
+moving-window patch rebuild.
+
+:meth:`~lambdapic.simulation.Simulation.register_typed_list_holder` manages
+this lifecycle for third-party callbacks:
+
+.. code-block:: python
+
+    class BeamKicker(Callback):
+        stage = "current_deposition"
+
+        def __init__(self, species):
+            self.interval = 1
+            self.species = species
+
+        def _call(self, sim):
+            ispec = self.species.ispec
+            kick_patches(self.x_list[ispec], self.ux_list[ispec],
+                         sim.patches.npatches)
+
+    kicker = BeamKicker(ele)
+    sim.register_typed_list_holder(
+        kicker,
+        particle_lists={"x_list": "x", "ux_list": "ux"},
+        species=(ele,),
+    )
+
+Particle lists are stored as ``dict[int, typed.List]`` keyed by species
+index. Field lists are flat typed lists over patches. Both reference the
+live arrays, so writes go directly into simulation state.
+
+Diagnostics
+^^^^^^^^^^^
+
+Registration rejects unknown species or source attributes, list-name
+collisions, and shadowed holder attributes.
+:meth:`~lambdapic.simulation.Simulation.check_typed_list_freshness` returns
+structured :class:`~lambdapic.simulation.typed_list_registry.TypedListFreshnessIssue`
+entries for stale lists, unbound registrations, missing watched species,
+and unregistered callback holders. The run loop emits
+unbound/unregistered-holder warnings once after the ``init`` stage.
+
+.. code-block:: python
+
+    issues = sim.check_typed_list_freshness(callbacks=my_callbacks)
+    assert not issues
+
+Checkpoint contract
+^^^^^^^^^^^^^^^^^^^
+
+Checkpoints preserve registration names, list specifications, and species
+watch sets, but drop holder objects. After restoring, re-register each
+holder under the same name to rebuild its lists from the restored arrays.
+Unbound registrations are diagnosed at run startup. Checkpoints written
+before the registry existed restore as an empty registry.
+
+.. autoclass:: lambdapic.simulation.typed_list_registry.TypedListRegistry
+   :members:

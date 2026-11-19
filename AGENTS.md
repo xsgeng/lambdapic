@@ -9,6 +9,7 @@
 ├── src/lambdapic/           # Main package
 │   ├── simulation/          # Simulation classes (package, not a module)
 │   │   ├── simulation.py    # Simulation (2D), Simulation3D, SimulationCallbacks, STAGES list
+│   │   ├── typed_list_registry.py # Third-party typed.List lifecycle registry
 │   │   ├── _mask_simulation.py     # Sparse-domain (masked) simulation variant
 │   │   └── utils.py
 │   ├── callback/            # Callback decorator + built-in callbacks (per-dir AGENTS.md)
@@ -46,6 +47,7 @@
 | Add QED physics | `src/lambdapic/core/qed/` | Radiation and pair production |
 | Add collision physics | `src/lambdapic/core/collision/` | Binary collisions |
 | Run simulations | `src/lambdapic/simulation/simulation.py` | Main `Simulation.run()` loop and stage dispatch; stage list lives in `STAGES` |
+| Manage third-party typed.List lifecycles | `src/lambdapic/simulation/typed_list_registry.py` | `sim.register_typed_list_holder()`: declare particle/field lists + species watch set; refreshed by `update_lists()`/`update_patches()`; re-register holders after checkpoint restore |
 | CLI commands | `src/lambdapic/cli/main.py` | Typer app: `autoreload`, `timer-stat` (batch is TODO) |
 | Tests | `tests/` | See `tests/AGENTS.md` |
 
@@ -65,6 +67,7 @@
 | `MaxwellSolver2D` / `3D` | Class | `src/lambdapic/core/maxwell/solver/solver.py:139` / `:195` | Yee FDTD + CPML |
 | `CurrentDeposition2D` / `3D` | Class | `src/lambdapic/core/current/deposition.py:171` / `:241` | Current deposition facade |
 | `Species` | Class | `src/lambdapic/core/species.py:55` | Species definition + particle factory |
+| `TypedListRegistry` | Class | `src/lambdapic/simulation/typed_list_registry.py` | Third-party typed.List lifecycle registry; one declaration drives generate/update/check |
 
 ## CONVENTIONS
 - **Environment first**: Always check and use the project `.venv` before anything else — run `.venv/bin/python`, `.venv/bin/pytest` etc. It is a **uv**-managed venv: use `uv pip` instead of `pip` for installs; if `.venv` does not exist, create it with `uv venv` first.

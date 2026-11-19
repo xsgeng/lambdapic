@@ -35,6 +35,12 @@ from ..core.utils.logger import configure_logger, logger, rank_log
 from ..core.utils.progress_bar import ProgressBar
 from ..core.utils.terminal import is_terminal
 from ..core.utils.timer import Timer, flush_timers, set_timer_enabled, timer_sink_path
+from .typed_list_registry import (
+    TypedListFreshnessIssue,
+    TypedListIssueKind,
+    TypedListRegistration,
+    TypedListRegistry,
+)
 from .utils import (
     auto_patch_2d,
     auto_patch_3d,
@@ -42,6 +48,7 @@ from .utils import (
     get_num_threads,
     is_version_outdated,
 )
+
 
 
 class SimulationConfig(BaseModel):
@@ -309,6 +316,7 @@ class Simulation:
         # pending asynchronous current-sync handle (see sync_currents_start/wait)
         self._current_sync_handle = None
         self.current_synced = False
+        self._typed_list_registry = TypedListRegistry()
 
     def _auto_patch(self):
         if self.npatch_x == 0 or self.npatch_y == 0:
@@ -709,10 +717,32 @@ class Simulation:
           so its spin actually evolves
         - "photon": Photon pusher for massless particles
         
+        Raises:
+            ValueError: if a species requests a pusher this simulation does
+                not implement, or asks for the spin pusher without a
+                polarization vector. Raised before any pusher is constructed,
+                so a failed init leaves no pusher list and no modified species
+                behind.
+
         Note:
             The pushers handle particle position and momentum updates.
         """
-        self.pusher: list[PusherBase] = []
+        # Validate all species before construction so an invalid entry cannot
+        # shift later species onto the wrong pusher index.
+        for s in self.patches.species:
+            if s.pusher not in ("boris", "photon", "boris+tbmt"):
+                raise ValueError(
+                    f"Species '{s.name}' requests pusher='{s.pusher}', which is not "
+                    "a known pusher; supported pushers are 'boris', 'photon' "
+                    "and 'boris+tbmt'"
+                )
+            if s.pusher == "boris+tbmt" and s.polarization is None:
+                raise ValueError(
+                    f"Species '{s.name}' uses pusher='boris+tbmt' but has no polarization set. "
+                    "Spin particles require a polarization vector to initialize sx/sy/sz."
+                )
+
+        pushers: list[PusherBase] = []
         for ispec, s in enumerate(self.patches.species):
             if s.pusher == "boris":
                 if s.polarization is not None:
@@ -726,21 +756,18 @@ class Simulation:
                         level="warning",
                     )
                     s.pusher = "boris+tbmt"
-                    self.pusher.append(BorisTBMTPusher(self.patches, ispec))
+                    pushers.append(BorisTBMTPusher(self.patches, ispec))
                 else:
                     rank_log(f"Using Boris pusher for {s.name}", self.mpi.comm)
-                    self.pusher.append(BorisPusher(self.patches, ispec))
+                    pushers.append(BorisPusher(self.patches, ispec))
             elif s.pusher == "boris+tbmt":
-                if s.polarization is None:
-                    raise ValueError(
-                        f"Species '{s.name}' uses pusher='boris+tbmt' but has no polarization set. "
-                        "Spin particles require a polarization vector to initialize sx/sy/sz."
-                    )
                 rank_log(f"Using Boris+TBMT spin pusher for {s.name}", self.mpi.comm)
-                self.pusher.append(BorisTBMTPusher(self.patches, ispec))
+                pushers.append(BorisTBMTPusher(self.patches, ispec))
             elif s.pusher == "photon":
                 rank_log(f"Using Photon pusher for {s.name}", self.mpi.comm)
-                self.pusher.append(PhotonPusher(self.patches, ispec))
+                pushers.append(PhotonPusher(self.patches, ispec))
+        assert len(pushers) == len(self.patches.species)
+        self.pusher = pushers
 
     def _init_qed(self):
         """Initialize Quantum Electrodynamics (QED) modules.
@@ -860,6 +887,115 @@ class Simulation:
             self.patches.sync_guard_fields(['bx', 'by', 'bz'])
             self.mpi.sync_guard_fields(['bx', 'by', 'bz'])
 
+    @property
+    def typed_list_registry(self) -> TypedListRegistry:
+        """Registry managing third-party per-patch ``numba.typed.List`` objects.
+
+        The lazy fallback supports checkpoints written before the registry
+        existed.
+        """
+        registry = self.__dict__.get("_typed_list_registry")
+        if registry is None:
+            registry = TypedListRegistry()
+            self.__dict__["_typed_list_registry"] = registry
+        return registry
+
+    def register_typed_list_holder(
+        self,
+        holder: object,
+        *,
+        particle_lists: Dict[str, str] | None = None,
+        field_lists: Dict[str, str] | None = None,
+        species: Sequence[Species | str | int] | Species | str | int | None = None,
+        name: str | None = None,
+    ) -> TypedListRegistration:
+        """Register per-patch typed lists for automatic lifecycle management.
+
+        Particle lists are refreshed after ``extend``/``prune`` through
+        :meth:`update_lists`; particle and field lists are rebuilt after patch
+        migration through :meth:`update_patches`.
+
+        Args:
+            holder: Object receiving the typed-list attributes, typically a
+                callback.
+            particle_lists: Mapping of holder attribute names to particle
+                attribute names. Each holder attribute receives a
+                ``dict[int, numba.typed.List]`` keyed by species index.
+            field_lists: Mapping of holder attribute names to field attribute
+                names. Each holder attribute receives a flat typed list over
+                patches.
+            species: Species objects, names, or indices watched for particle
+                mutations. Required with ``particle_lists``.
+            name: Registration key; defaults to the holder class name.
+                Re-registration under the same key replaces the old holder.
+
+        Returns:
+            The stored registration.
+
+        Raises:
+            RuntimeError: If the simulation is not initialized.
+            TypeError: If a declaration entry has the wrong type.
+            ValueError: If the declaration is invalid.
+
+        Note:
+            Checkpoints preserve declarations but drop holders. After
+            restoring, re-register each holder under the same name to rebuild
+            its lists from the restored arrays. Unbound registrations are
+            reported by :meth:`check_typed_list_freshness`.
+        """
+        if not self.initialized:
+            raise RuntimeError(
+                "typed-list holders require an initialized Simulation; call "
+                "initialize() first or register from an 'init' callback"
+            )
+        return self.typed_list_registry.register(
+            self.patches,
+            holder,
+            particle_lists=particle_lists,
+            field_lists=field_lists,
+            species=species,
+            name=name,
+        )
+
+    def unregister_typed_list_holder(
+        self, name_or_holder: str | object
+    ) -> TypedListRegistration | None:
+        """Remove and return a registration, or ``None`` if it is absent.
+
+        Existing holder attributes are left in place but stop being refreshed.
+        """
+        return self.typed_list_registry.unregister(name_or_holder)
+
+    def check_typed_list_freshness(
+        self, callbacks: Sequence[object] | None = None
+    ) -> list[TypedListFreshnessIssue]:
+        """Check registered lists and optionally scan callbacks for stale lists.
+
+        Args:
+            callbacks: Callbacks to scan for unregistered typed lists.
+                Self-owned scratch lists are ignored.
+
+        Returns:
+            Structured freshness issues; empty when all checks pass.
+        """
+        return self.typed_list_registry.check(self.patches, callbacks=callbacks)
+
+    def _report_typed_list_holder_issues(self, callbacks: Sequence[object]) -> None:
+        """Warn once at run start about unbound or unregistered holders."""
+        issues = [
+            issue
+            for issue in self.typed_list_registry.check(
+                self.patches, callbacks=callbacks
+            )
+            if issue.kind in (
+                TypedListIssueKind.UNBOUND_REGISTRATION,
+                TypedListIssueKind.UNREGISTERED_HOLDER,
+            )
+        ]
+        if self.mpi.rank == 0:
+            for issue in issues:
+                logger.warning(f"typed-list holder: {issue}")
+
     def update_lists(self):
         """Update particle lists after particle creation/destruction.
         
@@ -870,9 +1006,22 @@ class Simulation:
         
         Also resets the 'extended' flag for all particles.
 
+        :meth:`run` calls this automatically at the start of every
+        timestep, so callbacks that extend/prune particles at a late
+        stage (``qed_create_particles`` and later) do not need to call
+        it manually: the next step's sorter, pusher and QED modules
+        see the live arrays. Callbacks mutating particles *and*
+        consuming module lists within the same stage still need an
+        explicit call. The call is idempotent: with no ``extended``
+        flags set it is a no-op.
+        
         Note: current depositor and interpolator are skipped: their kernels
         fetch particle arrays at call time, so their cached lists only mirror
         the live arrays and are rebuilt wholesale by update_patches().
+
+        Third-party typed lists registered via
+        :meth:`register_typed_list_holder` are refreshed for their watched
+        species before the mutator flags are cleared.
         """
         for ispec, s in enumerate(self.patches.species):
             for ipatch, p in enumerate(self.patches):
@@ -902,6 +1051,11 @@ class Simulation:
                 for ipatch, p in enumerate(self.patches):
                     if p.particles[ispec].extended:
                         pp.update_particle_lists(ipatch)
+
+        # Third-party typed lists: same mutator-driven refresh as the
+        # built-in modules above; must run before the extended flags are
+        # cleared below.
+        self.typed_list_registry.refresh_particle_lists(self.patches)
 
         for ispec, s in enumerate(self.patches.species):
             for ipatch, p in enumerate(self.patches):
@@ -936,6 +1090,11 @@ class Simulation:
             self.collision.generate_field_lists()
             self.collision.generate_particle_lists()
 
+        # Third-party typed lists: wholesale rebuild, mirroring the
+        # per-module list regeneration above (patch set or array objects
+        # are new after a migration or moving-window refill).
+        self.typed_list_registry.generate(self.patches)
+
         self.update_lists()
 
 
@@ -969,6 +1128,8 @@ class Simulation:
         
         with Timer('Callbacks: init stage'):
             stage_callbacks.run('init')
+
+        self._report_typed_list_holder_issues(callbacks)
 
         # check restart
         restart_cb = None
@@ -1021,7 +1182,9 @@ class Simulation:
         for self.istep in range(self.itime, nsteps_total):
             pbar.update(1)
 
-            # start of simulation stages
+            with Timer("Updating lists"):
+                self.update_lists()
+
             with Timer('Callbacks: start stage'):
                 stage_callbacks.run('start')
             
