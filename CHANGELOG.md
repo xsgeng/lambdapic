@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-19
+
+### Added
+
+- Add `Simulation.register_typed_list_holder` to manage third-party per-patch `numba.typed.List` objects for callbacks that read particle or field arrays in Numba kernels
+  - Declare the lists once (`particle_lists={"x_list": "x"}`, `field_lists={"ex_list": "ex"}`) and the registry builds them and keeps them live: particle lists follow the watched species through `extend`/`prune`, and all lists are rebuilt after load-balance migration or `MovingWindow` patch changes
+  - Add `Simulation.unregister_typed_list_holder` and `Simulation.check_typed_list_freshness`, which reports stale lists, unbound registrations after a checkpoint restore, and unregistered callback holders; `Simulation.run()` emits unbound and unregistered-holder warnings once at startup
+  - Checkpoints preserve registrations but drop holder objects; re-register each holder under the same name after restoring to rebuild its lists from the restored arrays, and checkpoints written before the registry existed restore as an empty registry
+
+### Fixed
+
+- Fix stale per-patch `typed.List` references in the pusher, sorter, and QED modules when particles are created or removed in a late stage (`qed_create_particles` and later) or after a checkpoint restore: `Simulation.run()` now reconciles particle arrays at the start of every timestep
+- Fix species pusher assignment when a species requests an unsupported `pusher`; `Simulation` now validates every species before constructing any pusher, so an invalid configuration raises `ValueError` at initialization instead of shifting later species onto the wrong pusher
+
 ## [0.17.0] - 2026-11-18
 
 ### Added
@@ -77,7 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Speed up particle sorting via mismatch-list gather and lazy particle-list refresh
 - Cache MPI derived datatypes used in boundary guard-field sync
 
-[Unreleased]: https://github.com/xsgeng/lambdapic/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/xsgeng/lambdapic/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/xsgeng/lambdapic/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/xsgeng/lambdapic/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/xsgeng/lambdapic/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/xsgeng/lambdapic/compare/v0.15.0...v0.15.1
